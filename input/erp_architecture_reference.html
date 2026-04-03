@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>ERP Architecture Reference</title>
+</head>
+<body>
+  <div class="title">ERP总体架构与业务协同蓝图</div>
+  <div class="subtitle">围绕统一主数据、核心交易、跨系统集成与经营分析，形成可落地的 ERP 架构参考方案。</div>
+  <div class="scope-title">关键业务链路与系统协同</div>
+  <div class="scope-subtitle">从订单、采购、生产到经营分析，梳理 ERP 作为业务中枢的端到端协同路径。</div>
+  <div class="focus-title">实施重点与治理要求</div>
+  <div class="focus-subtitle">围绕主数据、流程规则、接口治理和上线切换，控制 ERP 建设落地风险。</div>
+
+  <div class="phase-name">业务应用层</div>
+  <div class="phase-func">销售管理、采购管理、库存管理、生产计划、财务核算与人力协同统一在 ERP 门户下承载核心业务操作。</div>
+
+  <div class="phase-name">核心交易层</div>
+  <div class="phase-func">订单、请购、收发存、工单、应收应付、总账成本等关键交易对象在统一流程引擎中闭环流转。</div>
+
+  <div class="phase-name">平台支撑层</div>
+  <div class="phase-func">主数据、权限、组织架构、工作流、消息中心与日志审计提供基础平台能力，保障规则统一与过程可追踪。</div>
+
+  <div class="phase-name">集成分析层</div>
+  <div class="phase-func">通过 ESB/API 对接 CRM、MES、WMS、SRM、OA、BI，实现上下游系统协同与经营数据汇聚分析。</div>
+
+  <div class="scenario">端到端订单链路：销售订单驱动库存校验、采购补货、生产排程与出库结算。</div>
+  <div class="scenario">采购到付款链路：请购、审批、下单、收货、对账、付款在统一流程内闭环。</div>
+  <div class="scenario">计划到制造链路：主生产计划联动物料需求计划、工单执行、质量反馈与成本归集。</div>
+  <div class="scenario">经营分析链路：业务数据实时汇聚到 BI 看板，支撑库存周转、交付达成与利润分析。</div>
+
+  <div class="note">主数据必须统一编码和口径，避免客户、物料、供应商、组织等对象多源冲突。</div>
+  <div class="note">跨系统接口需要明确事件触发、失败重试、补偿机制与监控告警，避免链路断点。</div>
+  <div class="note">流程设计要兼顾标准化与灵活性，审批边界、职责权限和例外处理必须清晰。</div>
+  <div class="note">实施阶段需同步规划历史数据迁移、权限切换、培训推广与上线回退预案。</div>
+
+  <div class="footer">目标是形成以 ERP 为核心的业务运营中台，实现数据统一、流程贯通、经营可视与风险可控。</div>
+</body>
+</html>

@@ -15,7 +15,12 @@ def parse_mapping(items: list[str]) -> list[tuple[int, int]]:
 def apply_reference_body_slides(target_pptx: Path, reference_pptx: Path, mappings: list[tuple[int, int]]) -> bool:
     app = win32com.client.Dispatch("PowerPoint.Application")
     app.Visible = 1
-    pres = app.Presentations.Open(str(target_pptx.resolve()), WithWindow=False)
+    pres = app.Presentations.Open(
+        str(target_pptx.resolve()),
+        ReadOnly=False,
+        Untitled=False,
+        WithWindow=False,
+    )
     try:
         for target_slide, source_slide in sorted(mappings, reverse=True):
             pres.Slides(target_slide).Delete()

@@ -60,6 +60,10 @@ powershell -ExecutionPolicy Bypass -File .\run_sie_autoppt.ps1
 
 - `title`
 - `subtitle`
+- `scope-title`
+- `scope-subtitle`
+- `focus-title`
+- `focus-subtitle`
 - `phase-time`
 - `phase-name`
 - `phase-code`
@@ -68,6 +72,9 @@ powershell -ExecutionPolicy Bypass -File .\run_sie_autoppt.ps1
 - `scenario`
 - `note`
 - `footer`
+
+其中 `scope-*` 和 `focus-*` 可选，用于覆盖第 2 / 3 个正文页的标题与副标题。
+扩展字段说明见 [`docs/INPUT_SPEC_SUPPLEMENT.md`](./docs/INPUT_SPEC_SUPPLEMENT.md)。
 
 如果 HTML 中完全缺少这些内容，程序会直接报错，而不是生成一份空 PPT。
 

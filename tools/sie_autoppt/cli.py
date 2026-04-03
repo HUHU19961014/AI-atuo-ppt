@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 
-from .config import DEFAULT_HTML, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_PREFIX, DEFAULT_REFERENCE_BODY, DEFAULT_TEMPLATE
+from .config import DEFAULT_HTML, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_PREFIX, DEFAULT_REFERENCE_BODY, DEFAULT_TEMPLATE, MAX_BODY_CHAPTERS
 from .generator import generate_ppt
 from .qa import write_qa_report
 
@@ -17,7 +17,7 @@ def main():
     )
     parser.add_argument("--output-name", default=DEFAULT_OUTPUT_PREFIX, help="Output filename prefix.")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory used for generated PPT and QA files.")
-    parser.add_argument("--chapters", type=int, default=3, help="Number of body chapters to generate (1-3).")
+    parser.add_argument("--chapters", type=int, default=3, help=f"Number of body chapters to generate (1-{MAX_BODY_CHAPTERS}).")
     parser.add_argument("--active-start", type=int, default=0, help="Directory active chapter start index (0-based).")
     args = parser.parse_args()
 
@@ -32,7 +32,7 @@ def main():
     )
     report = write_qa_report(
         out,
-        max(1, min(args.chapters, 3)),
+        len(pattern_ids),
         pattern_ids=pattern_ids,
         chapter_lines=chapter_lines,
     )

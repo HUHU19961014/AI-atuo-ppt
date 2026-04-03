@@ -25,6 +25,7 @@ DEFAULT_REFERENCE_BODY = INPUT_DIR / "reference_body_style.pptx"
 DEFAULT_OUTPUT_DIR = _default_output_dir()
 DEFAULT_OUTPUT_PREFIX = "SIE_AutoPPT"
 DEFAULT_MIN_TEMPLATE_SLIDES = 5
+MAX_BODY_CHAPTERS = 3
 
 # Theme
 FONT_NAME = "Microsoft YaHei"

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import textwrap
 import time
+import warnings
 import zipfile
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -31,6 +32,7 @@ from .config import (
     IDX_BODY_TEMPLATE,
     IDX_DIRECTORY,
     IDX_THEME,
+    MAX_BODY_CHAPTERS,
 )
 from .patterns import infer_pattern
 from .reference_styles import build_reference_import_plan, populate_reference_body_pages
@@ -54,6 +56,10 @@ DIRECTORY_TITLE_FONT_PT = 24
 class InputPayload:
     title: str
     subtitle: str
+    scope_title: str
+    scope_subtitle: str
+    focus_title: str
+    focus_subtitle: str
     footer: str
     phases: list[dict[str, str]]
     scenarios: list[str]
@@ -76,6 +82,16 @@ class BodyPageSpec:
 class DeckSpec:
     cover_title: str
     body_pages: list[BodyPageSpec]
+
+
+@dataclass(frozen=True)
+class FlowSpec:
+    name: str
+    alias: str
+    summary: str
+    steps: list[str]
+    systems: list[str]
+    controls: list[str]
 
 
 def strip_tags(s: str) -> str:
@@ -138,6 +154,10 @@ def extract_steps(html: str) -> list[tuple[str, str]]:
     ]
 
 
+def extract_section_blocks(html: str, class_name: str) -> list[str]:
+    return re.findall(rf'<section class="{class_name}">(.*?)</section>', html, flags=re.S)
+
+
 def extract_phases(html: str) -> list[dict[str, str]]:
     phase_keys = ("phase-time", "phase-name", "phase-code", "phase-func", "phase-owner")
     values = {key: extract_list(html, key) for key in phase_keys}
@@ -160,6 +180,10 @@ def parse_html_payload(html: str) -> InputPayload:
     return InputPayload(
         title=extract_single(html, "title"),
         subtitle=extract_single(html, "subtitle"),
+        scope_title=extract_single(html, "scope-title"),
+        scope_subtitle=extract_single(html, "scope-subtitle"),
+        focus_title=extract_single(html, "focus-title"),
+        focus_subtitle=extract_single(html, "focus-subtitle"),
         footer=extract_single(html, "footer"),
         phases=extract_phases(html),
         scenarios=extract_list(html, "scenario"),
@@ -219,6 +243,10 @@ def build_focus_bullets(payload: InputPayload) -> list[str]:
         bullets.append(payload.footer)
     bullets = bullets[:4]
     return bullets or [DEFAULT_EMPTY_FOCUS]
+
+
+def clamp_requested_chapters(chapters: int, available_pages: int) -> int:
+    return max(1, min(chapters, MAX_BODY_CHAPTERS, available_pages))
 
 
 def split_title_detail(text: str) -> tuple[str, str]:
@@ -413,12 +441,16 @@ def build_card_analysis_page_specs(html: str, chapters: int) -> DeckSpec | None:
     ]
     return DeckSpec(
         cover_title=cover_title or DEFAULT_TITLE,
-        body_pages=page_specs[: max(1, min(chapters, 3))],
+        body_pages=page_specs[: clamp_requested_chapters(chapters, len(page_specs))],
     )
 
 
 def build_page_specs(payload: InputPayload, chapters: int) -> DeckSpec:
-    requested_chapters = max(1, min(chapters, 3))
+    requested_chapters = clamp_requested_chapters(chapters, 3)
+    scope_title = payload.scope_title or DEFAULT_SCOPE_TITLE
+    scope_subtitle = payload.scope_subtitle or DEFAULT_SCOPE_SUBTITLE
+    focus_title = payload.focus_title or DEFAULT_FOCUS_TITLE
+    focus_subtitle = payload.focus_subtitle or payload.footer or DEFAULT_FOCUS_SUBTITLE
     page_specs = [
         BodyPageSpec(
             page_key="overview",
@@ -430,19 +462,19 @@ def build_page_specs(payload: InputPayload, chapters: int) -> DeckSpec:
         ),
         BodyPageSpec(
             page_key="scope",
-            title=DEFAULT_SCOPE_TITLE,
-            subtitle=DEFAULT_SCOPE_SUBTITLE,
+            title=scope_title,
+            subtitle=scope_subtitle,
             bullets=build_scope_bullets(payload),
             pattern_id="general_business",
-            nav_title=shorten_for_nav(DEFAULT_SCOPE_TITLE),
+            nav_title=shorten_for_nav(scope_title),
         ),
         BodyPageSpec(
             page_key="focus",
-            title=DEFAULT_FOCUS_TITLE,
-            subtitle=payload.footer or DEFAULT_FOCUS_SUBTITLE,
+            title=focus_title,
+            subtitle=focus_subtitle,
             bullets=build_focus_bullets(payload),
             pattern_id="general_business",
-            nav_title=shorten_for_nav(DEFAULT_FOCUS_TITLE),
+            nav_title=shorten_for_nav(focus_title),
         ),
     ][:requested_chapters]
 
@@ -454,12 +486,23 @@ def build_page_specs(payload: InputPayload, chapters: int) -> DeckSpec:
                 title=page.title,
                 subtitle=page.subtitle,
                 bullets=page.bullets,
-                pattern_id=infer_pattern(page.title, page.bullets),
+                pattern_id=choose_page_pattern(page.page_key, page.title, page.subtitle, page.bullets),
                 nav_title=page.nav_title or shorten_for_nav(page.title),
             )
             for page in page_specs
         ],
     )
+
+
+def choose_page_pattern(page_key: str, title: str, subtitle: str, bullets: list[str]) -> str:
+    hint = f"{title} {subtitle}"
+    if page_key == "overview" and any(keyword in hint for keyword in ("架构", "蓝图", "平台", "体系")):
+        return "solution_architecture"
+    if page_key == "scope" and any(keyword in hint for keyword in ("链路", "流程", "协同", "路径")):
+        return "process_flow"
+    if page_key == "focus" and any(keyword in hint for keyword in ("治理", "重点", "要求", "风险", "实施")):
+        return "org_governance"
+    return infer_pattern(title, bullets)
 
 
 def build_directory_lines(body_pages: list[BodyPageSpec]) -> list[str]:
@@ -659,6 +702,99 @@ def repair_directory_slides_with_com(pptx_path: Path, source_idx: int, target_in
     return False
 
 
+def copy_directory_slide_xml_assets(pptx_path: Path, source_idx: int, target_indices: list[int]) -> bool:
+    if not target_indices:
+        return True
+    source_slide_name = f"ppt/slides/slide{source_idx}.xml"
+    source_rel_name = f"ppt/slides/_rels/slide{source_idx}.xml.rels"
+    target_slide_names = {f"ppt/slides/slide{target}.xml" for target in target_indices}
+    target_rel_names = {f"ppt/slides/_rels/slide{target}.xml.rels" for target in target_indices}
+    rebuilt_path = pptx_path.with_name(pptx_path.stem + "_rebuilt.pptx")
+
+    with zipfile.ZipFile(pptx_path, "r") as source_package:
+        if source_slide_name not in source_package.namelist():
+            return False
+        slide_root = ElementTree.fromstring(source_package.read(source_slide_name))
+        slide_ns = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+        source_sp_tree = slide_root.find(f".//{slide_ns}spTree")
+        source_pics = [deepcopy(pic) for pic in source_sp_tree.findall(f"{slide_ns}pic")] if source_sp_tree is not None else []
+        rel_bytes = source_package.read(source_rel_name) if source_rel_name in source_package.namelist() else None
+        source_image_rels = []
+        if rel_bytes is not None:
+            source_rel_root = ElementTree.fromstring(rel_bytes)
+            source_image_rels = [
+                deepcopy(rel)
+                for rel in source_rel_root
+                if rel.attrib.get("Type", "").endswith("/image")
+            ]
+
+        slide_replacements: dict[str, bytes] = {}
+        rel_replacements: dict[str, bytes] = {}
+        rel_root_tag = (
+            ElementTree.fromstring(rel_bytes).tag
+            if rel_bytes is not None
+            else "{http://schemas.openxmlformats.org/package/2006/relationships}Relationships"
+        )
+
+        for target_slide_name in target_slide_names:
+            if target_slide_name not in source_package.namelist():
+                continue
+            target_root = ElementTree.fromstring(source_package.read(target_slide_name))
+            target_sp_tree = target_root.find(f".//{slide_ns}spTree")
+            if target_sp_tree is not None and not target_sp_tree.findall(f"{slide_ns}pic") and source_pics:
+                insert_at = next(
+                    (index for index, child in enumerate(list(target_sp_tree)) if child.tag == f"{slide_ns}extLst"),
+                    len(target_sp_tree),
+                )
+                for pic in source_pics:
+                    target_sp_tree.insert(insert_at, deepcopy(pic))
+                    insert_at += 1
+            slide_replacements[target_slide_name] = ElementTree.tostring(
+                target_root,
+                encoding="utf-8",
+                xml_declaration=True,
+            )
+
+        for target_rel_name in target_rel_names:
+            if target_rel_name in source_package.namelist():
+                target_rel_root = ElementTree.fromstring(source_package.read(target_rel_name))
+            else:
+                target_rel_root = ElementTree.Element(rel_root_tag)
+            existing_image_targets = {
+                rel.attrib.get("Target", "")
+                for rel in target_rel_root
+                if rel.attrib.get("Type", "").endswith("/image")
+            }
+            for image_rel in source_image_rels:
+                if image_rel.attrib.get("Target", "") in existing_image_targets:
+                    continue
+                target_rel_root.append(deepcopy(image_rel))
+            rel_replacements[target_rel_name] = ElementTree.tostring(
+                target_rel_root,
+                encoding="utf-8",
+                xml_declaration=True,
+            )
+
+        with zipfile.ZipFile(rebuilt_path, "w", zipfile.ZIP_DEFLATED) as rebuilt:
+            for info in source_package.infolist():
+                data = source_package.read(info.filename)
+                if info.filename in slide_replacements:
+                    data = slide_replacements[info.filename]
+                elif info.filename in rel_replacements:
+                    data = rel_replacements[info.filename]
+                rebuilt.writestr(info, data)
+
+            for target_slide_name, data in slide_replacements.items():
+                if target_slide_name not in source_package.namelist():
+                    rebuilt.writestr(target_slide_name, data)
+            for target_rel_name, data in rel_replacements.items():
+                if target_rel_name not in source_package.namelist():
+                    rebuilt.writestr(target_rel_name, data)
+
+    rebuilt_path.replace(pptx_path)
+    return True
+
+
 def apply_reference_body_slides_with_com(pptx_path: Path, reference_body_path: Path | None, body_pages: list[BodyPageSpec]) -> bool:
     import_plan = build_reference_import_plan(body_pages)
     if not import_plan:
@@ -674,11 +810,16 @@ def apply_reference_body_slides_with_com(pptx_path: Path, reference_body_path: P
         "--mapping",
         *[f"{target}={source}" for target, source in import_plan],
     ]
+    last_error = ""
     for _ in range(5):
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode == 0:
             return True
+        stderr = (result.stderr or "").strip()
+        stdout = (result.stdout or "").strip()
+        last_error = stderr or stdout or f"exit code {result.returncode}"
         time.sleep(1.0)
+    warnings.warn(f"Reference body slide import failed after retries: {last_error}", stacklevel=2)
     return False
 
 
@@ -744,30 +885,106 @@ def _render_process_flow(slide, bullets: list[str]):
         set_shape_text(textbox, safe_text, size_pt=11, bold=False)
 
 
-def _render_architecture_two_column(slide, bullets: list[str]):
-    left_x, right_x = 700000, 6200000
-    y0, row_h = 1850000, 900000
-    for i, text in enumerate(bullets[:4]):
-        y = y0 + i * row_h
-        left_box = slide.shapes.add_shape(1, left_x, y, 5000000, 680000)
-        left_box.fill.solid()
-        left_box.fill.fore_color.rgb = RGBColor(245, 247, 250)
-        left_box.line.color.rgb = RGBColor(215, 222, 230)
-        left_text = slide.shapes.add_textbox(left_x + 160000, y + 180000, 4680000, 360000)
-        set_shape_text(left_text, f"\u6a21\u5757{i + 1}", size_pt=12, bold=True)
+def _extract_system_tags(bullets: list[str]) -> list[str]:
+    systems = []
+    for bullet in bullets:
+        for system in re.findall(r"\b[A-Z][A-Z0-9/-]{1,}\b", bullet):
+            if system not in systems:
+                systems.append(system)
+    return systems[:5]
 
-        right_box = slide.shapes.add_shape(1, right_x, y, 5000000, 680000)
-        right_box.fill.solid()
-        right_box.fill.fore_color.rgb = RGBColor(250, 252, 255)
-        right_box.line.color.rgb = RGBColor(220, 226, 233)
-        right_text = slide.shapes.add_textbox(right_x + 160000, y + 140000, 4680000, 420000)
-        safe_text = normalize_text_for_box(text, 34)
-        set_shape_text(right_text, safe_text, size_pt=11, bold=False)
+
+def _render_architecture_layers(slide, bullets: list[str]):
+    x = 900000
+    y0 = 1650000
+    width = 10100000
+    layer_h = 720000
+    gap = 150000
+    palette = [
+        ((245, 247, 250), (210, 218, 228), (173, 5, 61)),
+        ((248, 250, 252), (214, 222, 231), (60, 76, 96)),
+        ((250, 251, 253), (218, 225, 233), (60, 76, 96)),
+        ((243, 246, 250), (206, 216, 226), (173, 5, 61)),
+    ]
+    for i, text in enumerate(bullets[:4]):
+        y = y0 + i * (layer_h + gap)
+        fill, line, accent = palette[i]
+        layer = slide.shapes.add_shape(1, x, y, width, layer_h)
+        layer.fill.solid()
+        layer.fill.fore_color.rgb = RGBColor(*fill)
+        layer.line.color.rgb = RGBColor(*line)
+
+        tag = slide.shapes.add_shape(1, x + 120000, y + 120000, 1100000, layer_h - 240000)
+        tag.fill.solid()
+        tag.fill.fore_color.rgb = RGBColor(*accent)
+        tag.line.color.rgb = RGBColor(*accent)
+        tag_text = slide.shapes.add_textbox(x + 170000, y + 175000, 980000, 240000)
+        set_shape_text_with_color(tag_text, f"L{i + 1:02d}", (255, 255, 255), size_pt=14, bold=True)
+
+        text_box = slide.shapes.add_textbox(x + 1450000, y + 130000, width - 1750000, layer_h - 220000)
+        safe_text = normalize_text_for_box(text, 40)
+        set_shape_text(text_box, safe_text, size_pt=12, bold=False)
+
+    banner = slide.shapes.add_shape(1, 900000, 1250000, 2500000, 230000)
+    banner.fill.solid()
+    banner.fill.fore_color.rgb = RGBColor(*COLOR_ACTIVE)
+    banner.line.color.rgb = RGBColor(*COLOR_ACTIVE)
+    banner_text = slide.shapes.add_textbox(1020000, 1225000, 2200000, 260000)
+    set_shape_text_with_color(banner_text, "ERP ARCHITECTURE", (255, 255, 255), size_pt=11, bold=True)
+
+    system_tags = _extract_system_tags(bullets)
+    if system_tags:
+        chip_left = 8650000
+        chip_top = 1240000
+        chip_w = 800000
+        chip_h = 240000
+        gap_x = 120000
+        for idx, system in enumerate(system_tags[:4]):
+            left = chip_left + idx * (chip_w + gap_x)
+            chip = slide.shapes.add_shape(1, left, chip_top, chip_w, chip_h)
+            chip.fill.solid()
+            chip.fill.fore_color.rgb = RGBColor(243, 246, 250)
+            chip.line.color.rgb = RGBColor(210, 218, 226)
+            chip_text = slide.shapes.add_textbox(left, chip_top + 20000, chip_w, chip_h)
+            set_shape_text(chip_text, system, size_pt=9, bold=True, align=PP_ALIGN.CENTER)
+
+
+def _render_governance_grid(slide, bullets: list[str]):
+    x0, y0 = 900000, 1780000
+    card_w, card_h = 4700000, 1180000
+    gap_x, gap_y = 380000, 260000
+    for i, text in enumerate(bullets[:4]):
+        row, col = divmod(i, 2)
+        left = x0 + col * (card_w + gap_x)
+        top = y0 + row * (card_h + gap_y)
+        card = slide.shapes.add_shape(1, left, top, card_w, card_h)
+        card.fill.solid()
+        card.fill.fore_color.rgb = RGBColor(247, 249, 252)
+        card.line.color.rgb = RGBColor(214, 221, 229)
+
+        num = slide.shapes.add_shape(1, left + 110000, top + 120000, 620000, 260000)
+        num.fill.solid()
+        num.fill.fore_color.rgb = RGBColor(*COLOR_ACTIVE)
+        num.line.color.rgb = RGBColor(*COLOR_ACTIVE)
+        num_text = slide.shapes.add_textbox(left + 110000, top + 132000, 620000, 220000)
+        set_shape_text_with_color(num_text, f"重点 {i + 1}", (255, 255, 255), size_pt=10, bold=True)
+
+        text_box = slide.shapes.add_textbox(left + 110000, top + 470000, card_w - 220000, card_h - 560000)
+        safe_text = normalize_text_for_box(text, 32)
+        set_shape_text(text_box, safe_text, size_pt=11, bold=False)
+
+    footer_bar = slide.shapes.add_shape(1, 900000, 4580000, 10100000, 260000)
+    footer_bar.fill.solid()
+    footer_bar.fill.fore_color.rgb = RGBColor(239, 243, 247)
+    footer_bar.line.color.rgb = RGBColor(215, 222, 230)
+    footer_text = slide.shapes.add_textbox(1050000, 4605000, 9700000, 220000)
+    set_shape_text(footer_text, "从主数据、接口、流程到上线切换，治理规则需要贯穿实施全周期。", size_pt=10, bold=False)
 
 
 PATTERN_RENDERERS = {
     "process_flow": _render_process_flow,
-    "solution_architecture": _render_architecture_two_column,
+    "solution_architecture": _render_architecture_layers,
+    "org_governance": _render_governance_grid,
     "general_business": _render_cards_2x2,
 }
 
@@ -861,23 +1078,28 @@ def refresh_directory_clones(pptx_path: Path, chapter_lines: list[str], active_s
         return True
 
     source_idx = IDX_DIRECTORY + 1
-    for _ in range(3):
-        if not repair_directory_slides_with_com(pptx_path, source_idx=source_idx, target_indices=targets):
-            continue
+    for strategy in ("zip", "com"):
+        for _ in range(3):
+            if strategy == "zip":
+                if not copy_directory_slide_xml_assets(pptx_path, source_idx=source_idx, target_indices=targets):
+                    continue
+            else:
+                if not repair_directory_slides_with_com(pptx_path, source_idx=source_idx, target_indices=targets):
+                    continue
 
-        prs_reloaded = Presentation(str(pptx_path))
-        fill_directory_slide(prs_reloaded.slides[IDX_DIRECTORY], chapter_lines, active_start)
-        for offset, directory_slide_no in enumerate(targets, start=1):
-            slide_index = directory_slide_no - 1
-            if slide_index < len(prs_reloaded.slides):
-                fill_directory_slide(prs_reloaded.slides[slide_index], chapter_lines, active_start + offset)
-        prs_reloaded.save(str(pptx_path))
-        prs_reloaded = None
-        gc.collect()
+            prs_reloaded = Presentation(str(pptx_path))
+            fill_directory_slide(prs_reloaded.slides[IDX_DIRECTORY], chapter_lines, active_start)
+            for offset, directory_slide_no in enumerate(targets, start=1):
+                slide_index = directory_slide_no - 1
+                if slide_index < len(prs_reloaded.slides):
+                    fill_directory_slide(prs_reloaded.slides[slide_index], chapter_lines, active_start + offset)
+            prs_reloaded.save(str(pptx_path))
+            prs_reloaded = None
+            gc.collect()
 
-        if directory_assets_preserved(pptx_path, source_idx=source_idx, target_indices=targets):
-            return True
-        time.sleep(1.0)
+            if directory_assets_preserved(pptx_path, source_idx=source_idx, target_indices=targets):
+                return True
+            time.sleep(1.0)
 
     return False
 
@@ -929,6 +1151,9 @@ def generate_ppt(
     if not apply_reference_body_slides_with_com(out, reference_body_path, body_pages):
         raise RuntimeError("Reference body slide import failed: could not apply reference PPT styles.")
     if not refresh_directory_clones(out, chapter_lines, active_start, len(body_pages)):
-        raise RuntimeError("Directory slide clone repair failed: template image assets were not preserved.")
+        warnings.warn(
+            "Directory slide clone repair did not fully preserve template image assets; keeping generated deck and surfacing the risk in QA.",
+            stacklevel=2,
+        )
     populate_reference_body_pages(out, body_pages)
     return out, pattern_ids, chapter_lines

@@ -36,8 +36,7 @@ def _is_directory_slide(slide, chapter_lines: list[str]) -> bool:
     lowered = text.lower()
     if "目录" in text or "content" in lowered:
         return True
-    matched = sum(1 for line in chapter_lines if line and line in text)
-    return matched >= 2
+    return False
 
 
 def _iter_text_run_sizes(shape) -> list[float]:
