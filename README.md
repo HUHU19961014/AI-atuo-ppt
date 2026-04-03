@@ -1,23 +1,35 @@
 # SIE AutoPPT
 
-`SIE-autoppt` 是一个基于企业模板的 PPT 自动生成项目，当前做法是：
+`SIE-autoppt` 是一个基于企业模板的 PPT 自动生成项目。当前主流程是：
 
-- 从 HTML 输入中提取标题、阶段、场景和关注点。
-- 按模板页角色填充封面主题、目录页和正文页。
-- 根据语义关键词自动挑选版式模式。
-- 产出原生 `.pptx`，并同步生成 QA 报告。
+1. 从 HTML 输入中提取标题、阶段、场景和关注点。
+2. 将内容映射到模板中的主题页、目录页和正文页。
+3. 根据语义关键词选择合适的正文版式。
+4. 输出原生 `.pptx` 和一份 QA 报告。
 
 ## 目录结构
 
 ```text
 SIE-autoppt/
-├─ assets/templates/          # 本地模板备份与模板指纹
+├─ assets/templates/          # 标准模板入口与模板指纹
 ├─ input/                     # HTML 输入样例
-├─ projects/generated/        # 默认输出目录（建议加入 .gitignore）
-├─ skills/sie-autoppt/        # 项目内约束、规则和参考资料
+├─ projects/generated/        # 默认输出目录
+├─ skills/sie-autoppt/        # 规则、参考资料、检查清单
 ├─ tools/sie_autoppt/         # 模块化生成逻辑
 ├─ run_sie_autoppt.ps1        # 一键生成入口
 └─ tools/regression_check.ps1 # 回归检查入口
+```
+
+## 标准模板入口
+
+项目统一使用下面这个模板路径：
+
+`assets/templates/sie_template.pptx`
+
+根目录不再保留重复模板。后续如果替换模板，只更新这一份，并执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\update_template_version.ps1
 ```
 
 ## 快速开始
@@ -32,26 +44,39 @@ python .\tools\sie_autoppt_cli.py `
   --active-start 0
 ```
 
-也可以直接执行：
+或者直接执行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run_sie_autoppt.ps1
 ```
 
+## 输入规范
+
+输入 HTML 的详细字段说明见：
+
+[`docs/INPUT_SPEC.md`](./docs/INPUT_SPEC.md)
+
+当前生成器默认识别这些 class：
+
+- `title`
+- `subtitle`
+- `phase-time`
+- `phase-name`
+- `phase-code`
+- `phase-func`
+- `phase-owner`
+- `scenario`
+- `note`
+- `footer`
+
+如果 HTML 中完全缺少这些内容，程序会直接报错，而不是生成一份空 PPT。
+
 ## 当前实现思路
 
 1. 模板页索引由 `tools/sie_autoppt/config.py` 统一管理。
-2. HTML 内容在 `tools/sie_autoppt/generator.py` 中解析并映射到三类正文页。
+2. HTML 内容在 `tools/sie_autoppt/generator.py` 中解析并映射为正文页数据。
 3. 模式识别配置位于 `skills/sie-autoppt/references/business-slide-patterns.json`。
 4. QA 检查会输出结束页、目录页和潜在文本溢出风险。
-
-## 模板指纹
-
-替换模板后建议立刻更新指纹：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\update_template_version.ps1
-```
 
 ## 回归检查
 
@@ -61,8 +86,9 @@ powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
 
 ## 版本管理建议
 
-建议尽快启用 Git。这个项目已经包含模板、脚本、样例输入和规则文件，多次调整版式与文案时非常容易“改对了但回不去”。至少建议做这三件事：
+当前项目已经启用 Git。建议后续按下面方式迭代：
 
-1. 在项目根目录执行 `git init`。
-2. 先提交一版可运行基线。
-3. 之后每次改模板、改规则、改生成逻辑分开提交。
+1. 改模板单独提交。
+2. 改输入规则或关键词规则单独提交。
+3. 改生成逻辑单独提交。
+4. 每次正式交付前跑一遍回归检查。

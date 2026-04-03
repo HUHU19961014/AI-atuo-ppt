@@ -1,52 +1,39 @@
 # SIE AutoPPT Release Checklist
 
-用于上线前 5-10 分钟快速检查，确保“能生成、可交付、可追溯”。
+用于正式交付前 5 到 10 分钟的快速检查。
 
-## 1) 环境检查
+## 环境检查
 
-- [ ] Python 可用（`python --version`）
-- [ ] `python-pptx` 可导入（`python -c "import pptx"`）
-- [ ] PowerPoint 可正常打开（目录页图片修复依赖 COM）
+- [ ] `python --version` 可正常执行
+- [ ] `python -c "import pptx"` 可正常执行
+- [ ] 本机 PowerPoint 可打开模板
 
-## 2) 资产检查
+## 资产检查
 
-- [ ] 本地模板存在：`assets/templates/sie_template.pptx`
+- [ ] 标准模板存在：`assets/templates/sie_template.pptx`
 - [ ] 模板指纹文件存在：`assets/templates/sie_template.version.txt`
-- [ ] 若模板刚替换，已执行：
-  - `powershell -ExecutionPolicy Bypass -File "tools/update_template_version.ps1"`
+- [ ] 若模板刚替换，已执行 `tools/update_template_version.ps1`
 
-## 3) 回归检查（强制）
+## 回归检查
 
-- [ ] 执行：
-  - `powershell -ExecutionPolicy Bypass -File "tools/regression_check.ps1"`
-- [ ] 结果为 `Regression check passed`
+- [ ] 已执行 `tools/regression_check.ps1`
+- [ ] 控制台出现 `Regression check passed`
 
-## 4) 生成检查
+## 生成检查
 
-- [ ] 执行一键生成：
-  - `powershell -ExecutionPolicy Bypass -File "run_sie_autoppt.ps1" -OutputName "赛意自动化_发布验证" -Chapters 3 -ActiveStart 0`
-- [ ] 控制台出现：
-  - `[OK] Template fingerprint matched.`
-- [ ] 桌面成功生成两个文件：
-  - `*.pptx`
-  - `*_QA.txt`
+- [ ] 已执行 `run_sie_autoppt.ps1`
+- [ ] 成功生成 `.pptx`
+- [ ] 成功生成 `_QA.txt`
 
-## 5) 视觉验收（人工）
+## 视觉验收
 
-- [ ] 首页、主题页、感谢页位置正确且未被破坏
-- [ ] 目录页重复出现，且仅当前章节为红色 `RGB(173,5,61)`
-- [ ] 目录页右上角图片存在（第3/5/7页）
-- [ ] 正文页由正文母页克隆（版式同构）
-- [ ] 文本无明显溢出、遮挡、错位
+- [ ] 主题页、目录页、结束页顺序正确
+- [ ] 目录页高亮章节正确
+- [ ] 正文页无明显文本溢出、遮挡、错位
+- [ ] 模板关键视觉元素没有丢失
 
-## 6) 交付归档
+## 归档
 
-- [ ] 记录本次模板指纹（`sha256`）
-- [ ] 记录输出文件名（带时间戳）
-- [ ] 若发现问题，更新：
-  - `skills/sie-autoppt/references/template-driven-generation.md`
-  - `COMPATIBILITY.md`
-
----
-
-通过标准：以上所有项目均勾选通过，才可进入正式交付。
+- [ ] 记录本次模板指纹
+- [ ] 记录输出文件名
+- [ ] 如发现问题，补充更新文档和规则

@@ -1,55 +1,49 @@
 # Compatibility & Upgrade Policy
 
-本文档用于管理 `SIE-autoppt` 与外部 `ppt-master` 的兼容关系，避免“上游更新后本地流程失效”。
+这份文档用于管理 `SIE-autoppt` 与外部依赖、模板资产之间的兼容关系，避免“某次升级后本地流程失效”。
 
-## 1. 当前架构边界
+## 当前边界
 
-- **外部依赖层（会受上游更新影响）**
-  - `C:\Users\1\Documents\Cursor\ppt-master\skills\ppt-master\scripts\*`
-- **本地固化层（不受上游自动影响）**
+- 外部依赖层
+  - `ppt-master`
+  - 本机 PowerPoint COM 环境
+
+- 本地固化层
+  - `assets/templates/sie_template.pptx`
   - `skills/sie-autoppt/*`
-  - `tools/template_poc_generate.py`
+  - `tools/sie_autoppt/*`
   - `docs/*`
 
-## 2. 已验证基线
+## 当前约束
 
-- 外部依赖路径：`C:\Users\1\Documents\Cursor\ppt-master`
-- 本地模板备份：`assets/templates/sie_template.pptx`（优先使用本地副本）
-- 验证日期：`2026-04-02`
-- 验证能力：
-  - 模板驱动生成（首尾固定、中间自动生成）
-  - 目录重复 + 当前章节高亮
-  - 正文母页克隆
-  - 桌面时间戳输出
+- 标准模板入口固定为 `assets/templates/sie_template.pptx`
+- 更换模板后必须同步更新 `assets/templates/sie_template.version.txt`
+- 生成目录页图片修复时依赖 PowerPoint COM，若环境缺失则会跳过 COM 修复流程
 
-> 每次 `ppt-master` 更新后，必须重新跑回归脚本并更新此文档的“验证日期”。
+## 升级建议
 
-## 3. 升级策略
+### 升级模板
 
-### A. 日常模式（推荐）
+1. 替换 `assets/templates/sie_template.pptx`
+2. 执行 `tools/update_template_version.ps1`
+3. 执行 `tools/regression_check.ps1`
+4. 检查生成结果和 QA 报告
 
-1. 更新 `ppt-master`
-2. 执行 `tools/regression_check.ps1`
-3. 若全部通过，更新“已验证基线”日期
+### 升级外部依赖
 
-### B. 稳定模式（强稳定）
+1. 先确认 `python-pptx` 可正常导入
+2. 再确认 PowerPoint 可以正常打开本地模板
+3. 最后跑一遍回归检查
 
-- 将关键上游脚本镜像到 `SIE-autoppt/vendor/ppt-master/`
-- 仅在人工审核后更新 vendor 版本
+## 通过标准
 
-## 4. 回归通过标准
+- 模板文件存在且指纹一致
+- CLI 可以正常执行
+- 能生成 `.pptx` 和 `_QA.txt`
+- QA 中目录页和结束页检查通过
 
-- [ ] 外部依赖路径存在且可访问
-- [ ] Python 可运行且 `python-pptx` 可导入
-- [ ] 模板文件存在
-- [ ] `template_poc_generate.py` 语法通过
-- [ ] 可成功生成一个桌面时间戳 PPT
+## 常见风险
 
-## 5. 常见故障与处理
-
-- **问题：上游脚本参数变更**
-  - 处理：更新本仓库调用命令并记录到 README
-- **问题：目录页图片丢失**
-  - 处理：确认 COM 复制逻辑生效，不改为普通克隆
-- **问题：章节高亮残留**
-  - 处理：检查“先重置再高亮”是否执行
+- 模板结构变化后，模板页索引不再匹配
+- HTML 输入结构变化后，正文页内容为空
+- 没有 PowerPoint COM 时，目录页复制效果可能与目标模板略有差异

@@ -59,13 +59,52 @@ def extract_phases(html: str) -> list[dict[str, str]]:
     return phases
 
 
-def build_body_pages(html: str) -> list[dict[str, object]]:
-    title = extract_single(html, "title") or "项目概览与UAT阶段计划"
-    subtitle = extract_single(html, "subtitle") or "根据输入 HTML 自动归纳测试章节与核心要点。"
+def validate_html_input(html: str):
+    title = extract_single(html, "title")
+    subtitle = extract_single(html, "subtitle")
     footer = extract_single(html, "footer")
     phases = extract_phases(html)
     scenarios = extract_list(html, "scenario")
     notes = extract_list(html, "note")
+
+    has_meaningful_content = any(
+        [
+            title,
+            subtitle,
+            footer,
+            phases,
+            scenarios,
+            notes,
+        ]
+    )
+    if not has_meaningful_content:
+        raise ValueError(
+            "输入 HTML 未识别到可用内容。请至少提供 title、subtitle、phase-*、scenario、note、footer 中的一部分。"
+        )
+
+    if not phases and not scenarios and not notes:
+        raise ValueError(
+            "输入 HTML 缺少正文内容。请至少补充一组 phase-*、scenario 或 note，才能生成有意义的正文页。"
+        )
+
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        "footer": footer,
+        "phases": phases,
+        "scenarios": scenarios,
+        "notes": notes,
+    }
+
+
+def build_body_pages(html: str) -> list[dict[str, object]]:
+    payload = validate_html_input(html)
+    title = payload["title"] or "项目概览与UAT阶段计划"
+    subtitle = payload["subtitle"] or "根据输入 HTML 自动归纳测试章节与核心要点。"
+    footer = payload["footer"]
+    phases = payload["phases"]
+    scenarios = payload["scenarios"]
+    notes = payload["notes"]
 
     overview_bullets = []
     for phase in phases[:4]:
