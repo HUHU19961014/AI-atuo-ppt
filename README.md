@@ -74,9 +74,10 @@ powershell -ExecutionPolicy Bypass -File .\run_sie_autoppt.ps1
 ## 当前实现思路
 
 1. 模板页索引由 `tools/sie_autoppt/config.py` 统一管理。
-2. HTML 内容在 `tools/sie_autoppt/generator.py` 中解析并映射为正文页数据。
-3. 模式识别配置位于 `skills/sie-autoppt/references/business-slide-patterns.json`。
-4. QA 检查会输出结束页、目录页和潜在文本溢出风险。
+2. HTML 内容先在 `tools/sie_autoppt/generator.py` 中解析为输入载荷，再组装为页面规格。
+3. 页面规格与 PPT 渲染已解耦，后续扩页型时优先改页面构造层，不要直接堆到渲染函数里。
+4. 模式识别配置位于 `skills/sie-autoppt/references/business-slide-patterns.json`。
+5. QA 检查会输出结束页、目录页和潜在文本溢出风险。
 
 ## 回归检查
 

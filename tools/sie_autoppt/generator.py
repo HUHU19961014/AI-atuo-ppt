@@ -3,6 +3,7 @@ import re
 import shutil
 import textwrap
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 
 try:
@@ -28,6 +29,37 @@ from .config import (
 from .patterns import infer_pattern
 
 
+DEFAULT_TITLE = "\u9879\u76ee\u6982\u89c8\u4e0eUAT\u9636\u6bb5\u8ba1\u5212"
+DEFAULT_SUBTITLE = "\u6839\u636e\u8f93\u5165 HTML \u81ea\u52a8\u5f52\u7eb3\u6d4b\u8bd5\u7ae0\u8282\u4e0e\u6838\u5fc3\u8981\u70b9\u3002"
+DEFAULT_SCOPE_TITLE = "\u6d4b\u8bd5\u8303\u56f4\u4e0e\u5173\u952e\u573a\u666f"
+DEFAULT_SCOPE_SUBTITLE = "\u6839\u636e\u8f93\u5165\u573a\u666f\u81ea\u52a8\u5f52\u7eb3\u6d4b\u8bd5\u8986\u76d6\u8303\u56f4\u3002"
+DEFAULT_FOCUS_TITLE = "\u6d4b\u8bd5\u5173\u6ce8\u70b9\u4e0e\u9a8c\u6536\u6807\u51c6"
+DEFAULT_FOCUS_SUBTITLE = "\u6839\u636e\u8f93\u5165\u5173\u6ce8\u70b9\u81ea\u52a8\u751f\u6210\u9a8c\u6536\u63d0\u793a\u3002"
+DEFAULT_SUMMARY_TITLE = "\u603b\u7ed3\u4e0e\u884c\u52a8"
+DEFAULT_EMPTY_OVERVIEW = "\u8865\u5145 phase-* \u5185\u5bb9\u540e\uff0c\u53ef\u81ea\u52a8\u751f\u6210\u9879\u76ee\u6982\u89c8\u9875\u3002"
+DEFAULT_EMPTY_SCOPE = "\u8865\u5145 scenario \u5185\u5bb9\u540e\uff0c\u53ef\u81ea\u52a8\u751f\u6210\u6d4b\u8bd5\u8303\u56f4\u4e0e\u5173\u952e\u573a\u666f\u9875\u3002"
+DEFAULT_EMPTY_FOCUS = "\u8865\u5145 note \u6216 footer \u5185\u5bb9\u540e\uff0c\u53ef\u81ea\u52a8\u751f\u6210\u6d4b\u8bd5\u5173\u6ce8\u70b9\u4e0e\u9a8c\u6536\u6807\u51c6\u9875\u3002"
+
+
+@dataclass(frozen=True)
+class InputPayload:
+    title: str
+    subtitle: str
+    footer: str
+    phases: list[dict[str, str]]
+    scenarios: list[str]
+    notes: list[str]
+
+
+@dataclass(frozen=True)
+class BodyPageSpec:
+    page_key: str
+    title: str
+    subtitle: str
+    bullets: list[str]
+    pattern_id: str
+
+
 def strip_tags(s: str) -> str:
     return re.sub(r"<.*?>", "", s).strip()
 
@@ -42,11 +74,11 @@ def extract_list(html: str, cls: str) -> list[str]:
 
 
 def extract_phases(html: str) -> list[dict[str, str]]:
-    keys = ("phase-time", "phase-name", "phase-code", "phase-func", "phase-owner")
-    values = {key: extract_list(html, key) for key in keys}
-    count = max((len(items) for items in values.values()), default=0)
+    phase_keys = ("phase-time", "phase-name", "phase-code", "phase-func", "phase-owner")
+    values = {key: extract_list(html, key) for key in phase_keys}
+    phase_count = max((len(items) for items in values.values()), default=0)
     phases = []
-    for index in range(count):
+    for index in range(phase_count):
         phase = {
             "time": values["phase-time"][index] if index < len(values["phase-time"]) else "",
             "name": values["phase-name"][index] if index < len(values["phase-name"]) else "",
@@ -59,105 +91,117 @@ def extract_phases(html: str) -> list[dict[str, str]]:
     return phases
 
 
-def validate_html_input(html: str):
-    title = extract_single(html, "title")
-    subtitle = extract_single(html, "subtitle")
-    footer = extract_single(html, "footer")
-    phases = extract_phases(html)
-    scenarios = extract_list(html, "scenario")
-    notes = extract_list(html, "note")
+def parse_html_payload(html: str) -> InputPayload:
+    return InputPayload(
+        title=extract_single(html, "title"),
+        subtitle=extract_single(html, "subtitle"),
+        footer=extract_single(html, "footer"),
+        phases=extract_phases(html),
+        scenarios=extract_list(html, "scenario"),
+        notes=extract_list(html, "note"),
+    )
 
+
+def validate_payload(payload: InputPayload):
     has_meaningful_content = any(
         [
-            title,
-            subtitle,
-            footer,
-            phases,
-            scenarios,
-            notes,
+            payload.title,
+            payload.subtitle,
+            payload.footer,
+            payload.phases,
+            payload.scenarios,
+            payload.notes,
         ]
     )
     if not has_meaningful_content:
         raise ValueError(
-            "输入 HTML 未识别到可用内容。请至少提供 title、subtitle、phase-*、scenario、note、footer 中的一部分。"
+            "\u8f93\u5165 HTML \u672a\u8bc6\u522b\u5230\u53ef\u7528\u5185\u5bb9\u3002\u8bf7\u81f3\u5c11\u63d0\u4f9b title\u3001subtitle\u3001phase-*\u3001scenario\u3001note\u3001footer \u4e2d\u7684\u4e00\u90e8\u5206\u3002"
         )
 
-    if not phases and not scenarios and not notes:
+    if not payload.phases and not payload.scenarios and not payload.notes:
         raise ValueError(
-            "输入 HTML 缺少正文内容。请至少补充一组 phase-*、scenario 或 note，才能生成有意义的正文页。"
+            "\u8f93\u5165 HTML \u7f3a\u5c11\u6b63\u6587\u5185\u5bb9\u3002\u8bf7\u81f3\u5c11\u8865\u5145\u4e00\u7ec4 phase-*\u3001scenario \u6216 note\uff0c\u624d\u80fd\u751f\u6210\u6709\u610f\u4e49\u7684\u6b63\u6587\u9875\u3002"
         )
 
-    return {
-        "title": title,
-        "subtitle": subtitle,
-        "footer": footer,
-        "phases": phases,
-        "scenarios": scenarios,
-        "notes": notes,
-    }
+
+def format_phase_summary(phase: dict[str, str]) -> str:
+    prefix = phase["name"]
+    if phase["time"]:
+        prefix = f"{prefix}\uff08{phase['time']}\uff09" if prefix else phase["time"]
+    detail = phase["func"] or phase["code"] or phase["owner"]
+    return f"{prefix}\uff1a{detail}".strip("\uff1a")
 
 
-def build_body_pages(html: str) -> list[dict[str, object]]:
-    payload = validate_html_input(html)
-    title = payload["title"] or "项目概览与UAT阶段计划"
-    subtitle = payload["subtitle"] or "根据输入 HTML 自动归纳测试章节与核心要点。"
-    footer = payload["footer"]
-    phases = payload["phases"]
-    scenarios = payload["scenarios"]
-    notes = payload["notes"]
+def build_overview_bullets(payload: InputPayload) -> list[str]:
+    bullets = [format_phase_summary(phase) for phase in payload.phases[:4] if format_phase_summary(phase)]
+    if bullets:
+        return bullets
+    fallbacks = [item for item in (payload.subtitle, payload.footer) if item][:4]
+    return fallbacks or [DEFAULT_EMPTY_OVERVIEW]
 
-    overview_bullets = []
-    for phase in phases[:4]:
-        prefix = phase["name"]
-        if phase["time"]:
-            prefix = f"{prefix}（{phase['time']}）" if prefix else phase["time"]
-        detail = phase["func"] or phase["code"] or phase["owner"]
-        bullet = f"{prefix}：{detail}".strip("：")
-        if bullet:
-            overview_bullets.append(bullet)
-    if not overview_bullets:
-        overview_bullets = [item for item in (subtitle, footer) if item][:4]
-    if not overview_bullets:
-        overview_bullets = ["补充 phase-* 内容后，可自动生成项目概览页。"]
 
-    scope_bullets = scenarios[:4] or [phase["name"] for phase in phases if phase["name"]][:4]
-    if not scope_bullets:
-        scope_bullets = ["补充 scenario 内容后，可自动生成测试范围与关键场景页。"]
+def build_scope_bullets(payload: InputPayload) -> list[str]:
+    bullets = payload.scenarios[:4]
+    if bullets:
+        return bullets
+    phase_names = [phase["name"] for phase in payload.phases if phase["name"]][:4]
+    return phase_names or [DEFAULT_EMPTY_SCOPE]
 
-    focus_bullets = notes[:4]
-    if footer:
-        focus_bullets.append(footer)
-    focus_bullets = focus_bullets[:4]
-    if not focus_bullets:
-        focus_bullets = ["补充 note 或 footer 内容后，可自动生成测试关注点与验收标准页。"]
+
+def build_focus_bullets(payload: InputPayload) -> list[str]:
+    bullets = payload.notes[:4]
+    if payload.footer and payload.footer not in bullets:
+        bullets.append(payload.footer)
+    bullets = bullets[:4]
+    return bullets or [DEFAULT_EMPTY_FOCUS]
+
+
+def build_page_specs(payload: InputPayload, chapters: int) -> list[BodyPageSpec]:
+    requested_chapters = max(1, min(chapters, 3))
+    page_specs = [
+        BodyPageSpec(
+            page_key="overview",
+            title=payload.title or DEFAULT_TITLE,
+            subtitle=payload.subtitle or DEFAULT_SUBTITLE,
+            bullets=build_overview_bullets(payload),
+            pattern_id="general_business",
+        ),
+        BodyPageSpec(
+            page_key="scope",
+            title=DEFAULT_SCOPE_TITLE,
+            subtitle=DEFAULT_SCOPE_SUBTITLE,
+            bullets=build_scope_bullets(payload),
+            pattern_id="general_business",
+        ),
+        BodyPageSpec(
+            page_key="focus",
+            title=DEFAULT_FOCUS_TITLE,
+            subtitle=payload.footer or DEFAULT_FOCUS_SUBTITLE,
+            bullets=build_focus_bullets(payload),
+            pattern_id="general_business",
+        ),
+    ][:requested_chapters]
 
     return [
-        {
-            "title": title,
-            "subtitle": subtitle,
-            "bullets": overview_bullets,
-        },
-        {
-            "title": "测试范围与关键场景",
-            "subtitle": "根据输入场景自动归纳测试覆盖范围。",
-            "bullets": scope_bullets,
-        },
-        {
-            "title": "测试关注点与验收标准",
-            "subtitle": footer or "根据输入关注点自动生成验收提示。",
-            "bullets": focus_bullets,
-        },
+        BodyPageSpec(
+            page_key=page.page_key,
+            title=page.title,
+            subtitle=page.subtitle,
+            bullets=page.bullets,
+            pattern_id=infer_pattern(page.title, page.bullets),
+        )
+        for page in page_specs
     ]
 
 
-def build_directory_lines(body_pages: list[dict[str, object]]) -> list[str]:
-    lines = [str(page["title"]) for page in body_pages[:5]]
-    for fallback in ("总结与行动", "Q&A"):
+def build_directory_lines(body_pages: list[BodyPageSpec]) -> list[str]:
+    lines = [page.title for page in body_pages[:5]]
+    for fallback in (DEFAULT_SUMMARY_TITLE, "Q&A"):
         if len(lines) >= 5:
             break
         lines.append(fallback)
     while len(lines) < 5:
-        lines.append(f"章节{len(lines) + 1}")
+        lines.append(f"\u7ae0\u8282{len(lines) + 1}")
     return lines[:5]
 
 
@@ -308,7 +352,7 @@ def repair_directory_slides_with_com(pptx_path: Path, source_idx: int, target_in
         app.Quit()
 
 
-def _render_cards_2x2(slide, bullets):
+def _render_cards_2x2(slide, bullets: list[str]):
     x0, y0 = 576088, 1450000
     card_w, card_h = 5000000, 1200000
     gap_x, gap_y = 350000, 260000
@@ -326,7 +370,7 @@ def _render_cards_2x2(slide, bullets):
         set_shape_text(textbox, safe_text, size_pt=font_size, bold=False)
 
 
-def _render_process_flow(slide, bullets):
+def _render_process_flow(slide, bullets: list[str]):
     start_x, y = 620000, 2050000
     step_w, step_h, gap = 2500000, 1200000, 220000
     for i, text in enumerate(bullets[:4]):
@@ -342,7 +386,7 @@ def _render_process_flow(slide, bullets):
         set_shape_text(textbox, safe_text, size_pt=11, bold=False)
 
 
-def _render_architecture_two_column(slide, bullets):
+def _render_architecture_two_column(slide, bullets: list[str]):
     left_x, right_x = 700000, 6200000
     y0, row_h = 1850000, 900000
     for i, text in enumerate(bullets[:4]):
@@ -352,7 +396,7 @@ def _render_architecture_two_column(slide, bullets):
         left_box.fill.fore_color.rgb = RGBColor(245, 247, 250)
         left_box.line.color.rgb = RGBColor(215, 222, 230)
         left_text = slide.shapes.add_textbox(left_x + 160000, y + 180000, 4680000, 360000)
-        set_shape_text(left_text, f"模块{i + 1}", size_pt=12, bold=True)
+        set_shape_text(left_text, f"\u6a21\u5757{i + 1}", size_pt=12, bold=True)
 
         right_box = slide.shapes.add_shape(1, right_x, y, 5000000, 680000)
         right_box.fill.solid()
@@ -361,6 +405,13 @@ def _render_architecture_two_column(slide, bullets):
         right_text = slide.shapes.add_textbox(right_x + 160000, y + 140000, 4680000, 420000)
         safe_text = normalize_text_for_box(text, 34)
         set_shape_text(right_text, safe_text, size_pt=11, bold=False)
+
+
+PATTERN_RENDERERS = {
+    "process_flow": _render_process_flow,
+    "solution_architecture": _render_architecture_two_column,
+    "general_business": _render_cards_2x2,
+}
 
 
 def _clear_body_render_area(slide):
@@ -373,14 +424,14 @@ def _clear_body_render_area(slide):
         element.getparent().remove(element)
 
 
-def fill_body_slide(slide, page_title: str, page_subtitle: str, bullets, pattern_id: str = "general_business"):
+def fill_body_slide(slide, page: BodyPageSpec):
     texts = sorted(pick_text_shapes(slide), key=lambda shape: (shape.top, shape.left))
     title_candidates = [shape for shape in texts if shape.top < 300000 and shape.width > 7000000]
     if title_candidates:
-        replace_text_preserve_runs(title_candidates[0], page_title, force_color=COLOR_ACTIVE)
+        replace_text_preserve_runs(title_candidates[0], page.title, force_color=COLOR_ACTIVE)
     else:
         textbox = slide.shapes.add_textbox(166370, 36830, 10034086, 480060)
-        set_shape_text_with_color(textbox, page_title, COLOR_ACTIVE, size_pt=24, bold=True)
+        set_shape_text_with_color(textbox, page.title, COLOR_ACTIVE, size_pt=24, bold=True)
 
     subtitle_candidates = [
         shape
@@ -388,15 +439,11 @@ def fill_body_slide(slide, page_title: str, page_subtitle: str, bullets, pattern
         if 300000 < shape.top < 1600000 and shape.width > 7000000 and shape not in title_candidates
     ]
     if subtitle_candidates:
-        replace_text_preserve_runs(subtitle_candidates[0], page_subtitle)
+        replace_text_preserve_runs(subtitle_candidates[0], page.subtitle)
 
     _clear_body_render_area(slide)
-    if pattern_id == "process_flow":
-        _render_process_flow(slide, bullets)
-    elif pattern_id == "solution_architecture":
-        _render_architecture_two_column(slide, bullets)
-    else:
-        _render_cards_2x2(slide, bullets)
+    renderer = PATTERN_RENDERERS.get(page.pattern_id, _render_cards_2x2)
+    renderer(slide, page.bullets)
 
 
 def build_output_path(output_dir: Path, output_prefix: str) -> Path:
@@ -404,6 +451,45 @@ def build_output_path(output_dir: Path, output_prefix: str) -> Path:
     safe_prefix = re.sub(r'[<>:"/\\\\|?*]+', "_", output_prefix).strip(" ._") or "SIE_AutoPPT"
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
     return output_dir / f"{safe_prefix}_{timestamp}.pptx"
+
+
+def apply_theme_title(prs: Presentation, title: str):
+    theme_texts = pick_text_shapes(prs.slides[IDX_THEME])
+    title_candidates = [shape for shape in theme_texts if 1500000 < shape.top < 2300000 and shape.width > 5000000]
+    if title_candidates:
+        main_title = max(title_candidates, key=lambda shape: shape.width)
+        set_shape_text_with_color(main_title, title, COLOR_ACTIVE)
+
+
+def render_body_pages(prs: Presentation, body_pages: list[BodyPageSpec], chapter_lines: list[str], active_start: int):
+    fill_directory_slide(prs.slides[IDX_DIRECTORY], chapter_lines, active_start)
+    fill_body_slide(prs.slides[IDX_BODY_TEMPLATE], body_pages[0])
+
+    insert_after = IDX_BODY_TEMPLATE
+    for chapter_idx, page in enumerate(body_pages[1:], start=1):
+        new_directory = clone_slide_after(prs, IDX_DIRECTORY, insert_after, keep_rel_ids=True)
+        fill_directory_slide(new_directory, chapter_lines, active_start + chapter_idx)
+        insert_after += 1
+
+        new_body = clone_slide_after(prs, IDX_BODY_TEMPLATE, insert_after, keep_rel_ids=False)
+        fill_body_slide(new_body, page)
+        insert_after += 1
+
+
+def refresh_directory_clones(pptx_path: Path, chapter_lines: list[str], active_start: int, body_page_count: int):
+    targets = [IDX_DIRECTORY + 1 + i * 2 for i in range(1, body_page_count)]
+    if not targets:
+        return
+    if not repair_directory_slides_with_com(pptx_path, source_idx=IDX_DIRECTORY + 1, target_indices=targets):
+        return
+
+    prs_reloaded = Presentation(str(pptx_path))
+    fill_directory_slide(prs_reloaded.slides[IDX_DIRECTORY], chapter_lines, active_start)
+    for offset, directory_slide_no in enumerate(targets, start=1):
+        slide_index = directory_slide_no - 1
+        if slide_index < len(prs_reloaded.slides):
+            fill_directory_slide(prs_reloaded.slides[slide_index], chapter_lines, active_start + offset)
+    prs_reloaded.save(str(pptx_path))
 
 
 def generate_ppt(
@@ -420,10 +506,11 @@ def generate_ppt(
         raise FileNotFoundError(f"HTML not found: {html_path}")
 
     html = html_path.read_text(encoding="utf-8")
-    requested_chapters = max(1, min(chapters, 3))
-    body_pages = build_body_pages(html)[:requested_chapters]
-    pattern_ids = [infer_pattern(str(page["title"]), list(page["bullets"])) for page in body_pages]
+    payload = parse_html_payload(html)
+    validate_payload(payload)
+    body_pages = build_page_specs(payload, chapters)
     chapter_lines = build_directory_lines(body_pages)
+    pattern_ids = [page.pattern_id for page in body_pages]
 
     final_output_dir = output_dir or DEFAULT_OUTPUT_DIR
     out = build_output_path(final_output_dir, output_prefix)
@@ -431,52 +518,15 @@ def generate_ppt(
 
     prs = Presentation(str(out))
     if len(prs.slides) < DEFAULT_MIN_TEMPLATE_SLIDES:
-        raise ValueError(f"模板页数不足，至少需要 {DEFAULT_MIN_TEMPLATE_SLIDES} 页，实际为 {len(prs.slides)} 页。")
-
-    theme_texts = pick_text_shapes(prs.slides[IDX_THEME])
-    title_candidates = [shape for shape in theme_texts if 1500000 < shape.top < 2300000 and shape.width > 5000000]
-    if title_candidates:
-        main_title = max(title_candidates, key=lambda shape: shape.width)
-        set_shape_text_with_color(main_title, str(body_pages[0]["title"]), COLOR_ACTIVE)
-
-    fill_directory_slide(prs.slides[IDX_DIRECTORY], chapter_lines, active_start)
-
-    thanks_slide_id = int(prs.slides._sldIdLst[len(prs.slides) - 1].id)
-    fill_body_slide(
-        prs.slides[IDX_BODY_TEMPLATE],
-        str(body_pages[0]["title"]),
-        str(body_pages[0]["subtitle"]),
-        list(body_pages[0]["bullets"]),
-        pattern_id=pattern_ids[0],
-    )
-
-    insert_after = IDX_BODY_TEMPLATE
-    for chapter_idx, page in enumerate(body_pages[1:], start=1):
-        new_directory = clone_slide_after(prs, IDX_DIRECTORY, insert_after, keep_rel_ids=True)
-        fill_directory_slide(new_directory, chapter_lines, active_start + chapter_idx)
-        insert_after += 1
-
-        new_body = clone_slide_after(prs, IDX_BODY_TEMPLATE, insert_after, keep_rel_ids=False)
-        fill_body_slide(
-            new_body,
-            str(page["title"]),
-            str(page["subtitle"]),
-            list(page["bullets"]),
-            pattern_id=pattern_ids[chapter_idx],
+        raise ValueError(
+            f"\u6a21\u677f\u9875\u6570\u4e0d\u8db3\uff0c\u81f3\u5c11\u9700\u8981 {DEFAULT_MIN_TEMPLATE_SLIDES} \u9875\uff0c\u5b9e\u9645\u4e3a {len(prs.slides)} \u9875\u3002"
         )
-        insert_after += 1
 
+    apply_theme_title(prs, body_pages[0].title)
+    thanks_slide_id = int(prs.slides._sldIdLst[len(prs.slides) - 1].id)
+    render_body_pages(prs, body_pages, chapter_lines, active_start)
     ensure_last_slide_is_thanks(prs, thanks_slide_id)
     prs.save(str(out))
 
-    targets = [IDX_DIRECTORY + 1 + i * 2 for i in range(1, len(body_pages))]
-    if targets and repair_directory_slides_with_com(out, source_idx=IDX_DIRECTORY + 1, target_indices=targets):
-        prs_reloaded = Presentation(str(out))
-        fill_directory_slide(prs_reloaded.slides[IDX_DIRECTORY], chapter_lines, active_start)
-        for offset, directory_slide_no in enumerate(targets, start=1):
-            slide_index = directory_slide_no - 1
-            if slide_index < len(prs_reloaded.slides):
-                fill_directory_slide(prs_reloaded.slides[slide_index], chapter_lines, active_start + offset)
-        prs_reloaded.save(str(out))
-
+    refresh_directory_clones(out, chapter_lines, active_start, len(body_pages))
     return out, pattern_ids, chapter_lines
