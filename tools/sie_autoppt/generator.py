@@ -32,9 +32,8 @@ from .config import (
     IDX_BODY_TEMPLATE,
     IDX_DIRECTORY,
     IDX_THEME,
-    MAX_BODY_CHAPTERS,
 )
-from .patterns import infer_pattern
+from .pipeline import plan_deck_from_html
 from .reference_styles import build_reference_import_plan, populate_reference_body_pages
 
 
@@ -1118,17 +1117,11 @@ def generate_ppt(
     if not html_path.exists():
         raise FileNotFoundError(f"HTML not found: {html_path}")
 
-    html = html_path.read_text(encoding="utf-8")
-    specialized_deck = build_card_analysis_page_specs(html, chapters)
-    if specialized_deck:
-        deck = specialized_deck
-    else:
-        payload = parse_html_payload(html)
-        validate_payload(payload)
-        deck = build_page_specs(payload, chapters)
+    deck_plan = plan_deck_from_html(html_path, chapters)
+    deck = deck_plan.deck
     body_pages = deck.body_pages
-    chapter_lines = build_directory_lines(body_pages)
-    pattern_ids = [page.pattern_id for page in body_pages]
+    chapter_lines = deck_plan.chapter_lines
+    pattern_ids = deck_plan.pattern_ids
 
     final_output_dir = output_dir or DEFAULT_OUTPUT_DIR
     out = build_output_path(final_output_dir, output_prefix)
