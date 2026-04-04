@@ -35,6 +35,7 @@ def main():
         len(pattern_ids),
         pattern_ids=pattern_ids,
         chapter_lines=chapter_lines,
+        template_path=Path(args.template),
     )
     print(str(report))
     print(str(out))

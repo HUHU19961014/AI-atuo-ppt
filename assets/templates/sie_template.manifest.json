@@ -1,0 +1,47 @@
+{
+  "version": "1.0",
+  "template_name": "sie_template",
+  "slide_roles": {
+    "welcome": 0,
+    "theme": 1,
+    "directory": 2,
+    "body_template": 3
+  },
+  "selectors": {
+    "theme_title": {
+      "min_top": 1500000,
+      "max_top": 2300000,
+      "min_width": 5000000
+    },
+    "directory_title": {
+      "min_top": 1800000,
+      "max_top": 5200000,
+      "min_width": 3000000
+    },
+    "body_title": {
+      "max_top": 300000,
+      "min_width": 7000000
+    },
+    "body_subtitle": {
+      "min_top": 300000,
+      "max_top": 1600000,
+      "min_width": 7000000
+    },
+    "body_render_area": {
+      "min_top": 1200000,
+      "max_top": 6200000
+    }
+  },
+  "fallback_boxes": {
+    "body_title": {
+      "left": 166370,
+      "top": 36830,
+      "width": 10034086,
+      "height": 480060
+    }
+  },
+  "fonts": {
+    "theme_title_pt": 40,
+    "directory_title_pt": 24
+  }
+}

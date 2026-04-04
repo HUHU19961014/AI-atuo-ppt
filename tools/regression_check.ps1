@@ -53,6 +53,31 @@ function Assert-ExpectedFailure($caseName) {
   }
 }
 
+function Assert-QAJson($reportPath, $caseName) {
+  $script = @"
+import json
+from pathlib import Path
+
+qa = json.loads(Path(r'''$reportPath''').read_text(encoding='utf-8'))
+if not qa.get('schema_version'):
+    raise SystemExit('schema_version missing')
+if not qa.get('template_manifest_path'):
+    raise SystemExit('template_manifest_path missing')
+if not qa.get('template_name'):
+    raise SystemExit('template_name missing')
+checks = qa.get('checks', {})
+if checks.get('theme_title_font') != 'PASS':
+    raise SystemExit('theme title font check did not pass')
+if checks.get('directory_title_font') != 'PASS':
+    raise SystemExit('directory title font check did not pass')
+print('ok')
+"@
+  $output = @($script | python -) 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "QA JSON failed for ${caseName}: $($output -join ' ')"
+  }
+}
+
 Assert-Path $TemplatePath "Template"
 Assert-Path $InputDir "Input directory"
 Assert-Path (Join-Path $ProjectRoot "tools\sie_autoppt_cli.py") "CLI entry"
@@ -122,9 +147,12 @@ foreach ($case in $cases) {
 
   $reportPath = $cleanLines[0].Trim()
   $pptxPath = $cleanLines[1].Trim()
+  $jsonReportPath = [System.IO.Path]::ChangeExtension($reportPath, ".json")
   Assert-Path $reportPath "QA report for $caseName"
+  Assert-Path $jsonReportPath "QA JSON report for $caseName"
   Assert-Path $pptxPath "PPT output for $caseName"
   Assert-QA $reportPath $caseName
+  Assert-QAJson $jsonReportPath $caseName
   Write-Host ("[OK] Case passed: {0}" -f $caseName)
 }
 

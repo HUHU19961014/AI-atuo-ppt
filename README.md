@@ -26,6 +26,8 @@ SIE-autoppt/
 
 `assets/templates/sie_template.pptx`
 
+`assets/templates/sie_template.manifest.json`
+
 根目录不再保留重复模板。后续如果替换模板，只更新这一份，并执行：
 
 ```powershell
@@ -80,7 +82,7 @@ powershell -ExecutionPolicy Bypass -File .\run_sie_autoppt.ps1
 
 ## 当前实现思路
 
-1. 模板页索引由 `tools/sie_autoppt/config.py` 统一管理。
+1. 模板页角色、shape selector 与 QA 字体期望由 `assets/templates/sie_template.manifest.json` 统一管理，加载逻辑位于 `tools/sie_autoppt/template_manifest.py`。
 2. HTML 内容先在 `tools/sie_autoppt/generator.py` 中解析为输入载荷，再组装为页面规格。
 3. 页面规格与 PPT 渲染已解耦，后续扩页型时优先改页面构造层，不要直接堆到渲染函数里。
 4. 模式识别配置位于 `skills/sie-autoppt/references/business-slide-patterns.json`。

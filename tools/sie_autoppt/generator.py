@@ -28,25 +28,11 @@ from .config import (
     DEFAULT_MIN_TEMPLATE_SLIDES,
     DEFAULT_OUTPUT_DIR,
     FONT_NAME,
-    IDX_BODY_TEMPLATE,
-    IDX_DIRECTORY,
-    IDX_THEME,
 )
 from .models import BodyPageSpec
 from .pipeline import plan_deck_from_html
 from .reference_styles import build_reference_import_plan, populate_reference_body_pages
-from .template_manifest import (
-    BODY_RENDER_AREA_BOUNDS,
-    BODY_SUBTITLE_BOUNDS,
-    BODY_TITLE_BOUNDS,
-    BODY_TITLE_FALLBACK_BOX,
-    DIRECTORY_TITLE_BOUNDS,
-    THEME_TITLE_BOUNDS,
-)
-
-
-THEME_TITLE_FONT_PT = 40
-DIRECTORY_TITLE_FONT_PT = 24
+from .template_manifest import TemplateManifest, load_template_manifest
 
 
 def set_shape_text(shape, text: str, size_pt: int = 18, bold: bool = False, align=PP_ALIGN.LEFT):
@@ -181,9 +167,9 @@ def ensure_last_slide_is_thanks(prs: Presentation, thanks_slide_id: int):
     slide_id_list.append(target)
 
 
-def fill_directory_slide(slide, chapter_lines, active_chapter_index: int):
+def fill_directory_slide(slide, chapter_lines, active_chapter_index: int, manifest: TemplateManifest):
     texts = sorted(pick_text_shapes(slide), key=lambda shape: (shape.top, shape.left))
-    title_boxes = [shape for shape in texts if DIRECTORY_TITLE_BOUNDS.matches(shape)]
+    title_boxes = [shape for shape in texts if manifest.selectors.directory_title.matches(shape)]
     title_boxes = sorted(title_boxes, key=lambda shape: (shape.top, shape.left))
     safe_active_index = max(0, min(active_chapter_index, len(chapter_lines) - 1))
     for i, shape in enumerate(title_boxes[: len(chapter_lines)]):
@@ -192,7 +178,7 @@ def fill_directory_slide(slide, chapter_lines, active_chapter_index: int):
             shape,
             chapter_lines[i],
             force_color=color,
-            font_size_pt=DIRECTORY_TITLE_FONT_PT,
+            font_size_pt=int(manifest.fonts.directory_title_pt),
         )
 
 
@@ -306,12 +292,28 @@ def copy_directory_slide_xml_assets(pptx_path: Path, source_idx: int, target_ind
                 if target_rel_name not in source_package.namelist():
                     rebuilt.writestr(target_rel_name, data)
 
-    rebuilt_path.replace(pptx_path)
+    last_error = None
+    for _ in range(10):
+        try:
+            rebuilt_path.replace(pptx_path)
+            return True
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(0.5)
+    if rebuilt_path.exists():
+        rebuilt_path.unlink(missing_ok=True)
+    if last_error is not None:
+        raise last_error
     return True
 
 
-def apply_reference_body_slides_with_com(pptx_path: Path, reference_body_path: Path | None, body_pages: list[BodyPageSpec]) -> bool:
-    import_plan = build_reference_import_plan(body_pages)
+def apply_reference_body_slides_with_com(
+    pptx_path: Path,
+    reference_body_path: Path | None,
+    body_pages: list[BodyPageSpec],
+    manifest: TemplateManifest,
+) -> bool:
+    import_plan = build_reference_import_plan(body_pages, manifest=manifest)
     if not import_plan:
         return True
     if win32com is None or reference_body_path is None or not reference_body_path.exists():
@@ -504,22 +506,22 @@ PATTERN_RENDERERS = {
 }
 
 
-def _clear_body_render_area(slide, protected_shapes=None):
+def _clear_body_render_area(slide, manifest: TemplateManifest, protected_shapes=None):
     protected_shapes = list(protected_shapes or [])
     removable = []
     for shape in slide.shapes:
         if any(shape is protected for protected in protected_shapes):
             continue
-        if BODY_RENDER_AREA_BOUNDS.matches(shape):
+        if manifest.selectors.body_render_area.matches(shape):
             removable.append(shape)
     for shape in removable:
         element = shape._element
         element.getparent().remove(element)
 
 
-def fill_body_slide(slide, page: BodyPageSpec):
+def fill_body_slide(slide, page: BodyPageSpec, manifest: TemplateManifest):
     texts = sorted(pick_text_shapes(slide), key=lambda shape: (shape.top, shape.left))
-    title_candidates = [shape for shape in texts if BODY_TITLE_BOUNDS.matches(shape)]
+    title_candidates = [shape for shape in texts if manifest.selectors.body_title.matches(shape)]
     if title_candidates:
         replace_text_preserve_runs(
             title_candidates[0],
@@ -529,10 +531,10 @@ def fill_body_slide(slide, page: BodyPageSpec):
         )
     else:
         textbox = slide.shapes.add_textbox(
-            BODY_TITLE_FALLBACK_BOX.left,
-            BODY_TITLE_FALLBACK_BOX.top,
-            BODY_TITLE_FALLBACK_BOX.width,
-            BODY_TITLE_FALLBACK_BOX.height,
+            manifest.fallback_boxes.body_title.left,
+            manifest.fallback_boxes.body_title.top,
+            manifest.fallback_boxes.body_title.width,
+            manifest.fallback_boxes.body_title.height,
         )
         set_shape_text_with_color(
             textbox,
@@ -545,13 +547,13 @@ def fill_body_slide(slide, page: BodyPageSpec):
     subtitle_candidates = [
         shape
         for shape in texts
-        if BODY_SUBTITLE_BOUNDS.matches(shape) and shape not in title_candidates
+        if manifest.selectors.body_subtitle.matches(shape) and shape not in title_candidates
     ]
     if subtitle_candidates:
         replace_text_preserve_runs(subtitle_candidates[0], page.subtitle)
 
     protected_shapes = title_candidates + subtitle_candidates[:1]
-    _clear_body_render_area(slide, protected_shapes=protected_shapes)
+    _clear_body_render_area(slide, manifest, protected_shapes=protected_shapes)
     renderer = PATTERN_RENDERERS.get(page.pattern_id, _render_cards_2x2)
     renderer(slide, page.bullets)
 
@@ -563,41 +565,50 @@ def build_output_path(output_dir: Path, output_prefix: str) -> Path:
     return output_dir / f"{safe_prefix}_{timestamp}.pptx"
 
 
-def apply_theme_title(prs: Presentation, title: str):
-    theme_texts = pick_text_shapes(prs.slides[IDX_THEME])
-    title_candidates = [shape for shape in theme_texts if THEME_TITLE_BOUNDS.matches(shape)]
+def apply_theme_title(prs: Presentation, title: str, manifest: TemplateManifest):
+    theme_texts = pick_text_shapes(prs.slides[manifest.slide_roles.theme])
+    title_candidates = [shape for shape in theme_texts if manifest.selectors.theme_title.matches(shape)]
     if title_candidates:
         main_title = max(title_candidates, key=lambda shape: shape.width)
-        set_shape_text_with_color(main_title, title, COLOR_ACTIVE, size_pt=THEME_TITLE_FONT_PT)
+        set_shape_text_with_color(main_title, title, COLOR_ACTIVE, size_pt=int(manifest.fonts.theme_title_pt))
 
 
-def render_body_pages(prs: Presentation, body_pages: list[BodyPageSpec], chapter_lines: list[str], active_start: int):
-    directory_slides = [prs.slides[IDX_DIRECTORY]]
-    body_slides = [prs.slides[IDX_BODY_TEMPLATE]]
-    insert_after = IDX_BODY_TEMPLATE
+def render_body_pages(prs: Presentation, body_pages: list[BodyPageSpec], chapter_lines: list[str], active_start: int, manifest: TemplateManifest):
+    directory_idx = manifest.slide_roles.directory
+    body_template_idx = manifest.slide_roles.body_template
+    directory_slides = [prs.slides[directory_idx]]
+    body_slides = [prs.slides[body_template_idx]]
+    insert_after = body_template_idx
     for _ in body_pages[1:]:
-        new_directory = clone_slide_after(prs, IDX_DIRECTORY, insert_after, keep_rel_ids=True)
+        new_directory = clone_slide_after(prs, directory_idx, insert_after, keep_rel_ids=True)
         directory_slides.append(new_directory)
         insert_after += 1
 
-        new_body = clone_slide_after(prs, IDX_BODY_TEMPLATE, insert_after, keep_rel_ids=False)
+        new_body = clone_slide_after(prs, body_template_idx, insert_after, keep_rel_ids=False)
         body_slides.append(new_body)
         insert_after += 1
 
     for chapter_idx, directory_slide in enumerate(directory_slides):
-        fill_directory_slide(directory_slide, chapter_lines, active_start + chapter_idx)
+        fill_directory_slide(directory_slide, chapter_lines, active_start + chapter_idx, manifest)
     for page, body_slide in zip(body_pages, body_slides):
         if page.reference_style_id:
             continue
-        fill_body_slide(body_slide, page)
+        fill_body_slide(body_slide, page, manifest)
 
 
-def refresh_directory_clones(pptx_path: Path, chapter_lines: list[str], active_start: int, body_page_count: int):
-    targets = [IDX_DIRECTORY + 1 + i * 2 for i in range(1, body_page_count)]
+def refresh_directory_clones(
+    pptx_path: Path,
+    chapter_lines: list[str],
+    active_start: int,
+    body_page_count: int,
+    manifest: TemplateManifest,
+):
+    directory_idx = manifest.slide_roles.directory
+    targets = [directory_idx + 1 + i * 2 for i in range(1, body_page_count)]
     if not targets:
         return True
 
-    source_idx = IDX_DIRECTORY + 1
+    source_idx = directory_idx + 1
     for strategy in ("zip", "com"):
         for _ in range(3):
             if strategy == "zip":
@@ -608,11 +619,11 @@ def refresh_directory_clones(pptx_path: Path, chapter_lines: list[str], active_s
                     continue
 
             prs_reloaded = Presentation(str(pptx_path))
-            fill_directory_slide(prs_reloaded.slides[IDX_DIRECTORY], chapter_lines, active_start)
+            fill_directory_slide(prs_reloaded.slides[directory_idx], chapter_lines, active_start, manifest)
             for offset, directory_slide_no in enumerate(targets, start=1):
                 slide_index = directory_slide_no - 1
                 if slide_index < len(prs_reloaded.slides):
-                    fill_directory_slide(prs_reloaded.slides[slide_index], chapter_lines, active_start + offset)
+                    fill_directory_slide(prs_reloaded.slides[slide_index], chapter_lines, active_start + offset, manifest)
             prs_reloaded.save(str(pptx_path))
             prs_reloaded = None
             gc.collect()
@@ -638,6 +649,7 @@ def generate_ppt(
     if not html_path.exists():
         raise FileNotFoundError(f"HTML not found: {html_path}")
 
+    manifest = load_template_manifest(template_path=template_path)
     deck_plan = plan_deck_from_html(html_path, chapters)
     deck = deck_plan.deck
     body_pages = deck.body_pages
@@ -654,20 +666,20 @@ def generate_ppt(
             f"\u6a21\u677f\u9875\u6570\u4e0d\u8db3\uff0c\u81f3\u5c11\u9700\u8981 {DEFAULT_MIN_TEMPLATE_SLIDES} \u9875\uff0c\u5b9e\u9645\u4e3a {len(prs.slides)} \u9875\u3002"
         )
 
-    apply_theme_title(prs, deck.cover_title)
+    apply_theme_title(prs, deck.cover_title, manifest)
     thanks_slide_id = int(prs.slides._sldIdLst[len(prs.slides) - 1].id)
-    render_body_pages(prs, body_pages, chapter_lines, active_start)
+    render_body_pages(prs, body_pages, chapter_lines, active_start, manifest)
     ensure_last_slide_is_thanks(prs, thanks_slide_id)
     prs.save(str(out))
     prs = None
     gc.collect()
 
-    if not apply_reference_body_slides_with_com(out, reference_body_path, body_pages):
+    if not apply_reference_body_slides_with_com(out, reference_body_path, body_pages, manifest):
         raise RuntimeError("Reference body slide import failed: could not apply reference PPT styles.")
-    if not refresh_directory_clones(out, chapter_lines, active_start, len(body_pages)):
+    if not refresh_directory_clones(out, chapter_lines, active_start, len(body_pages), manifest):
         warnings.warn(
             "Directory slide clone repair did not fully preserve template image assets; keeping generated deck and surfacing the risk in QA.",
             stacklevel=2,
         )
-    populate_reference_body_pages(out, body_pages)
+    populate_reference_body_pages(out, body_pages, manifest=manifest)
     return out, pattern_ids, chapter_lines

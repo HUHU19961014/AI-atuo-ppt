@@ -6,7 +6,8 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Pt
 
-from .config import COLOR_ACTIVE, FONT_NAME, IDX_BODY_TEMPLATE
+from .config import COLOR_ACTIVE, FONT_NAME
+from .template_manifest import TemplateManifest, load_template_manifest
 
 
 REFERENCE_STYLE_LIBRARY = {
@@ -42,13 +43,14 @@ def get_reference_slide_no(style_id: str | None) -> int | None:
     return int(style["source_slide"])
 
 
-def build_reference_import_plan(body_pages) -> list[tuple[int, int]]:
+def build_reference_import_plan(body_pages, manifest: TemplateManifest | None = None) -> list[tuple[int, int]]:
+    manifest = manifest or load_template_manifest()
     plan = []
     for offset, page in enumerate(body_pages):
         source_slide = get_reference_slide_no(getattr(page, "reference_style_id", None))
         if source_slide is None:
             continue
-        target_slide = IDX_BODY_TEMPLATE + 1 + offset * 2
+        target_slide = manifest.slide_roles.body_template + 1 + offset * 2
         plan.append((target_slide, source_slide))
     return plan
 
@@ -106,7 +108,8 @@ def fill_reference_style_slide(slide, page) -> bool:
     return False
 
 
-def populate_reference_body_pages(pptx_path: Path, body_pages) -> bool:
+def populate_reference_body_pages(pptx_path: Path, body_pages, manifest: TemplateManifest | None = None) -> bool:
+    manifest = manifest or load_template_manifest()
     has_reference_pages = any(getattr(page, "reference_style_id", None) for page in body_pages)
     if not has_reference_pages:
         return False
@@ -114,7 +117,7 @@ def populate_reference_body_pages(pptx_path: Path, body_pages) -> bool:
     for offset, page in enumerate(body_pages):
         if not getattr(page, "reference_style_id", None):
             continue
-        slide_index = IDX_BODY_TEMPLATE + offset * 2
+        slide_index = manifest.slide_roles.body_template + offset * 2
         if slide_index >= len(prs.slides):
             continue
         fill_reference_style_slide(prs.slides[slide_index], page)

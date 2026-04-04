@@ -20,6 +20,7 @@ def _default_output_dir() -> Path:
 
 
 DEFAULT_TEMPLATE = TEMPLATES_DIR / "sie_template.pptx"
+DEFAULT_TEMPLATE_MANIFEST = TEMPLATES_DIR / "sie_template.manifest.json"
 DEFAULT_HTML = INPUT_DIR / "uat_plan_sample.html"
 DEFAULT_REFERENCE_BODY = INPUT_DIR / "reference_body_style.pptx"
 DEFAULT_OUTPUT_DIR = _default_output_dir()
@@ -31,9 +32,3 @@ MAX_BODY_CHAPTERS = 3
 FONT_NAME = "Microsoft YaHei"
 COLOR_ACTIVE = (173, 5, 61)
 COLOR_INACTIVE = (184, 196, 201)
-
-# Template role indices (0-based)
-IDX_WELCOME = 0
-IDX_THEME = 1
-IDX_DIRECTORY = 2
-IDX_BODY_TEMPLATE = 3

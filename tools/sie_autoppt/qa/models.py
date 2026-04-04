@@ -4,8 +4,8 @@ from dataclasses import asdict, dataclass, field
 @dataclass(frozen=True)
 class QaChecks:
     ending_last: str
-    theme_title_font_40: str
-    directory_title_font_24: str
+    theme_title_font: str
+    directory_title_font: str
     directory_assets_preserved: str
 
 
@@ -20,12 +20,17 @@ class QaResult:
     slides: int
     expected_directory_pages: list[int]
     actual_directory_pages: list[int]
+    template_name: str
+    template_manifest_path: str
+    template_manifest_version: str
+    expected_theme_title_font_pt: float
+    expected_directory_title_font_pt: float
     checks: QaChecks
     metrics: QaMetrics
     semantic_patterns: list[str] = field(default_factory=list)
     chapter_lines: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
