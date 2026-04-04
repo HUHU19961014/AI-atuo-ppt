@@ -16,6 +16,7 @@
 
 ## 回归检查
 
+- [ ] 已执行 `tools/run_unit_tests.ps1`
 - [ ] 已执行 `tools/regression_check.ps1`
 - [ ] 控制台出现 `Regression check passed`
 
@@ -24,6 +25,7 @@
 - [ ] 已执行 `run_sie_autoppt.ps1`
 - [ ] 成功生成 `.pptx`
 - [ ] 成功生成 `_QA.txt`
+- [ ] 成功生成 `_QA.json`
 
 ## 视觉验收
 
