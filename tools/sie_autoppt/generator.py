@@ -35,6 +35,14 @@ from .config import (
 from .models import BodyPageSpec
 from .pipeline import plan_deck_from_html
 from .reference_styles import build_reference_import_plan, populate_reference_body_pages
+from .template_manifest import (
+    BODY_RENDER_AREA_BOUNDS,
+    BODY_SUBTITLE_BOUNDS,
+    BODY_TITLE_BOUNDS,
+    BODY_TITLE_FALLBACK_BOX,
+    DIRECTORY_TITLE_BOUNDS,
+    THEME_TITLE_BOUNDS,
+)
 
 
 THEME_TITLE_FONT_PT = 40
@@ -175,7 +183,7 @@ def ensure_last_slide_is_thanks(prs: Presentation, thanks_slide_id: int):
 
 def fill_directory_slide(slide, chapter_lines, active_chapter_index: int):
     texts = sorted(pick_text_shapes(slide), key=lambda shape: (shape.top, shape.left))
-    title_boxes = [shape for shape in texts if shape.width > 3000000 and 1800000 < shape.top < 5200000]
+    title_boxes = [shape for shape in texts if DIRECTORY_TITLE_BOUNDS.matches(shape)]
     title_boxes = sorted(title_boxes, key=lambda shape: (shape.top, shape.left))
     safe_active_index = max(0, min(active_chapter_index, len(chapter_lines) - 1))
     for i, shape in enumerate(title_boxes[: len(chapter_lines)]):
@@ -502,7 +510,7 @@ def _clear_body_render_area(slide, protected_shapes=None):
     for shape in slide.shapes:
         if any(shape is protected for protected in protected_shapes):
             continue
-        if 1200000 < shape.top < 6200000:
+        if BODY_RENDER_AREA_BOUNDS.matches(shape):
             removable.append(shape)
     for shape in removable:
         element = shape._element
@@ -511,7 +519,7 @@ def _clear_body_render_area(slide, protected_shapes=None):
 
 def fill_body_slide(slide, page: BodyPageSpec):
     texts = sorted(pick_text_shapes(slide), key=lambda shape: (shape.top, shape.left))
-    title_candidates = [shape for shape in texts if shape.top < 300000 and shape.width > 7000000]
+    title_candidates = [shape for shape in texts if BODY_TITLE_BOUNDS.matches(shape)]
     if title_candidates:
         replace_text_preserve_runs(
             title_candidates[0],
@@ -520,7 +528,12 @@ def fill_body_slide(slide, page: BodyPageSpec):
             font_size_pt=choose_title_font_size(page.title),
         )
     else:
-        textbox = slide.shapes.add_textbox(166370, 36830, 10034086, 480060)
+        textbox = slide.shapes.add_textbox(
+            BODY_TITLE_FALLBACK_BOX.left,
+            BODY_TITLE_FALLBACK_BOX.top,
+            BODY_TITLE_FALLBACK_BOX.width,
+            BODY_TITLE_FALLBACK_BOX.height,
+        )
         set_shape_text_with_color(
             textbox,
             page.title,
@@ -532,7 +545,7 @@ def fill_body_slide(slide, page: BodyPageSpec):
     subtitle_candidates = [
         shape
         for shape in texts
-        if 300000 < shape.top < 1600000 and shape.width > 7000000 and shape not in title_candidates
+        if BODY_SUBTITLE_BOUNDS.matches(shape) and shape not in title_candidates
     ]
     if subtitle_candidates:
         replace_text_preserve_runs(subtitle_candidates[0], page.subtitle)
@@ -552,7 +565,7 @@ def build_output_path(output_dir: Path, output_prefix: str) -> Path:
 
 def apply_theme_title(prs: Presentation, title: str):
     theme_texts = pick_text_shapes(prs.slides[IDX_THEME])
-    title_candidates = [shape for shape in theme_texts if 1500000 < shape.top < 2300000 and shape.width > 5000000]
+    title_candidates = [shape for shape in theme_texts if THEME_TITLE_BOUNDS.matches(shape)]
     if title_candidates:
         main_title = max(title_candidates, key=lambda shape: shape.width)
         set_shape_text_with_color(main_title, title, COLOR_ACTIVE, size_pt=THEME_TITLE_FONT_PT)

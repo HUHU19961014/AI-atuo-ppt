@@ -7,6 +7,7 @@ from pptx import Presentation
 
 from ..config import IDX_THEME
 from .models import QaChecks, QaMetrics, QaResult
+from ..template_manifest import DIRECTORY_TITLE_BOUNDS, THEME_TITLE_BOUNDS
 
 
 EXPECTED_THEME_TITLE_FONT_PT = 40.0
@@ -59,8 +60,7 @@ def _theme_title_font_ok(prs: Presentation) -> bool:
         shape
         for shape in slide.shapes
         if getattr(shape, "has_text_frame", False)
-        and 1500000 < shape.top < 2300000
-        and shape.width > 5000000
+        and THEME_TITLE_BOUNDS.matches(shape)
     ]
     if not candidates:
         return False
@@ -78,8 +78,7 @@ def _directory_title_font_ok(prs: Presentation, directory_slides: list[int], cha
             shape
             for shape in slide.shapes
             if getattr(shape, "has_text_frame", False)
-            and shape.width > 3000000
-            and 1800000 < shape.top < 5200000
+            and DIRECTORY_TITLE_BOUNDS.matches(shape)
         ]
         title_boxes = sorted(title_boxes, key=lambda shape: (shape.top, shape.left))[: len(chapter_lines)]
         if len(title_boxes) < len(chapter_lines):
