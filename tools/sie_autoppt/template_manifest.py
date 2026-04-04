@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -73,6 +73,29 @@ class SlideRoles:
 
 
 @dataclass(frozen=True)
+class SlidePools:
+    directory: tuple[int, ...] = ()
+    body: tuple[int, ...] = ()
+    ending: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "SlidePools":
+        return cls(
+            directory=tuple(int(item) for item in data.get("directory", [])),
+            body=tuple(int(item) for item in data.get("body", [])),
+            ending=int(data["ending"]) if data.get("ending") is not None else None,
+        )
+
+    def supports(self, body_page_count: int, slide_count: int) -> bool:
+        if self.ending is None:
+            return False
+        if len(self.directory) < body_page_count or len(self.body) < body_page_count:
+            return False
+        required_indices = list(self.directory[:body_page_count]) + list(self.body[:body_page_count]) + [self.ending]
+        return max(required_indices, default=-1) < slide_count
+
+
+@dataclass(frozen=True)
 class TemplateSelectors:
     theme_title: ShapeBounds
     directory_title: ShapeBounds
@@ -124,6 +147,17 @@ class TemplateManifest:
     selectors: TemplateSelectors
     fallback_boxes: TemplateFallbackBoxes
     fonts: TemplateFonts
+    slide_pools: SlidePools | None = None
+    render_layouts: dict[str, dict[str, object]] = field(default_factory=dict)
+
+    def render_layout(self, layout_id: str) -> dict[str, object]:
+        layout = self.render_layouts.get(layout_id)
+        if layout is None:
+            raise KeyError(f"Render layout not found in manifest: {layout_id}")
+        return layout
+
+    def supports_preallocated_pool(self, body_page_count: int, slide_count: int) -> bool:
+        return bool(self.slide_pools and self.slide_pools.supports(body_page_count, slide_count))
 
 
 def resolve_template_manifest_path(template_path: Path | None = None) -> Path:
@@ -146,6 +180,8 @@ def _load_template_manifest_cached(manifest_path_str: str) -> TemplateManifest:
         selectors=TemplateSelectors.from_dict(data["selectors"]),
         fallback_boxes=TemplateFallbackBoxes.from_dict(data["fallback_boxes"]),
         fonts=TemplateFonts.from_dict(data["fonts"]),
+        slide_pools=SlidePools.from_dict(data["slide_pools"]) if data.get("slide_pools") else None,
+        render_layouts=data.get("render_layouts", {}),
     )
 
 

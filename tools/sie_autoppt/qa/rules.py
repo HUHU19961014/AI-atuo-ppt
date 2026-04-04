@@ -144,7 +144,10 @@ def build_qa_result(
     manifest = load_template_manifest(template_path=template_path)
 
     has_ending_last = _is_ending_slide(prs.slides[-1])
-    expected_dirs = [manifest.slide_roles.directory + 1 + i * 2 for i in range(chapter_count)]
+    if manifest.slide_pools:
+        expected_dirs = [index + 1 for index in manifest.slide_pools.directory[:chapter_count]]
+    else:
+        expected_dirs = [manifest.slide_roles.directory + 1 + i * 2 for i in range(chapter_count)]
     actual_dirs = [i for i, slide in enumerate(prs.slides, start=1) if _is_directory_slide(slide, chapter_lines)]
     overflow_risk = _overflow_risk_boxes(prs)
 

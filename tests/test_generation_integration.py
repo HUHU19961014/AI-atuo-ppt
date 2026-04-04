@@ -44,3 +44,31 @@ class GenerationIntegrationTests(unittest.TestCase):
             self.assertEqual(qa["checks"]["ending_last"], "PASS")
             self.assertEqual(qa["checks"]["theme_title_font"], "PASS")
             self.assertEqual(qa["checks"]["directory_title_font"], "PASS")
+            self.assertEqual(qa["checks"]["directory_assets_preserved"], "PASS")
+
+    def test_generate_reference_style_deck_without_reference_import(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            out, pattern_ids, chapter_lines = generate_ppt(
+                template_path=DEFAULT_TEMPLATE,
+                html_path=INPUT_DIR / "ai_pythonpptx_strategy.html",
+                reference_body_path=None,
+                output_prefix="Unit_Test_Reference_Fallback",
+                chapters=3,
+                active_start=0,
+                output_dir=Path(temp_dir),
+            )
+
+            self.assertTrue(out.exists())
+            self.assertEqual(pattern_ids, ["comparison_upgrade", "capability_ring", "five_phase_path"])
+
+            report = write_qa_report(
+                out,
+                len(pattern_ids),
+                pattern_ids=pattern_ids,
+                chapter_lines=chapter_lines,
+                template_path=DEFAULT_TEMPLATE,
+            )
+            qa = json.loads(report.with_suffix(".json").read_text(encoding="utf-8"))
+            self.assertEqual(qa["checks"]["ending_last"], "PASS")
+            self.assertEqual(qa["actual_directory_pages"], [3, 5, 7])
+            self.assertEqual(qa["checks"]["directory_assets_preserved"], "PASS")

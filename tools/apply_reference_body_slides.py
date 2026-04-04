@@ -1,7 +1,17 @@
 import argparse
+import sys
 from pathlib import Path
 
-import win32com.client
+
+def _bootstrap():
+    tools_dir = Path(__file__).resolve().parent
+    if str(tools_dir) not in sys.path:
+        sys.path.insert(0, str(tools_dir))
+
+
+_bootstrap()
+
+from sie_autoppt.powerpoint import open_powerpoint_application
 
 
 def parse_mapping(items: list[str]) -> list[tuple[int, int]]:
@@ -13,8 +23,7 @@ def parse_mapping(items: list[str]) -> list[tuple[int, int]]:
 
 
 def apply_reference_body_slides(target_pptx: Path, reference_pptx: Path, mappings: list[tuple[int, int]]) -> bool:
-    app = win32com.client.Dispatch("PowerPoint.Application")
-    app.Visible = 1
+    app = open_powerpoint_application()
     pres = app.Presentations.Open(
         str(target_pptx.resolve()),
         ReadOnly=False,

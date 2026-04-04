@@ -1,11 +1,16 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "template_name": "sie_template",
   "slide_roles": {
     "welcome": 0,
     "theme": 1,
     "directory": 2,
     "body_template": 3
+  },
+  "slide_pools": {
+    "directory": [2, 4, 6],
+    "body": [3, 5, 7],
+    "ending": 8
   },
   "selectors": {
     "theme_title": {
@@ -43,5 +48,380 @@
   "fonts": {
     "theme_title_pt": 40,
     "directory_title_pt": 24
+  },
+  "render_layouts": {
+    "general_business": {
+      "origin_left": 576088,
+      "origin_top": 1450000,
+      "card_width": 5000000,
+      "card_height": 1200000,
+      "gap_x": 350000,
+      "gap_y": 260000,
+      "textbox_padding": 180000,
+      "wrap_chars": 38,
+      "base_font_pt": 13,
+      "fill_rgb": [248, 250, 252],
+      "line_rgb": [220, 223, 230]
+    },
+    "process_flow": {
+      "origin_left": 620000,
+      "origin_top": 2050000,
+      "step_width": 2500000,
+      "step_height": 1200000,
+      "gap_x": 220000,
+      "max_items": 4,
+      "fill_rgb": [246, 249, 252],
+      "line_rgb": [210, 218, 226],
+      "number_box": {
+        "left_offset": 100000,
+        "top_offset": 90000,
+        "width": 260000,
+        "height": 220000,
+        "font_pt": 12
+      },
+      "text_box": {
+        "left_offset": 100000,
+        "top_offset": 360000,
+        "width_padding": 200000,
+        "height_padding": 460000,
+        "wrap_chars": 24,
+        "font_pt": 11
+      }
+    },
+    "solution_architecture": {
+      "frame": {
+        "left": 900000,
+        "top": 1650000,
+        "width": 10100000,
+        "layer_height": 720000,
+        "gap_y": 150000
+      },
+      "palette": [
+        {
+          "fill_rgb": [245, 247, 250],
+          "line_rgb": [210, 218, 228],
+          "accent_rgb": [173, 5, 61]
+        },
+        {
+          "fill_rgb": [248, 250, 252],
+          "line_rgb": [214, 222, 231],
+          "accent_rgb": [60, 76, 96]
+        },
+        {
+          "fill_rgb": [250, 251, 253],
+          "line_rgb": [218, 225, 233],
+          "accent_rgb": [60, 76, 96]
+        },
+        {
+          "fill_rgb": [243, 246, 250],
+          "line_rgb": [206, 216, 226],
+          "accent_rgb": [173, 5, 61]
+        }
+      ],
+      "tag_box": {
+        "left_offset": 120000,
+        "top_offset": 120000,
+        "width": 1100000,
+        "height_padding": 240000
+      },
+      "tag_text": {
+        "left_offset": 170000,
+        "top_offset": 175000,
+        "width": 980000,
+        "height": 240000,
+        "font_pt": 14
+      },
+      "body_text": {
+        "left_offset": 1450000,
+        "top_offset": 130000,
+        "width_padding": 1750000,
+        "height_padding": 220000,
+        "wrap_chars": 40,
+        "font_pt": 12
+      },
+      "banner": {
+        "left": 900000,
+        "top": 1250000,
+        "width": 2500000,
+        "height": 230000,
+        "text_left": 1020000,
+        "text_top": 1225000,
+        "text_width": 2200000,
+        "text_height": 260000,
+        "font_pt": 11,
+        "fill_rgb": [173, 5, 61],
+        "text_rgb": [255, 255, 255],
+        "text": "SOLUTION ARCHITECTURE"
+      },
+      "chips": {
+        "start_left": 8650000,
+        "top": 1240000,
+        "width": 800000,
+        "height": 240000,
+        "gap_x": 120000,
+        "text_top_offset": 20000,
+        "font_pt": 9,
+        "fill_rgb": [243, 246, 250],
+        "line_rgb": [210, 218, 226],
+        "max_items": 4
+      }
+    },
+    "org_governance": {
+      "grid": {
+        "left": 900000,
+        "top": 1780000,
+        "card_width": 4700000,
+        "card_height": 1180000,
+        "gap_x": 380000,
+        "gap_y": 260000
+      },
+      "card_fill_rgb": [247, 249, 252],
+      "card_line_rgb": [214, 221, 229],
+      "label_box": {
+        "left_offset": 110000,
+        "top_offset": 120000,
+        "width": 620000,
+        "height": 260000,
+        "fill_rgb": [173, 5, 61],
+        "line_rgb": [173, 5, 61]
+      },
+      "label_text": {
+        "left_offset": 110000,
+        "top_offset": 132000,
+        "width": 620000,
+        "height": 220000,
+        "font_pt": 10,
+        "text_rgb": [255, 255, 255],
+        "label_prefix": "Focus"
+      },
+      "body_text": {
+        "left_offset": 110000,
+        "top_offset": 470000,
+        "width_padding": 220000,
+        "height_padding": 560000,
+        "wrap_chars": 32,
+        "font_pt": 11
+      },
+      "footer_bar": {
+        "left": 900000,
+        "top": 4580000,
+        "width": 10100000,
+        "height": 260000,
+        "fill_rgb": [239, 243, 247],
+        "line_rgb": [215, 222, 230],
+        "text_left": 1050000,
+        "text_top": 4605000,
+        "text_width": 9700000,
+        "text_height": 220000,
+        "font_pt": 10,
+        "text": "Governance rules should span data, interfaces, process, and release management."
+      }
+    },
+    "comparison_upgrade": {
+      "left_panel": {
+        "left": 650000,
+        "top": 1800000,
+        "width": 2500000,
+        "header_gap_y": 360000,
+        "header_height": 220000,
+        "header_font_pt": 16,
+        "fill_rgb": [245, 247, 250],
+        "line_rgb": [214, 222, 231],
+        "title_rgb": [60, 76, 96],
+        "detail_rgb": [91, 112, 135],
+        "max_cards": 4
+      },
+      "right_panel": {
+        "left": 7900000,
+        "top": 1800000,
+        "width": 2500000,
+        "header_gap_y": 360000,
+        "header_height": 220000,
+        "header_font_pt": 16,
+        "fill_rgb": [173, 5, 61],
+        "line_rgb": [173, 5, 61],
+        "title_rgb": [255, 255, 255],
+        "detail_rgb": [255, 255, 255],
+        "max_cards": 4
+      },
+      "card": {
+        "height": 650000,
+        "gap_y": 120000,
+        "padding_x": 120000,
+        "title_top_offset": 70000,
+        "title_height": 180000,
+        "title_font_pt": 14,
+        "detail_top_offset": 260000,
+        "detail_height": 280000,
+        "detail_font_pt": 10,
+        "detail_wrap_chars": 28
+      },
+      "center_panel": {
+        "left": 3600000,
+        "top": 1650000,
+        "width": 3300000,
+        "height": 3200000,
+        "fill_rgb": [248, 250, 252],
+        "line_rgb": [214, 222, 231]
+      },
+      "center_kicker": {
+        "left": 3900000,
+        "top": 1820000,
+        "width": 2700000,
+        "height": 240000,
+        "text_left": 3900000,
+        "text_top": 1840000,
+        "text_width": 2700000,
+        "text_height": 200000,
+        "font_pt": 11,
+        "fill_rgb": [173, 5, 61],
+        "text_rgb": [255, 255, 255],
+        "text": "ENGINEERING COPILOT"
+      },
+      "center_text": {
+        "title_left": 3850000,
+        "title_top": 2150000,
+        "title_width": 2800000,
+        "title_height": 480000,
+        "title_font_pt": 22,
+        "title_rgb": [173, 5, 61],
+        "subtitle_left": 3850000,
+        "subtitle_top": 2680000,
+        "subtitle_width": 2800000,
+        "subtitle_height": 320000,
+        "subtitle_font_pt": 11,
+        "subtitle_rgb": [91, 112, 135],
+        "footer_left": 3850000,
+        "footer_top": 4200000,
+        "footer_width": 2800000,
+        "footer_height": 260000,
+        "footer_font_pt": 10,
+        "footer_rgb": [60, 76, 96],
+        "footer_text": "Stable structure, flexible content, reviewable output."
+      }
+    },
+    "capability_ring": {
+      "title_box": {
+        "left": 900000,
+        "top": 1400000,
+        "width": 10100000,
+        "height": 260000,
+        "font_pt": 12,
+        "text_rgb": [60, 76, 96],
+        "text": "Capability highlights"
+      },
+      "grid": {
+        "left": 900000,
+        "top": 1850000,
+        "card_width": 4700000,
+        "card_height": 720000,
+        "gap_x": 300000,
+        "gap_y": 180000,
+        "columns": 2
+      },
+      "card_fill_rgb": [245, 247, 250],
+      "card_line_rgb": [210, 218, 226],
+      "card_title": {
+        "left_offset": 120000,
+        "top_offset": 90000,
+        "width_padding": 240000,
+        "height": 180000,
+        "font_pt": 13
+      },
+      "card_detail": {
+        "left_offset": 120000,
+        "top_offset": 300000,
+        "width_padding": 240000,
+        "height": 260000,
+        "font_pt": 10,
+        "wrap_chars": 32
+      }
+    },
+    "five_phase_path": {
+      "origin_left": 550000,
+      "origin_top": 1700000,
+      "stage_width": 2050000,
+      "gap_x": 120000,
+      "stage_count": 5,
+      "header_height": 320000,
+      "header_text_top_offset": 20000,
+      "header_font_pt": 12,
+      "header_fill_rgb": [173, 5, 61],
+      "header_text_rgb": [255, 255, 255],
+      "body_top_offset": 380000,
+      "body_height": 2500000,
+      "body_fill_rgb": [247, 249, 252],
+      "body_line_rgb": [214, 221, 229],
+      "task_left_offset": 90000,
+      "task_top_offset": 120000,
+      "task_width_padding": 180000,
+      "task_height": 240000,
+      "task_gap_y": 420000,
+      "task_font_pt": 10,
+      "task_wrap_chars": 16,
+      "max_tasks_per_stage": 5,
+      "intro_box": {
+        "left": 900000,
+        "top": 1300000,
+        "width": 10100000,
+        "height": 240000,
+        "font_pt": 12
+      }
+    },
+    "pain_cards": {
+      "lead_box": {
+        "left": 900000,
+        "top": 1450000,
+        "width": 10100000,
+        "height": 300000,
+        "font_pt": 18
+      },
+      "grid": {
+        "left": 900000,
+        "top": 1900000,
+        "card_width": 3100000,
+        "card_height": 2200000,
+        "gap_x": 220000
+      },
+      "card_fill_rgb": [247, 249, 252],
+      "card_line_rgb": [214, 221, 229],
+      "title_box": {
+        "left_offset": 120000,
+        "top_offset": 120000,
+        "width_padding": 240000,
+        "height": 220000,
+        "font_pt": 16
+      },
+      "detail_box": {
+        "left_offset": 120000,
+        "top_offset": 430000,
+        "width_padding": 240000,
+        "height": 320000,
+        "font_pt": 11,
+        "wrap_chars": 26
+      },
+      "bullet_box": {
+        "left_offset": 120000,
+        "top_offset": 980000,
+        "width_padding": 240000,
+        "height": 200000,
+        "gap_y": 260000,
+        "font_pt": 10
+      },
+      "banner": {
+        "left": 900000,
+        "top": 4350000,
+        "width": 10100000,
+        "height": 320000,
+        "text_left": 930000,
+        "text_top": 4400000,
+        "text_width": 9600000,
+        "text_height": 220000,
+        "font_pt": 14,
+        "fill_rgb": [173, 5, 61],
+        "text_rgb": [255, 255, 255],
+        "text": "Clarify the problem boundary before automating the workflow."
+      }
+    }
   }
 }

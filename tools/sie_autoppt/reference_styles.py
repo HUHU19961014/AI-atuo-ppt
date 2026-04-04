@@ -2,12 +2,11 @@ import re
 from pathlib import Path
 
 from pptx import Presentation
-from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
-from pptx.util import Pt
 
-from .config import COLOR_ACTIVE, FONT_NAME
+from .config import COLOR_ACTIVE
 from .template_manifest import TemplateManifest, load_template_manifest
+from .text_ops import write_text
 
 
 REFERENCE_STYLE_LIBRARY = {
@@ -56,21 +55,15 @@ def build_reference_import_plan(body_pages, manifest: TemplateManifest | None = 
 
 
 def _replace_text(shape, text: str, color=None, size_pt: int | None = None, align=PP_ALIGN.LEFT, bold=None):
-    if not getattr(shape, "has_text_frame", False):
-        return
-    text_frame = shape.text_frame
-    text_frame.text = text
-    text_frame.word_wrap = True
-    for paragraph in text_frame.paragraphs:
-        paragraph.alignment = align
-        for run in paragraph.runs:
-            run.font.name = FONT_NAME
-            if color is not None:
-                run.font.color.rgb = RGBColor(*color)
-            if size_pt is not None:
-                run.font.size = Pt(size_pt)
-            if bold is not None:
-                run.font.bold = bold
+    write_text(
+        shape,
+        text,
+        color=color,
+        size_pt=size_pt,
+        bold=bold,
+        align=align,
+        preserve_runs=False,
+    )
 
 
 def _shape(slide, index: int):

@@ -15,11 +15,15 @@ class TemplateManifestTests(unittest.TestCase):
         manifest = load_template_manifest()
 
         self.assertEqual(manifest.template_name, "sie_template")
-        self.assertEqual(manifest.version, "1.0")
+        self.assertEqual(manifest.version, "1.1")
         self.assertEqual(manifest.slide_roles.theme, 1)
         self.assertEqual(manifest.slide_roles.directory, 2)
         self.assertEqual(manifest.fonts.theme_title_pt, 40.0)
         self.assertEqual(manifest.fonts.directory_title_pt, 24.0)
+        self.assertEqual(manifest.slide_pools.directory, (2, 4, 6))
+        self.assertEqual(manifest.slide_pools.body, (3, 5, 7))
+        self.assertEqual(manifest.slide_pools.ending, 8)
+        self.assertIn("general_business", manifest.render_layouts)
 
     def test_template_path_resolves_to_adjacent_manifest(self):
         self.assertEqual(resolve_template_manifest_path(DEFAULT_TEMPLATE), DEFAULT_TEMPLATE_MANIFEST)
