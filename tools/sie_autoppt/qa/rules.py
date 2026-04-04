@@ -6,6 +6,7 @@ from xml.etree import ElementTree
 from pptx import Presentation
 
 from ..config import IDX_THEME
+from .models import QaChecks, QaMetrics, QaResult
 
 
 EXPECTED_THEME_TITLE_FONT_PT = 40.0
@@ -130,7 +131,7 @@ def _overflow_risk_boxes(prs: Presentation) -> int:
     return risk
 
 
-def build_qa_result(pptx_path: Path, chapter_count: int, pattern_ids=None, chapter_lines=None) -> dict[str, object]:
+def build_qa_result(pptx_path: Path, chapter_count: int, pattern_ids=None, chapter_lines=None) -> QaResult:
     prs = Presentation(str(pptx_path))
     chapter_lines = chapter_lines or []
 
@@ -139,23 +140,23 @@ def build_qa_result(pptx_path: Path, chapter_count: int, pattern_ids=None, chapt
     actual_dirs = [i for i, slide in enumerate(prs.slides, start=1) if _is_directory_slide(slide, chapter_lines)]
     overflow_risk = _overflow_risk_boxes(prs)
 
-    return {
-        "file": str(pptx_path),
-        "slides": len(prs.slides),
-        "expected_directory_pages": expected_dirs,
-        "actual_directory_pages": actual_dirs,
-        "semantic_patterns": list(pattern_ids or []),
-        "chapter_lines": list(chapter_lines),
-        "checks": {
-            "ending_last": "PASS" if has_ending_last else "WARN",
-            "theme_title_font_40": "PASS" if _theme_title_font_ok(prs) else "WARN",
-            "directory_title_font_24": "PASS" if _directory_title_font_ok(prs, actual_dirs, chapter_lines) else "WARN",
-            "directory_assets_preserved": "PASS" if _directory_assets_preserved(pptx_path, actual_dirs) else "WARN",
-        },
-        "metrics": {
-            "overflow_risk_boxes": overflow_risk,
-        },
-        "notes": [
+    return QaResult(
+        file=str(pptx_path),
+        slides=len(prs.slides),
+        expected_directory_pages=expected_dirs,
+        actual_directory_pages=actual_dirs,
+        semantic_patterns=list(pattern_ids or []),
+        chapter_lines=list(chapter_lines),
+        checks=QaChecks(
+            ending_last="PASS" if has_ending_last else "WARN",
+            theme_title_font_40="PASS" if _theme_title_font_ok(prs) else "WARN",
+            directory_title_font_24="PASS" if _directory_title_font_ok(prs, actual_dirs, chapter_lines) else "WARN",
+            directory_assets_preserved="PASS" if _directory_assets_preserved(pptx_path, actual_dirs) else "WARN",
+        ),
+        metrics=QaMetrics(
+            overflow_risk_boxes=overflow_risk,
+        ),
+        notes=[
             "overflow_risk_boxes > 0 means manual review recommended.",
         ],
-    }
+    )

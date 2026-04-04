@@ -47,7 +47,7 @@ function Assert-QA($reportPath, $caseName) {
   }
 }
 
-function Assert-ExpectedFailure($outputLines, $caseName) {
+function Assert-ExpectedFailure($caseName) {
   if ($LASTEXITCODE -eq 0) {
     throw "Regression failed for ${caseName}: case was expected to fail but succeeded."
   }
@@ -82,6 +82,25 @@ foreach ($case in $cases) {
   $caseName = [System.IO.Path]::GetFileNameWithoutExtension($case.Name)
   $expectFailure = $case.Name -like "*.fail.html"
   Write-Host ("-- Running case: {0}" -f $caseName)
+  if ($expectFailure) {
+    try {
+      & python (Join-Path $ProjectRoot "tools\sie_autoppt_cli.py") `
+        --template "$TemplatePath" `
+        --html "$($case.FullName)" `
+        --output-name "SIE_Regression_$caseName" `
+        --output-dir "$OutputDir" `
+        --chapters 3 `
+        --active-start 0 1>$null 2>$null
+    } catch {
+      if ($LASTEXITCODE -eq 0) {
+        throw
+      }
+    }
+    Assert-ExpectedFailure $caseName
+    Write-Host ("[OK] Expected failure passed: {0}" -f $caseName)
+    continue
+  }
+
   $lines = @(
     python (Join-Path $ProjectRoot "tools\sie_autoppt_cli.py") `
       --template "$TemplatePath" `
@@ -91,12 +110,6 @@ foreach ($case in $cases) {
       --chapters 3 `
       --active-start 0
   ) 2>&1
-
-  if ($expectFailure) {
-    Assert-ExpectedFailure $lines $caseName
-    Write-Host ("[OK] Expected failure passed: {0}" -f $caseName)
-    continue
-  }
 
   if ($LASTEXITCODE -ne 0) {
     throw "Generation failed for case: $caseName"
