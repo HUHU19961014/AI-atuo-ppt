@@ -105,6 +105,12 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_unit_tests.ps1
 
 测试分层说明见 [`docs/TESTING.md`](./docs/TESTING.md)。
 
+人工视觉验收批次可通过下面命令生成：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\prepare_visual_review.ps1
+```
+
 ## 版本管理建议
 
 当前项目已经启用 Git。建议后续按下面方式迭代：

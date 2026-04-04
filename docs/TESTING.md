@@ -50,6 +50,14 @@ powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
 - ERP / 架构页
 - 参考样式导入页
 
+可直接生成视觉验收批次：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\prepare_visual_review.ps1
+```
+
+人工验收说明见 [`docs/HUMAN_VISUAL_QA.md`](./HUMAN_VISUAL_QA.md)。
+
 ## 当前测试入口
 
 - 单元与轻集成测试：`tests/`
