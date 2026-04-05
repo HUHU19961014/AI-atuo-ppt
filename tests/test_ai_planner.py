@@ -5,19 +5,21 @@ import unittest
 from pathlib import Path
 
 from tools.sie_autoppt.planning.ai_planner import (
+    AiSlideBounds,
     AiPlanningRequest,
     build_ai_outline_schema,
     build_external_planner_payload,
     build_ai_planning_prompts,
     build_deck_spec_from_ai_outline,
     plan_deck_spec_with_ai,
+    resolve_ai_slide_bounds,
     resolve_external_planner_command,
 )
 
 
 class AiPlannerTests(unittest.TestCase):
     def test_outline_schema_matches_requested_page_count(self):
-        schema = build_ai_outline_schema(3)
+        schema = build_ai_outline_schema(AiSlideBounds(min_slides=3, max_slides=3))
 
         self.assertEqual(schema["properties"]["body_pages"]["minItems"], 3)
         self.assertEqual(schema["properties"]["body_pages"]["maxItems"], 3)
@@ -51,7 +53,7 @@ class AiPlannerTests(unittest.TestCase):
                     },
                 ],
             },
-            chapters=3,
+            slide_bounds=AiSlideBounds(min_slides=3, max_slides=3),
         )
 
         self.assertEqual(deck.cover_title, "AI 自动化转型方案")
@@ -75,13 +77,25 @@ class AiPlannerTests(unittest.TestCase):
         self.assertIn("制造业 ERP 智能化升级", user_prompt)
         self.assertIn("现有系统分散", user_prompt)
 
+    def test_resolve_ai_slide_bounds_uses_content_driven_default_range(self):
+        bounds = resolve_ai_slide_bounds(
+            AiPlanningRequest(
+                topic="企业数字化转型",
+                brief="需要覆盖现状、目标架构、实施路径、组织机制和投资收益分析。" * 200,
+            )
+        )
+
+        self.assertEqual((bounds.min_slides, bounds.max_slides), (10, 20))
+
     def test_build_external_planner_payload_contains_schema_and_prompts(self):
         request = AiPlanningRequest(topic="测试主题", chapters=2, audience="管理层", brief="补充材料")
-        developer_prompt, user_prompt = build_ai_planning_prompts(request)
+        bounds = resolve_ai_slide_bounds(request)
+        developer_prompt, user_prompt = build_ai_planning_prompts(request, slide_bounds=bounds)
 
-        payload = build_external_planner_payload(request, developer_prompt, user_prompt)
+        payload = build_external_planner_payload(request, developer_prompt, user_prompt, bounds)
 
         self.assertEqual(payload["request"]["topic"], "测试主题")
+        self.assertEqual(payload["request"]["min_slides"], 2)
         self.assertEqual(payload["outline_schema"]["properties"]["body_pages"]["minItems"], 2)
         self.assertIn("Return exactly 2 body pages", payload["developer_prompt"])
 
@@ -116,6 +130,42 @@ class AiPlannerTests(unittest.TestCase):
 
         self.assertEqual(deck.cover_title, "外部规划器验证")
         self.assertEqual(deck.body_pages[0].title, "第一页")
+
+    def test_external_command_does_not_execute_shell_chaining(self):
+        outline = {
+            "cover_title": "安全验证",
+            "body_pages": [
+                {
+                    "title": "第一页",
+                    "subtitle": "摘要",
+                    "bullets": ["要点一", "要点二"],
+                    "pattern_id": "general_business",
+                    "nav_title": "第一页",
+                }
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            script_path = Path(temp_dir) / "external_planner.py"
+            sentinel_path = Path(temp_dir) / "injected.txt"
+            script_path.write_text(
+                "import json, sys\n"
+                "json.load(sys.stdin)\n"
+                f"print({json.dumps(json.dumps(outline, ensure_ascii=False))})\n",
+                encoding="utf-8",
+            )
+            command = (
+                f'{sys.executable} "{script_path}" '
+                f'& {sys.executable} -c "from pathlib import Path; Path(r\'{sentinel_path}\').write_text(\'owned\', encoding=\'utf-8\')"'
+            )
+
+            deck = plan_deck_spec_with_ai(
+                AiPlanningRequest(topic="外部命令安全测试", chapters=1),
+                planner_command=command,
+            )
+            self.assertFalse(sentinel_path.exists())
+
+        self.assertEqual(deck.cover_title, "安全验证")
 
     def test_resolve_external_planner_command_prefers_explicit_value(self):
         self.assertEqual(resolve_external_planner_command("echo test"), "echo test")

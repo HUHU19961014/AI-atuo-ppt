@@ -41,7 +41,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
 
 - 模板换版后的视觉验收
 - 新业务样例是否“讲得对、排得顺”
-- 跨机器的 PowerPoint / COM 兼容性
+- 不同模板是否已经迁移到 preallocated slide pool
 - 最终交付前的黄金样例抽检
 
 建议最少保留 3 个黄金样例做人眼验收：
@@ -49,6 +49,12 @@ powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
 - 通用业务页
 - ERP / 架构页
 - 参考样式导入页
+
+## 运行时注意事项
+
+- `legacy clone` 路径已经标记为 deprecated，仅用于没有 slide pool 的旧模板兜底
+- 如果 legacy clone 目录页资源修复连续失败，生成流程现在会明确报错，而不是静默继续
+- 新模板应优先维护 `manifest.slide_pools`
 
 可直接生成视觉验收批次：
 

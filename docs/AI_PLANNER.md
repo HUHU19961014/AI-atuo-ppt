@@ -19,6 +19,8 @@ Generate PPT directly from a topic:
 python .\tools\sie_autoppt_cli.py ai-make `
   --topic "制造业 ERP 智能化升级方案汇报" `
   --brief "重点突出现状痛点、目标架构和分阶段落地路径" `
+  --min-slides 6 `
+  --max-slides 10 `
   --output-name ERP_AI_AutoPPT `
   --output-dir .\projects\generated
 ```
@@ -41,6 +43,13 @@ python .\tools\sie_autoppt_cli.py ai-check `
 If `OPENAI_API_KEY` is missing, the command exits with a clear `AI healthcheck blocked` message instead of a traceback.
 If the key is valid but the project has no remaining quota, the command reports a quota-specific error so you can distinguish platform billing issues from local code bugs.
 
+## Slide Count Strategy
+
+- `--chapters`: requests an exact body-page count for AI planning
+- `--min-slides` / `--max-slides`: asks AI to choose a count inside a range
+- If you do not pass any of the three options, the planner now chooses a range from content density instead of hard-clamping to 3 pages
+- `--chapters` cannot be combined with `--min-slides` or `--max-slides`
+
 ## Required Environment Variables
 
 - `OPENAI_API_KEY`: required for remote HTTP providers unless you use a local gateway or an external planner command
@@ -48,7 +57,7 @@ If the key is valid but the project has no remaining quota, the command reports 
 ## Optional Environment Variables
 
 - `OPENAI_BASE_URL`: defaults to `https://api.openai.com/v1`
-- `SIE_AUTOPPT_LLM_MODEL`: defaults to `gpt-5.4-mini`
+- `SIE_AUTOPPT_LLM_MODEL`: defaults to `gpt-4o-mini`
 - `SIE_AUTOPPT_LLM_TIMEOUT_SEC`: defaults to `90`
 - `SIE_AUTOPPT_LLM_REASONING_EFFORT`: defaults to `low`
 - `SIE_AUTOPPT_LLM_VERBOSITY`: defaults to `low`
@@ -142,3 +151,4 @@ Any unsupported pattern choice is normalized locally before rendering.
 - Reference-style body pages now use a native PPTX package merge path by default.
 - The bundled `reference_body_style.pptx` carries slide metadata names such as `comparison_upgrade_reference`.
 - Reference lookup order is: slide metadata name -> text markers -> fallback page number.
+- Templates without a preallocated slide pool still work, but the legacy runtime clone path is now explicitly deprecated and should be treated as a migration target.

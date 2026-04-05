@@ -2,7 +2,6 @@ import datetime
 import gc
 import re
 import shutil
-import time
 import warnings
 from pathlib import Path
 
@@ -22,6 +21,11 @@ from .slide_ops import (
     slide_assets_preserved,
 )
 from .template_manifest import TemplateManifest, load_template_manifest
+
+
+LEGACY_CLONE_DEPRECATION_MESSAGE = (
+    "Legacy runtime slide cloning is deprecated. Please migrate this template to a preallocated slide pool."
+)
 
 
 def build_output_path(output_dir: Path, output_prefix: str) -> Path:
@@ -158,6 +162,7 @@ def _render_with_legacy_clone(
     active_start: int,
     manifest: TemplateManifest,
 ):
+    warnings.warn(LEGACY_CLONE_DEPRECATION_MESSAGE, DeprecationWarning, stacklevel=2)
     directory_idx = manifest.slide_roles.directory
     body_template_idx = manifest.slide_roles.body_template
     directory_slides = [prs.slides[directory_idx]]
@@ -185,6 +190,7 @@ def _refresh_legacy_directory_clones(
     body_page_count: int,
     manifest: TemplateManifest,
 ):
+    warnings.warn(LEGACY_CLONE_DEPRECATION_MESSAGE, DeprecationWarning, stacklevel=2)
     directory_idx = manifest.slide_roles.directory
     targets = [directory_idx + 1 + i * 2 for i in range(1, body_page_count)]
     if not targets:
@@ -207,9 +213,11 @@ def _refresh_legacy_directory_clones(
 
         if slide_assets_preserved(pptx_path, source_idx=source_idx, target_indices=targets):
             return True
-        time.sleep(1.0)
 
-    return False
+    raise RuntimeError(
+        "Legacy clone 路径图片资源复制失败（已重试 3 次），"
+        f"源目录页索引 {source_idx}，目标页索引 {targets}。请迁移到 preallocated pool 模板路径。"
+    )
 
 
 def _warn_if_reference_import_disabled(body_pages: list[BodyPageSpec], reference_body_path: Path | None):
@@ -258,7 +266,7 @@ def _generate_ppt_from_plan(
     prs = Presentation(str(out))
     if len(prs.slides) < DEFAULT_MIN_TEMPLATE_SLIDES:
         raise ValueError(
-            f"\u6a21\u677f\u9875\u6570\u4e0d\u8db3\uff0c\u81f3\u5c11\u9700\u8981 {DEFAULT_MIN_TEMPLATE_SLIDES} \u9875\uff0c\u5b9e\u9645\u4e3a {len(prs.slides)} \u9875\u3002"
+            f"模板页数不足，至少需要 {DEFAULT_MIN_TEMPLATE_SLIDES} 页，实际为 {len(prs.slides)} 页。"
         )
 
     validate_slide_pool_configuration(manifest, len(body_pages), len(prs.slides))
@@ -273,7 +281,7 @@ def _generate_ppt_from_plan(
         _render_with_preallocated_pool(prs, body_pages, chapter_lines, active_start, manifest)
     else:
         warnings.warn(
-            "Template does not provide a preallocated slide pool; falling back to runtime cloning for this deck.",
+            "Template does not provide a preallocated slide pool; using deprecated legacy runtime cloning for this deck.",
             stacklevel=2,
         )
         _render_with_legacy_clone(prs, body_pages, chapter_lines, active_start, manifest)
@@ -299,11 +307,7 @@ def _generate_ppt_from_plan(
         )
 
     if not used_preallocated_pool:
-        if not _refresh_legacy_directory_clones(out, chapter_lines, active_start, len(body_pages), manifest):
-            warnings.warn(
-                "Directory slide clone repair did not fully preserve template image assets; keeping generated deck and surfacing the risk in QA.",
-                stacklevel=2,
-            )
+        _refresh_legacy_directory_clones(out, chapter_lines, active_start, len(body_pages), manifest)
 
     render_trace = DeckRenderTrace(
         input_kind=input_kind,

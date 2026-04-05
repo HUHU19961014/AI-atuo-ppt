@@ -56,8 +56,9 @@ def build_focus_bullets(payload: InputPayload) -> list[str]:
     return bullets or [DEFAULT_EMPTY_FOCUS]
 
 
-def clamp_requested_chapters(chapters: int, available_pages: int) -> int:
-    return max(1, min(chapters, MAX_BODY_CHAPTERS, available_pages))
+def clamp_requested_chapters(chapters: int | None, available_pages: int) -> int:
+    requested = 1 if chapters is None else int(chapters)
+    return max(1, min(requested, MAX_BODY_CHAPTERS, available_pages))
 
 
 def format_phase_summary(phase: dict[str, str]) -> str:

@@ -10,6 +10,73 @@ from .template_manifest import TemplateManifest
 from .text_ops import add_textbox, write_text
 
 
+class _ManifestValue:
+    def __init__(self, value, context: str):
+        self._value = value
+        self._context = context
+
+    def __getitem__(self, key):
+        if isinstance(self._value, dict):
+            if key not in self._value:
+                raise KeyError(f"[渲染器错误] manifest 缺少必要字段 '{key}'（位置：{self._context}）")
+            return _wrap_manifest_value(self._value[key], f"{self._context}.{key}")
+        if isinstance(self._value, (list, tuple)):
+            try:
+                value = self._value[key]
+            except (IndexError, TypeError) as exc:
+                raise KeyError(f"[渲染器错误] manifest 列表索引无效 '{key}'（位置：{self._context}）") from exc
+            return _wrap_manifest_value(value, f"{self._context}[{key}]")
+        raise TypeError(f"[渲染器错误] manifest 字段不支持索引读取（位置：{self._context}）")
+
+    def get(self, key, default=None):
+        if not isinstance(self._value, dict):
+            raise TypeError(f"[渲染器错误] manifest 字段不支持 get() 调用（位置：{self._context}）")
+        if key not in self._value:
+            return default
+        return _wrap_manifest_value(self._value[key], f"{self._context}.{key}")
+
+    def __iter__(self):
+        if isinstance(self._value, (list, tuple)):
+            for index, item in enumerate(self._value):
+                yield _wrap_manifest_value(item, f"{self._context}[{index}]")
+            return
+        raise TypeError(f"[渲染器错误] manifest 字段不可迭代（位置：{self._context}）")
+
+    def __len__(self):
+        return len(self._value)
+
+    def __bool__(self):
+        return bool(self._value)
+
+    def __int__(self):
+        try:
+            return int(self._value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"[渲染器错误] manifest 字段无法转换为整数（位置：{self._context}，值：{self._value!r}）"
+            ) from exc
+
+    def __float__(self):
+        try:
+            return float(self._value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"[渲染器错误] manifest 字段无法转换为浮点数（位置：{self._context}，值：{self._value!r}）"
+            ) from exc
+
+    def __str__(self):
+        return str(self._value)
+
+    def __repr__(self):
+        return repr(self._value)
+
+
+def _wrap_manifest_value(value, context: str):
+    if isinstance(value, _ManifestValue):
+        return value
+    return _ManifestValue(value, context)
+
+
 def normalize_text_for_box(text: str, max_chars: int = 44) -> str:
     compact = re.sub(r"\s+", " ", text).strip()
     lines = textwrap.wrap(compact, width=max_chars)
@@ -56,7 +123,7 @@ def _rgb(values):
 
 
 def _layout(manifest: TemplateManifest, name: str) -> dict[str, object]:
-    return manifest.render_layout(name)
+    return _wrap_manifest_value(manifest.render_layout(name), f"render_layouts.{name}")
 
 
 def _extract_system_tags(bullets: list[str]) -> list[str]:

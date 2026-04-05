@@ -19,6 +19,12 @@ Last updated: 2026-04-05
 - `ai-make`: AI -> PPTX
 - `ai-check`: AI backend smoke test
 
+AI slide-count behavior:
+
+- `--chapters` for exact body-page count
+- `--min-slides` / `--max-slides` for bounded planning
+- content-driven default range when no count is provided
+
 ## LLM Backends
 
 Supported backend styles:
@@ -47,16 +53,18 @@ Compatibility notes:
 - slide metadata name lookup
 - SiliconFlow / OpenAI-compatible provider support
 - external planner command support
+- safe external planner execution without `shell=True`
+- manifest-backed renderer error context
+- deprecated legacy clone path is now explicit instead of silent
 
 ## Remaining Gaps
 
-- optional COM helper scripts still exist for some maintenance workflows
 - no bundled OpenClaw-specific bridge script yet
 - deployment-grade service packaging is still out of scope
 
 ## Latest Validation
 
-- unit tests: `55` passing
+- unit tests: `59` passing after latest review fixes
 - SiliconFlow live `ai-check`: passed with `deepseek-ai/DeepSeek-V3.2`
 - SiliconFlow live `ai-make`: passed and produced PPT + QA output
 - external planner command smoke test: passed

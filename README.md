@@ -55,8 +55,16 @@ python .\tools\sie_autoppt_cli.py render `
 ```powershell
 python .\tools\sie_autoppt_cli.py ai-make `
   --topic "制造企业 AI AutoPPT 方案汇报" `
-  --brief "突出项目现状、三层架构、实施路径和风险控制"
+  --brief "突出项目现状、三层架构、实施路径和风险控制" `
+  --min-slides 6 `
+  --max-slides 10
 ```
+
+AI planning page-count options:
+
+- `--chapters`: exact body-page count
+- `--min-slides` / `--max-slides`: let AI choose inside a range
+- if none are provided, the planner now infers a reasonable range from source density instead of forcing 3 pages
 
 ## Provider Compatibility
 
@@ -128,6 +136,8 @@ Reference-style body pages now use native PPTX package merge by default. The bun
 2. text marker match
 3. fallback page number
 
+Templates without `slide_pools` still have a legacy runtime clone path, but it is now explicitly deprecated. New templates should migrate to preallocated pools.
+
 ## Docs
 
 - [AI planner](./docs/AI_PLANNER.md)
@@ -158,10 +168,10 @@ Already fixed in the current codebase:
 - `cm` unit support in manifest geometry
 - native reference slide import
 - external planner command support
+- safe external planner execution
 - SiliconFlow / OpenAI-compatible provider support
 
 Still not fully finished:
 
-- optional COM helper scripts still exist for a few template-maintenance workflows
 - full web-service-grade packaging and auth management are not done
 - external agent bridges are generic, but no OpenClaw-specific bridge script is bundled yet

@@ -31,7 +31,7 @@ class CliTests(unittest.TestCase):
                 return_value=OpenAIResponsesConfig(
                     api_key="test-key",
                     base_url="https://api.openai.com/v1",
-                    model="gpt-5.4-mini",
+                    model="gpt-4o-mini",
                     timeout_sec=30,
                     reasoning_effort="low",
                     text_verbosity="low",
@@ -45,10 +45,22 @@ class CliTests(unittest.TestCase):
 
         payload = json.loads(stdout.getvalue().strip())
         self.assertEqual(payload["status"], "ok")
-        self.assertEqual(payload["model"], "gpt-5.4-mini")
+        self.assertEqual(payload["model"], "gpt-4o-mini")
         self.assertEqual(payload["api_style"], "responses")
         self.assertEqual(payload["page_count"], 1)
         self.assertEqual(payload["first_page_title"], "测试页")
+
+    def test_ai_plan_rejects_mixing_exact_and_range(self):
+        stderr = io.StringIO()
+        with (
+            patch("sys.argv", ["sie-autoppt", "ai-plan", "--topic", "测试", "--chapters", "4", "--min-slides", "3"]),
+            redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main()
+
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--chapters cannot be combined", stderr.getvalue())
 
     def test_ai_check_reports_missing_api_key(self):
         stderr = io.StringIO()

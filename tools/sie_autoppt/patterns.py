@@ -13,6 +13,10 @@ from .config import (
     PATTERN_FILE,
 )
 
+# NOTE: This module is only used in the legacy HTML input path.
+# AI planner flows choose pattern_id directly and only fall back to this matcher
+# when normalizing unsupported values or handling historical HTML-based decks.
+
 PATTERN_ALIASES: dict[str, tuple[str, ...]] = {
     "policy_timeline": ("policy", "regulation", "compliance", "timeline", "trend"),
     "pain_points": ("pain", "problem", "issue", "challenge", "risk", "bottleneck"),

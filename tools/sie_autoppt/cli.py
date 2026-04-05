@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .config import (
     DEFAULT_HTML,
+    DEFAULT_HTML_BODY_CHAPTERS,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_OUTPUT_PREFIX,
     DEFAULT_REFERENCE_BODY,
@@ -46,6 +47,19 @@ def load_brief_text(brief: str, brief_file: str) -> str:
     return "\n\n".join(part for part in parts if part)
 
 
+def validate_slide_args(args, parser: argparse.ArgumentParser):
+    uses_ai_range = bool(args.min_slides or args.max_slides)
+    uses_exact_chapters = bool(args.chapters)
+    is_ai_command = args.command in {"ai-plan", "ai-make", "ai-check"}
+
+    if uses_ai_range and not is_ai_command:
+        parser.error("--min-slides and --max-slides are only supported for ai-plan, ai-make, and ai-check.")
+    if uses_exact_chapters and uses_ai_range and is_ai_command:
+        parser.error("--chapters cannot be combined with --min-slides/--max-slides for AI planning.")
+    if args.min_slides and args.max_slides and args.min_slides > args.max_slides:
+        parser.error("--min-slides cannot be greater than --max-slides.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Plan and render SIE template-driven PPT from HTML or DeckSpec JSON."
@@ -67,6 +81,8 @@ def main():
     parser.add_argument("--llm-model", default="", help="Optional model override for the AI planner.")
     parser.add_argument("--planner-command", default="", help="Optional external planner command. Reads JSON from stdin and must print JSON to stdout.")
     parser.add_argument("--plan-output", default="", help="Optional output path for the generated DeckSpec JSON.")
+    parser.add_argument("--min-slides", type=int, default=0, help=f"Optional AI planner lower bound for body pages (1-{MAX_BODY_CHAPTERS}).")
+    parser.add_argument("--max-slides", type=int, default=0, help=f"Optional AI planner upper bound for body pages (1-{MAX_BODY_CHAPTERS}).")
     parser.add_argument(
         "--reference-body",
         default=str(DEFAULT_REFERENCE_BODY),
@@ -74,9 +90,10 @@ def main():
     )
     parser.add_argument("--output-name", default=DEFAULT_OUTPUT_PREFIX, help="Output filename prefix.")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory used for generated artifacts.")
-    parser.add_argument("--chapters", type=int, default=3, help=f"Number of body chapters to generate (1-{MAX_BODY_CHAPTERS}).")
+    parser.add_argument("--chapters", type=int, default=0, help=f"Exact number of body chapters to generate (1-{MAX_BODY_CHAPTERS}).")
     parser.add_argument("--active-start", type=int, default=0, help="Directory active chapter start index (0-based).")
     args = parser.parse_args()
+    validate_slide_args(args, parser)
 
     template_path = Path(args.template)
     html_path = Path(args.html)
@@ -84,9 +101,10 @@ def main():
     reference_body_path = Path(args.reference_body) if args.reference_body else None
     brief_text = load_brief_text(args.brief, args.brief_file)
     planner_command = resolve_external_planner_command(args.planner_command)
+    html_chapters = args.chapters or DEFAULT_HTML_BODY_CHAPTERS
 
     if args.command == "plan":
-        deck_plan = plan_deck_from_html(html_path, args.chapters)
+        deck_plan = plan_deck_from_html(html_path, html_chapters)
         plan_output = Path(args.plan_output) if args.plan_output else build_plan_output_path(output_dir, args.output_name)
         write_deck_spec(deck_plan.deck, plan_output)
         print(str(plan_output))
@@ -99,7 +117,9 @@ def main():
             deck = plan_deck_spec_with_ai(
                 AiPlanningRequest(
                     topic=args.topic,
-                    chapters=args.chapters,
+                    chapters=args.chapters or None,
+                    min_slides=args.min_slides or None,
+                    max_slides=args.max_slides or None,
                     audience=args.audience,
                     brief=brief_text,
                 ),
@@ -165,7 +185,9 @@ def main():
             deck = plan_deck_spec_with_ai(
                 AiPlanningRequest(
                     topic=args.topic,
-                    chapters=args.chapters,
+                    chapters=args.chapters or None,
+                    min_slides=args.min_slides or None,
+                    max_slides=args.max_slides or None,
                     audience=args.audience,
                     brief=brief_text,
                 ),
@@ -191,7 +213,7 @@ def main():
             html_path=html_path,
             reference_body_path=reference_body_path,
             output_prefix=args.output_name,
-            chapters=args.chapters,
+            chapters=html_chapters,
             active_start=args.active_start,
             output_dir=output_dir,
         )
