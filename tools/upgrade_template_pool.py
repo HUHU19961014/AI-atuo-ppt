@@ -13,9 +13,9 @@ def _bootstrap():
 
 _bootstrap()
 
-from sie_autoppt.powerpoint import has_powerpoint_com, open_powerpoint_application
 from sie_autoppt.slide_ops import clone_slide_after, copy_slide_xml_assets, ensure_last_slide, slide_assets_preserved
 from sie_autoppt.template_manifest import load_template_manifest
+from sie_autoppt.generator import validate_slide_pool_configuration
 
 
 def upgrade_template_pool(template_path: Path) -> bool:
@@ -23,48 +23,32 @@ def upgrade_template_pool(template_path: Path) -> bool:
     if not manifest.slide_pools:
         raise ValueError("Template manifest does not define slide_pools.")
 
-    if has_powerpoint_com():
-        return _upgrade_template_pool_with_com(template_path, manifest)
-    return _upgrade_template_pool_with_python(template_path, manifest)
+    changed = _upgrade_template_pool_with_python(template_path, manifest)
+    validate_template_pool(template_path, manifest)
+    return changed
 
 
-def _upgrade_template_pool_with_com(template_path: Path, manifest) -> bool:
+def validate_template_pool(template_path: Path, manifest=None) -> dict[str, int]:
+    manifest = manifest or load_template_manifest(template_path=template_path)
+    if not manifest.slide_pools:
+        raise ValueError("Template manifest does not define slide_pools.")
+
     prs = Presentation(str(template_path))
     required_pairs = len(manifest.slide_pools.body)
-    if manifest.supports_preallocated_pool(required_pairs, len(prs.slides)):
-        source_idx = manifest.slide_pools.directory[0] + 1
-        target_indices = [index + 1 for index in manifest.slide_pools.directory[1:required_pairs]]
-        if slide_assets_preserved(template_path, source_idx=source_idx, target_indices=target_indices):
-            return False
+    validate_slide_pool_configuration(manifest, body_page_count=required_pairs, slide_count=len(prs.slides))
+    if len(prs.slides) != manifest.slide_pools.ending + 1:
+        raise RuntimeError("Template slide count does not match the configured ending slide index after pool upgrade.")
 
-    app = open_powerpoint_application()
-    pres = app.Presentations.Open(
-        str(template_path.resolve()),
-        ReadOnly=False,
-        Untitled=False,
-        WithWindow=False,
-    )
-    try:
-        while pres.Slides.Count > 5:
-            pres.Slides(5).Delete()
+    source_idx = manifest.slide_pools.directory[0] + 1
+    target_indices = [index + 1 for index in manifest.slide_pools.directory[1:required_pairs]]
+    if target_indices and not slide_assets_preserved(template_path, source_idx=source_idx, target_indices=target_indices):
+        raise RuntimeError("Template pool validation failed: directory slide assets were not preserved.")
 
-        move_targets = []
-        insert_at = 5
-        for _ in range(1, required_pairs):
-            move_targets.append((3, insert_at))
-            insert_at += 1
-            move_targets.append((4, insert_at))
-            insert_at += 1
-
-        for source_slide, target_position in move_targets:
-            duplicate = pres.Slides(source_slide).Duplicate()
-            duplicate.Item(1).MoveTo(target_position)
-
-        pres.Save()
-        return True
-    finally:
-        pres.Close()
-        app.Quit()
+    return {
+        "slides": len(prs.slides),
+        "required_pairs": required_pairs,
+        "ending_slide_no": manifest.slide_pools.ending + 1,
+    }
 
 
 def _upgrade_template_pool_with_python(template_path: Path, manifest) -> bool:

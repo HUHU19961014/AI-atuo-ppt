@@ -11,7 +11,7 @@ def _bootstrap():
 
 _bootstrap()
 
-from sie_autoppt.powerpoint import open_powerpoint_application
+from sie_autoppt.slide_ops import import_slides_from_presentation
 
 
 def parse_mapping(items: list[str]) -> list[tuple[int, int]]:
@@ -23,26 +23,11 @@ def parse_mapping(items: list[str]) -> list[tuple[int, int]]:
 
 
 def apply_reference_body_slides(target_pptx: Path, reference_pptx: Path, mappings: list[tuple[int, int]]) -> bool:
-    app = open_powerpoint_application()
-    pres = app.Presentations.Open(
-        str(target_pptx.resolve()),
-        ReadOnly=False,
-        Untitled=False,
-        WithWindow=False,
-    )
-    try:
-        for target_slide, source_slide in sorted(mappings, reverse=True):
-            pres.Slides(target_slide).Delete()
-            pres.Slides.InsertFromFile(str(reference_pptx.resolve()), target_slide - 1, source_slide, source_slide)
-        pres.Save()
-        return True
-    finally:
-        pres.Close()
-        app.Quit()
+    return import_slides_from_presentation(target_pptx, reference_pptx, mappings)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Replace placeholder body slides with reference slides via PowerPoint COM.")
+    parser = argparse.ArgumentParser(description="Replace placeholder body slides with reference slides via native PPTX package merge.")
     parser.add_argument("target_pptx", help="Target PPTX path.")
     parser.add_argument("reference_pptx", help="Reference body PPTX path.")
     parser.add_argument("--mapping", nargs="+", required=True, help="Pairs in target=source format, e.g. 4=5 6=16")

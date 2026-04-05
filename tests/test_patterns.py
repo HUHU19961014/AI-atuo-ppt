@@ -1,6 +1,6 @@
 import unittest
 
-from tools.sie_autoppt.patterns import infer_pattern
+from tools.sie_autoppt.patterns import infer_pattern, infer_pattern_details
 
 
 class PatternInferenceTests(unittest.TestCase):
@@ -27,3 +27,25 @@ class PatternInferenceTests(unittest.TestCase):
         )
 
         self.assertEqual(pattern_id, "process_flow")
+
+    def test_infer_pattern_details_marks_low_confidence_generic_content(self):
+        result = infer_pattern_details(
+            "Executive overview",
+            ["Strategic priorities", "Cross-functional collaboration"],
+        )
+
+        self.assertEqual(result.pattern_id, "general_business")
+        self.assertTrue(result.low_confidence)
+        self.assertFalse(result.used_ai_assist)
+
+    def test_infer_pattern_details_can_use_ai_assist_resolver(self):
+        result = infer_pattern_details(
+            "Executive overview",
+            ["Strategic priorities", "Cross-functional collaboration"],
+            enable_ai_assist=True,
+            ai_pattern_resolver=lambda title, bullets, candidates: "process_flow",
+        )
+
+        self.assertEqual(result.pattern_id, "process_flow")
+        self.assertTrue(result.low_confidence)
+        self.assertTrue(result.used_ai_assist)

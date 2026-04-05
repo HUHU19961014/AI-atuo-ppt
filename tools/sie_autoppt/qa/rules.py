@@ -138,6 +138,7 @@ def build_qa_result(
     pattern_ids=None,
     chapter_lines=None,
     template_path: Path | None = None,
+    render_trace=None,
 ) -> QaResult:
     prs = Presentation(str(pptx_path))
     chapter_lines = chapter_lines or []
@@ -163,6 +164,7 @@ def build_qa_result(
         expected_directory_title_font_pt=manifest.fonts.directory_title_pt,
         semantic_patterns=list(pattern_ids or []),
         chapter_lines=list(chapter_lines),
+        render_trace=render_trace,
         checks=QaChecks(
             ending_last="PASS" if has_ending_last else "WARN",
             theme_title_font="PASS" if _theme_title_font_ok(prs, manifest) else "WARN",
@@ -174,5 +176,6 @@ def build_qa_result(
         ),
         notes=[
             "overflow_risk_boxes > 0 means manual review recommended.",
+            "render_trace.page_traces records each page's render route and fallback reason when available.",
         ],
     )

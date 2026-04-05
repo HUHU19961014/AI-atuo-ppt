@@ -1,5 +1,9 @@
 import re
+import unicodedata
+from functools import lru_cache
 from pathlib import Path
+from xml.etree import ElementTree
+import zipfile
 
 from pptx import Presentation
 from pptx.enum.text import PP_ALIGN
@@ -8,26 +12,36 @@ from .config import COLOR_ACTIVE
 from .template_manifest import TemplateManifest, load_template_manifest
 from .text_ops import write_text
 
+PRESENTATION_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+
 
 REFERENCE_STYLE_LIBRARY = {
     "comparison_upgrade": {
         "name": "左右对比升级页",
+        "source_slide_name": "comparison_upgrade_reference",
         "source_slide": 5,
+        "match_any_text": ["价值：业务效能跃升", "传统人工追溯模式"],
         "scenes": ["价值对比", "旧方式 vs 新方式", "能力边界与工程化解法"],
     },
     "capability_ring": {
         "name": "能力亮点环形页",
+        "source_slide_name": "capability_ring_reference",
         "source_slide": 16,
+        "match_any_text": ["赛意追溯产品亮点", "AI智能识别"],
         "scenes": ["能力亮点", "实践原则", "方案卖点"],
     },
     "five_phase_path": {
         "name": "五阶段推进路径页",
+        "source_slide_name": "five_phase_path_reference",
         "source_slide": 20,
+        "match_any_text": ["追溯管理-外部追溯推进路径", "阶段五 数据应用"],
         "scenes": ["实施路径", "方法路线", "阶段推进"],
     },
     "pain_cards": {
         "name": "三栏痛点拆解页",
+        "source_slide_name": "pain_cards_reference",
         "source_slide": 6,
+        "match_any_text": ["痛点：标准不清晰", "链路难贯通", "组织协同慢"],
         "scenes": ["痛点拆解", "挑战分析", "风险拆解"],
     },
 }
@@ -42,11 +56,78 @@ def get_reference_slide_no(style_id: str | None) -> int | None:
     return int(style["source_slide"])
 
 
-def build_reference_import_plan(body_pages, manifest: TemplateManifest | None = None) -> list[tuple[int, int]]:
+def _normalize_reference_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text).lower()
+    normalized = re.sub(r"\s+", "", normalized)
+    return normalized
+
+
+@lru_cache(maxsize=8)
+def _slide_text_index(reference_body_path_str: str) -> tuple[str, ...]:
+    prs = Presentation(reference_body_path_str)
+    slide_texts = []
+    for slide in prs.slides:
+        texts = []
+        for shape in slide.shapes:
+            if getattr(shape, "has_text_frame", False):
+                text = " ".join(shape.text_frame.text.split())
+                if text:
+                    texts.append(text)
+        slide_texts.append(_normalize_reference_text(" ".join(texts)))
+    return tuple(slide_texts)
+
+
+@lru_cache(maxsize=8)
+def _slide_metadata_name_index(reference_body_path_str: str) -> tuple[str, ...]:
+    prs = Presentation(reference_body_path_str)
+    metadata_names = []
+    with zipfile.ZipFile(reference_body_path_str) as package:
+        for slide in prs.slides:
+            part_name = str(slide.part.partname).lstrip("/")
+            metadata_name = ""
+            try:
+                root = ElementTree.fromstring(package.read(part_name))
+            except KeyError:
+                metadata_names.append(metadata_name)
+                continue
+            c_sld = root.find(f"{{{PRESENTATION_NS}}}cSld")
+            if c_sld is not None:
+                metadata_name = _normalize_reference_text(c_sld.attrib.get("name", ""))
+            metadata_names.append(metadata_name)
+    return tuple(metadata_names)
+
+
+def locate_reference_slide_no(style_id: str | None, reference_body_path: Path | None) -> int | None:
+    if not style_id:
+        return None
+    style = REFERENCE_STYLE_LIBRARY.get(style_id)
+    if not style:
+        return None
+    if reference_body_path and reference_body_path.exists():
+        metadata_target = _normalize_reference_text(str(style.get("source_slide_name", "")))
+        if metadata_target:
+            metadata_names = _slide_metadata_name_index(str(reference_body_path.resolve()))
+            for index, metadata_name in enumerate(metadata_names, start=1):
+                if metadata_name == metadata_target:
+                    return index
+        slide_texts = _slide_text_index(str(reference_body_path.resolve()))
+        for marker in style.get("match_any_text", []):
+            normalized_marker = _normalize_reference_text(str(marker))
+            for index, slide_text in enumerate(slide_texts, start=1):
+                if normalized_marker and normalized_marker in slide_text:
+                    return index
+    return get_reference_slide_no(style_id)
+
+
+def build_reference_import_plan(
+    body_pages,
+    reference_body_path: Path | None = None,
+    manifest: TemplateManifest | None = None,
+) -> list[tuple[int, int]]:
     manifest = manifest or load_template_manifest()
     plan = []
     for offset, page in enumerate(body_pages):
-        source_slide = get_reference_slide_no(getattr(page, "reference_style_id", None))
+        source_slide = locate_reference_slide_no(getattr(page, "reference_style_id", None), reference_body_path)
         if source_slide is None:
             continue
         target_slide = manifest.slide_roles.body_template + 1 + offset * 2

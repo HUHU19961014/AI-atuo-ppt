@@ -1,9 +1,15 @@
 import json
+import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
 from .config import DEFAULT_TEMPLATE, DEFAULT_TEMPLATE_MANIFEST
+
+
+EMU_PER_CM = 360000
+_GEOMETRY_KEY_MARKERS = ("left", "top", "width", "height", "gap", "padding", "offset", "origin", "start")
+_GEOMETRY_KEY_EXCLUSIONS = ("font_pt", "theme_title_pt", "directory_title_pt")
 
 
 @dataclass(frozen=True)
@@ -14,12 +20,12 @@ class ShapeBounds:
     max_width: int | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, int]) -> "ShapeBounds":
+    def from_dict(cls, data: dict[str, object]) -> "ShapeBounds":
         return cls(
-            min_top=data.get("min_top"),
-            max_top=data.get("max_top"),
-            min_width=data.get("min_width"),
-            max_width=data.get("max_width"),
+            min_top=_coerce_optional_emu(data.get("min_top")),
+            max_top=_coerce_optional_emu(data.get("max_top")),
+            min_width=_coerce_optional_emu(data.get("min_width")),
+            max_width=_coerce_optional_emu(data.get("max_width")),
         )
 
     def matches(self, shape) -> bool:
@@ -46,12 +52,12 @@ class TextBoxGeometry:
     height: int
 
     @classmethod
-    def from_dict(cls, data: dict[str, int]) -> "TextBoxGeometry":
+    def from_dict(cls, data: dict[str, object]) -> "TextBoxGeometry":
         return cls(
-            left=int(data["left"]),
-            top=int(data["top"]),
-            width=int(data["width"]),
-            height=int(data["height"]),
+            left=_coerce_emu(data["left"]),
+            top=_coerce_emu(data["top"]),
+            width=_coerce_emu(data["width"]),
+            height=_coerce_emu(data["height"]),
         )
 
 
@@ -168,6 +174,53 @@ def resolve_template_manifest_path(template_path: Path | None = None) -> Path:
     return DEFAULT_TEMPLATE_MANIFEST
 
 
+def _coerce_optional_emu(value: object) -> int | None:
+    if value is None:
+        return None
+    return _coerce_emu(value)
+
+
+def _coerce_emu(value: object) -> int:
+    if isinstance(value, bool):
+        raise ValueError("Boolean values are not valid geometry values in the template manifest.")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(round(value))
+    if isinstance(value, str):
+        compact = value.strip().lower()
+        if not compact:
+            raise ValueError("Empty geometry value is not allowed in the template manifest.")
+        if compact.endswith("cm"):
+            return int(round(float(compact[:-2].strip()) * EMU_PER_CM))
+        if compact.endswith("emu"):
+            return int(round(float(compact[:-3].strip())))
+        if re.fullmatch(r"-?\d+(\.\d+)?", compact):
+            return int(round(float(compact)))
+    raise ValueError(f"Unsupported geometry value in the template manifest: {value!r}")
+
+
+def _is_geometry_key(key: str) -> bool:
+    normalized = key.lower()
+    if normalized in _GEOMETRY_KEY_EXCLUSIONS:
+        return False
+    return any(marker in normalized for marker in _GEOMETRY_KEY_MARKERS)
+
+
+def _normalize_render_layouts(data: object, parent_key: str = "") -> object:
+    if isinstance(data, dict):
+        normalized: dict[str, object] = {}
+        for key, value in data.items():
+            if _is_geometry_key(key) and not isinstance(value, (dict, list)):
+                normalized[key] = _coerce_emu(value)
+            else:
+                normalized[key] = _normalize_render_layouts(value, parent_key=key)
+        return normalized
+    if isinstance(data, list):
+        return [_normalize_render_layouts(item, parent_key=parent_key) for item in data]
+    return data
+
+
 @lru_cache(maxsize=None)
 def _load_template_manifest_cached(manifest_path_str: str) -> TemplateManifest:
     manifest_path = Path(manifest_path_str)
@@ -181,7 +234,7 @@ def _load_template_manifest_cached(manifest_path_str: str) -> TemplateManifest:
         fallback_boxes=TemplateFallbackBoxes.from_dict(data["fallback_boxes"]),
         fonts=TemplateFonts.from_dict(data["fonts"]),
         slide_pools=SlidePools.from_dict(data["slide_pools"]) if data.get("slide_pools") else None,
-        render_layouts=data.get("render_layouts", {}),
+        render_layouts=_normalize_render_layouts(data.get("render_layouts", {})),
     )
 
 

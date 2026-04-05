@@ -1,121 +1,167 @@
 # SIE AutoPPT
 
-`SIE-autoppt` 是一个基于企业模板的 PPT 自动生成项目。当前主流程是：
+`SIE AutoPPT` is now an `AI planning + deterministic PPTX rendering` pipeline for enterprise slides.
 
-1. 从 HTML 输入中提取标题、阶段、场景和关注点。
-2. 将内容映射到模板中的主题页、目录页和正文页。
-3. 根据语义关键词选择合适的正文版式。
-4. 输出原生 `.pptx`，并生成 `QA.txt` 与 `QA.json` 两份 QA 报告。
+The project no longer assumes that users hand-write compliant HTML first. It supports:
 
-## 目录结构
+- classic HTML -> PPTX rendering
+- `DeckSpec JSON` planning and rendering
+- AI topic -> `DeckSpec JSON` -> PPTX
+- OpenAI-compatible hosted providers
+- local gateways and external agent planners
 
-```text
-SIE-autoppt/
-├─ assets/templates/          # 标准模板入口与模板指纹
-├─ input/                     # HTML 输入样例
-├─ projects/generated/        # 默认输出目录
-├─ skills/sie-autoppt/        # 规则、参考资料、检查清单
-├─ tools/sie_autoppt/         # 模块化生成逻辑
-├─ run_sie_autoppt.ps1        # 一键生成入口
-└─ tools/regression_check.ps1 # 回归检查入口
-```
+## Architecture
 
-## 标准模板入口
+The current workflow is split into three layers:
 
-项目统一使用下面这个模板路径：
+1. `AI planning layer`
+   Converts a topic, brief, or source document into a structured deck outline.
+2. `Python rendering layer`
+   Maps structured pages into deterministic template coordinates and outputs `.pptx`.
+3. `Human polish layer`
+   Final visual tuning, alignment, animation, and client-facing refinement.
 
-`assets/templates/sie_template.pptx`
+## Commands
 
-`assets/templates/sie_template.manifest.json`
-
-根目录不再保留重复模板。后续如果替换模板，只更新这一份，并执行：
+Main CLI:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\update_template_version.ps1
+python .\tools\sie_autoppt_cli.py
 ```
 
-## 快速开始
+Supported workflow stages:
+
+- `make`: legacy one-step HTML -> PPTX
+- `plan`: HTML -> `DeckSpec JSON`
+- `render`: `DeckSpec JSON` -> PPTX
+- `ai-plan`: topic -> `DeckSpec JSON`
+- `ai-make`: topic -> PPTX
+- `ai-check`: planner connectivity smoke test
+
+Examples:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py `
-  --template .\assets\templates\sie_template.pptx `
+python .\tools\sie_autoppt_cli.py plan `
   --html .\input\uat_plan_sample.html `
-  --output-name SIE_AutoPPT `
-  --output-dir .\projects\generated `
-  --chapters 3 `
-  --active-start 0
+  --plan-output .\projects\generated\planned.deck.json
 ```
-
-或者直接执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\run_sie_autoppt.ps1
+python .\tools\sie_autoppt_cli.py render `
+  --deck-json .\projects\generated\planned.deck.json `
+  --output-name Rendered_From_Json
 ```
-
-## 输入规范
-
-输入 HTML 的详细字段说明见：
-
-[`docs/INPUT_SPEC.md`](./docs/INPUT_SPEC.md)
-
-当前生成器默认识别这些 class：
-
-- `title`
-- `subtitle`
-- `scope-title`
-- `scope-subtitle`
-- `focus-title`
-- `focus-subtitle`
-- `phase-time`
-- `phase-name`
-- `phase-code`
-- `phase-func`
-- `phase-owner`
-- `scenario`
-- `note`
-- `footer`
-
-其中 `scope-*` 和 `focus-*` 可选，用于覆盖第 2 / 3 个正文页的标题与副标题。
-扩展字段说明见 [`docs/INPUT_SPEC_SUPPLEMENT.md`](./docs/INPUT_SPEC_SUPPLEMENT.md)。
-
-如果 HTML 中完全缺少这些内容，程序会直接报错，而不是生成一份空 PPT。
-
-## 当前实现思路
-
-1. 模板页角色、shape selector 与 QA 字体期望由 `assets/templates/sie_template.manifest.json` 统一管理，加载逻辑位于 `tools/sie_autoppt/template_manifest.py`。
-2. HTML 内容先在 `tools/sie_autoppt/generator.py` 中解析为输入载荷，再组装为页面规格。
-3. 页面规格与 PPT 渲染已解耦，后续扩页型时优先改页面构造层，不要直接堆到渲染函数里。
-4. 模式识别配置位于 `skills/sie-autoppt/references/business-slide-patterns.json`。
-5. QA 检查会输出结束页、目录页和潜在文本溢出风险。
-
-## 回归检查
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
+python .\tools\sie_autoppt_cli.py ai-make `
+  --topic "制造企业 AI AutoPPT 方案汇报" `
+  --brief "突出项目现状、三层架构、实施路径和风险控制"
 ```
 
-默认会批量执行 `input/*.html` 下的所有样例。
-其中 `*.fail.html` 会被当作预期失败样例，用来验证输入校验。
+## Provider Compatibility
 
-## 测试
+The planner now supports multiple backend patterns:
+
+- `Responses API` for official OpenAI-style providers
+- `chat/completions` for OpenAI-compatible providers
+- local gateways with optional empty API keys
+- external planner commands that read JSON from stdin and write JSON to stdout
+
+Examples:
+
+### OpenAI-compatible provider
+
+```powershell
+$env:OPENAI_API_KEY = "your_key"
+$env:OPENAI_BASE_URL = "https://api.siliconflow.cn/v1"
+$env:SIE_AUTOPPT_LLM_API_STYLE = "chat_completions"
+$env:SIE_AUTOPPT_LLM_MODEL = "deepseek-ai/DeepSeek-V3.2"
+
+python .\tools\sie_autoppt_cli.py ai-check `
+  --topic "provider healthcheck"
+```
+
+### Local gateway
+
+```powershell
+$env:OPENAI_API_KEY = ""
+$env:OPENAI_BASE_URL = "http://localhost:4000/v1"
+$env:SIE_AUTOPPT_ALLOW_EMPTY_API_KEY = "true"
+$env:SIE_AUTOPPT_LLM_MODEL = "deepseek-chat"
+
+python .\tools\sie_autoppt_cli.py ai-check `
+  --topic "local gateway healthcheck"
+```
+
+### Existing agent or OpenClaw-style integration
+
+If another agent already owns model access, you do not need a second API key inside this project.
+
+Option A:
+
+- let the external agent produce `DeckSpec JSON`
+- call `render`
+
+Option B:
+
+- let the external agent act as a planner command
+- call `ai-plan`, `ai-make`, or `ai-check` with `--planner-command`
+
+Example:
+
+```powershell
+python .\tools\sie_autoppt_cli.py ai-check `
+  --planner-command "python .\your_agent_bridge.py" `
+  --topic "external planner check"
+```
+
+## Template and Reference Slides
+
+Canonical template files:
+
+- `assets/templates/sie_template.pptx`
+- `assets/templates/sie_template.manifest.json`
+
+Reference-style body pages now use native PPTX package merge by default. The bundled reference deck carries slide metadata names, so lookup order is:
+
+1. slide metadata name
+2. text marker match
+3. fallback page number
+
+## Docs
+
+- [AI planner](./docs/AI_PLANNER.md)
+- [Deck JSON spec](./docs/DECK_JSON_SPEC.md)
+- [Input spec](./docs/INPUT_SPEC.md)
+- [Testing](./docs/TESTING.md)
+
+## Testing
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run_unit_tests.ps1
 ```
 
-测试分层说明见 [`docs/TESTING.md`](./docs/TESTING.md)。
-
-人工视觉验收批次可通过下面命令生成：
-
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\prepare_visual_review.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
 ```
 
-## 版本管理建议
+## Current Status
 
-当前项目已经启用 Git。建议后续按下面方式迭代：
+Already fixed in the current codebase:
 
-1. 改模板单独提交。
-2. 改输入规则或关键词规则单独提交。
-3. 改生成逻辑单独提交。
-4. 每次正式交付前跑一遍回归检查。
+- AI planning entrypoint
+- `DeckSpec JSON` contract
+- `plan/render/make` split workflow
+- render trace and QA transparency
+- BeautifulSoup HTML parser
+- typed payload models
+- `cm` unit support in manifest geometry
+- native reference slide import
+- external planner command support
+- SiliconFlow / OpenAI-compatible provider support
+
+Still not fully finished:
+
+- optional COM helper scripts still exist for a few template-maintenance workflows
+- full web-service-grade packaging and auth management are not done
+- external agent bridges are generic, but no OpenClaw-specific bridge script is bundled yet

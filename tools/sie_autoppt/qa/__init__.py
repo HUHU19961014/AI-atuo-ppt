@@ -6,13 +6,21 @@ from .report_text import write_qa_text_report
 from .rules import build_qa_result
 
 
-def write_qa_report(pptx_path: Path, chapter_count: int, pattern_ids=None, chapter_lines=None, template_path: Path | None = None) -> Path:
+def write_qa_report(
+    pptx_path: Path,
+    chapter_count: int,
+    pattern_ids=None,
+    chapter_lines=None,
+    template_path: Path | None = None,
+    render_trace=None,
+) -> Path:
     result = build_qa_result(
         pptx_path,
         chapter_count,
         pattern_ids=pattern_ids,
         chapter_lines=chapter_lines,
         template_path=template_path,
+        render_trace=render_trace,
     )
     write_qa_json_report(result, pptx_path)
     return write_qa_text_report(result, pptx_path)

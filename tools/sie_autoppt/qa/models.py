@@ -1,5 +1,7 @@
 from dataclasses import asdict, dataclass, field
 
+from ..models import DeckRenderTrace
+
 
 @dataclass(frozen=True)
 class QaChecks:
@@ -30,7 +32,8 @@ class QaResult:
     semantic_patterns: list[str] = field(default_factory=list)
     chapter_lines: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
-    schema_version: str = "1.1"
+    render_trace: DeckRenderTrace | None = None
+    schema_version: str = "1.2"
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

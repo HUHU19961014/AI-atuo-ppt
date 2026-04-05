@@ -1,6 +1,12 @@
 import unittest
 
-from tools.sie_autoppt.inputs.html_parser import parse_html_payload, validate_payload
+from tools.sie_autoppt.inputs.html_parser import (
+    extract_list_items_from_block,
+    extract_steps,
+    extract_tag_inside_block,
+    parse_html_payload,
+    validate_payload,
+)
 
 
 class HtmlParserTests(unittest.TestCase):
@@ -49,3 +55,44 @@ class HtmlParserTests(unittest.TestCase):
         payload = parse_html_payload('<div class="title">Only title</div>')
         with self.assertRaises(ValueError):
             validate_payload(payload)
+
+    def test_parser_handles_nested_markup_and_class_order(self):
+        html = """
+        <section class="panel hero title-block">
+          <h2 class="subtitle extra">Executive Subtitle</h2>
+          <div class="x title y"><span>Program</span> <strong>Overview</strong></div>
+          <div class="phase-name"><span>Discover</span></div>
+          <div class="phase-func"><em>Clarify baseline</em></div>
+          <div class="scenario"><span>Scenario</span> A</div>
+          <div class="note">Risk <strong>watch</strong></div>
+        </section>
+        """
+
+        payload = parse_html_payload(html)
+
+        self.assertEqual(payload.title, "Program Overview")
+        self.assertEqual(payload.subtitle, "Executive Subtitle")
+        self.assertEqual(payload.phases[0]["name"], "Discover")
+        self.assertEqual(payload.phases[0]["func"], "Clarify baseline")
+        self.assertEqual(payload.scenarios, ["Scenario A"])
+        self.assertEqual(payload.notes, ["Risk watch"])
+
+    def test_block_extractors_handle_multi_class_blocks(self):
+        html = """
+        <div class="card card-danger">
+          <h2><span>01</span> 关键风险</h2>
+          <ul>
+            <li><strong>风险一</strong>：说明</li>
+            <li>风险二</li>
+          </ul>
+        </div>
+        <div class="step">
+          <div class="step-number">1</div>
+          <h3><span>阶段一</span></h3>
+          <p>梳理现状与目标</p>
+        </div>
+        """
+
+        self.assertEqual(extract_tag_inside_block(html, "card card-danger", "h2"), "01 关键风险")
+        self.assertEqual(extract_list_items_from_block(html, "card card-danger"), ["风险一：说明", "风险二"])
+        self.assertEqual(extract_steps(html), [("阶段一", "梳理现状与目标")])

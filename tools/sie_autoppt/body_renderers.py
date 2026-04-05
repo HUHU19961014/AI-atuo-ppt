@@ -145,7 +145,7 @@ def fill_body_slide(slide, page: BodyPageSpec, manifest: TemplateManifest):
 
     protected_shapes = title_candidates + subtitle_candidates[:1]
     _clear_body_render_area(slide, manifest, protected_shapes=protected_shapes)
-    renderer = PATTERN_RENDERERS.get(page.pattern_id, _render_cards_2x2)
+    renderer = PATTERN_RENDERERS[resolve_render_pattern(page.pattern_id)]
     renderer(slide, page, manifest)
 
 
@@ -810,3 +810,7 @@ PATTERN_RENDERERS = {
     "five_phase_path": _render_five_phase_path,
     "pain_cards": _render_pain_cards,
 }
+
+
+def resolve_render_pattern(pattern_id: str) -> str:
+    return pattern_id if pattern_id in PATTERN_RENDERERS else "general_business"

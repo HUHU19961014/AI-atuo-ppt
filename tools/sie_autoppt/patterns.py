@@ -1,10 +1,17 @@
 import json
 import re
 import unicodedata
+from dataclasses import dataclass
 from functools import lru_cache
 from difflib import SequenceMatcher
 
-from .config import PATTERN_FILE
+from .config import (
+    DEFAULT_PATTERN_ASSIST_MODEL,
+    DEFAULT_PATTERN_LOW_CONFIDENCE_SCORE,
+    DEFAULT_PATTERN_MARGIN_THRESHOLD,
+    ENABLE_AI_PATTERN_ASSIST,
+    PATTERN_FILE,
+)
 
 PATTERN_ALIASES: dict[str, tuple[str, ...]] = {
     "policy_timeline": ("policy", "regulation", "compliance", "timeline", "trend"),
@@ -25,6 +32,16 @@ PATTERN_ALIASES: dict[str, tuple[str, ...]] = {
     "case_proof": ("case", "reference", "proof", "evidence", "benchmark"),
     "action_next_steps": ("action", "next step", "recommendation", "summary", "roadmap"),
 }
+
+
+@dataclass(frozen=True)
+class PatternInferenceResult:
+    pattern_id: str
+    best_score: int
+    second_best_score: int
+    low_confidence: bool
+    used_ai_assist: bool = False
+    ai_assist_error: str = ""
 
 
 @lru_cache(maxsize=1)
@@ -81,7 +98,11 @@ def _score_alias(alias: str, normalized_text: str, compact_text: str, english_to
     return 0
 
 
-def infer_pattern(title: str, bullets: list[str]) -> str:
+def _is_low_confidence(best_score: int, second_best_score: int) -> bool:
+    return best_score < DEFAULT_PATTERN_LOW_CONFIDENCE_SCORE or (best_score - second_best_score) <= DEFAULT_PATTERN_MARGIN_THRESHOLD
+
+
+def _score_patterns(title: str, bullets: list[str]) -> list[tuple[str, int]]:
     title_text = title or ""
     bullet_text = " ".join(bullets or [])
 
@@ -89,9 +110,7 @@ def infer_pattern(title: str, bullets: list[str]) -> str:
     normalized_body, compact_body = _text_forms(f"{title_text} {bullet_text}")
     body_tokens = _extract_english_tokens(f"{title_text} {bullet_text}")
 
-    best_id = "general_business"
-    best_score = 0
-
+    scores = []
     for pattern in load_patterns():
         pattern_id = pattern.get("id", "general_business")
         score = 0
@@ -108,8 +127,98 @@ def infer_pattern(title: str, bullets: list[str]) -> str:
             else:
                 score += _score_alias(alias, normalized_body, compact_body, body_tokens)
 
-        if score > best_score:
-            best_id = pattern_id
-            best_score = score
+        scores.append((pattern_id, score))
+    return sorted(scores, key=lambda item: (item[1], item[0] != "general_business"), reverse=True)
 
-    return best_id
+
+def _resolve_pattern_with_llm(title: str, bullets: list[str], candidate_pattern_ids: list[str]) -> str:
+    from .llm_openai import OpenAIResponsesClient, load_openai_responses_config
+
+    client = OpenAIResponsesClient(load_openai_responses_config(model=DEFAULT_PATTERN_ASSIST_MODEL))
+    developer_prompt = """
+Choose the most appropriate PPT layout pattern.
+
+Only decide the semantic layout type. Do not explain. Return only the schema-constrained JSON.
+Prefer general_business when the input is too generic.
+""".strip()
+    user_prompt = f"""
+Title:
+{title}
+
+Bullets:
+{chr(10).join(f"- {item}" for item in bullets)}
+""".strip()
+    result = client.create_structured_json(
+        developer_prompt=developer_prompt,
+        user_prompt=user_prompt,
+        schema_name="sie_autoppt_pattern_pick",
+        schema={
+            "type": "object",
+            "properties": {
+                "pattern_id": {
+                    "type": "string",
+                    "enum": candidate_pattern_ids,
+                }
+            },
+            "required": ["pattern_id"],
+            "additionalProperties": False,
+        },
+    )
+    return str(result["pattern_id"])
+
+
+def infer_pattern_details(
+    title: str,
+    bullets: list[str],
+    enable_ai_assist: bool | None = None,
+    ai_pattern_resolver=None,
+) -> PatternInferenceResult:
+    scores = _score_patterns(title, bullets)
+    best_id = "general_business"
+    best_score = 0
+    second_best_score = 0
+    if scores:
+        best_id, best_score = scores[0]
+        second_best_score = scores[1][1] if len(scores) > 1 else 0
+    if best_score <= 0:
+        best_id = "general_business"
+        second_best_score = 0
+
+    low_confidence = _is_low_confidence(best_score, second_best_score)
+    should_use_ai_assist = ENABLE_AI_PATTERN_ASSIST if enable_ai_assist is None else enable_ai_assist
+    if low_confidence and should_use_ai_assist:
+        resolver = ai_pattern_resolver or _resolve_pattern_with_llm
+        try:
+            resolved = resolver(
+                title,
+                bullets,
+                ["general_business", *[pattern_id for pattern_id, _ in scores]],
+            )
+        except Exception as exc:
+            return PatternInferenceResult(
+                pattern_id=best_id,
+                best_score=best_score,
+                second_best_score=second_best_score,
+                low_confidence=low_confidence,
+                used_ai_assist=False,
+                ai_assist_error=str(exc),
+            )
+        if isinstance(resolved, str) and resolved:
+            return PatternInferenceResult(
+                pattern_id=resolved,
+                best_score=best_score,
+                second_best_score=second_best_score,
+                low_confidence=low_confidence,
+                used_ai_assist=True,
+            )
+
+    return PatternInferenceResult(
+        pattern_id=best_id,
+        best_score=best_score,
+        second_best_score=second_best_score,
+        low_confidence=low_confidence,
+    )
+
+
+def infer_pattern(title: str, bullets: list[str]) -> str:
+    return infer_pattern_details(title, bullets).pattern_id

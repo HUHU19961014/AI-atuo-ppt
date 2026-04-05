@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ASSETS_DIR = PROJECT_ROOT / "assets"
@@ -27,6 +28,32 @@ DEFAULT_OUTPUT_DIR = _default_output_dir()
 DEFAULT_OUTPUT_PREFIX = "SIE_AutoPPT"
 DEFAULT_MIN_TEMPLATE_SLIDES = 5
 MAX_BODY_CHAPTERS = 3
+DEFAULT_AI_MODEL = os.environ.get("SIE_AUTOPPT_LLM_MODEL", "gpt-5.4-mini")
+DEFAULT_AI_TIMEOUT_SEC = float(os.environ.get("SIE_AUTOPPT_LLM_TIMEOUT_SEC", "90"))
+DEFAULT_AI_REASONING_EFFORT = os.environ.get("SIE_AUTOPPT_LLM_REASONING_EFFORT", "low")
+DEFAULT_AI_TEXT_VERBOSITY = os.environ.get("SIE_AUTOPPT_LLM_VERBOSITY", "low")
+DEFAULT_AI_SOURCE_CHAR_LIMIT = 12000
+DEFAULT_AI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+
+
+def infer_llm_api_style(base_url: str, configured_style: str | None = None) -> str:
+    candidate = (configured_style or os.environ.get("SIE_AUTOPPT_LLM_API_STYLE", "")).strip().lower().replace("-", "_")
+    if candidate:
+        if candidate not in {"responses", "chat_completions"}:
+            raise ValueError(f"Unsupported SIE_AUTOPPT_LLM_API_STYLE: {candidate}")
+        return candidate
+
+    netloc = urlparse(base_url).netloc.lower()
+    if "api.openai.com" in netloc or "openrouter.ai" in netloc:
+        return "responses"
+    return "chat_completions"
+
+
+DEFAULT_AI_API_STYLE = infer_llm_api_style(DEFAULT_AI_BASE_URL)
+DEFAULT_PATTERN_LOW_CONFIDENCE_SCORE = int(os.environ.get("SIE_AUTOPPT_PATTERN_LOW_CONFIDENCE_SCORE", "4"))
+DEFAULT_PATTERN_MARGIN_THRESHOLD = int(os.environ.get("SIE_AUTOPPT_PATTERN_MARGIN_THRESHOLD", "1"))
+ENABLE_AI_PATTERN_ASSIST = os.environ.get("SIE_AUTOPPT_ENABLE_AI_PATTERN_ASSIST", "").strip().lower() in {"1", "true", "yes"}
+DEFAULT_PATTERN_ASSIST_MODEL = os.environ.get("SIE_AUTOPPT_PATTERN_ASSIST_MODEL", DEFAULT_AI_MODEL)
 
 # Theme
 FONT_NAME = "Microsoft YaHei"

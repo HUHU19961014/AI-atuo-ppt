@@ -34,6 +34,24 @@ def format_qa_text(result: QaResult) -> str:
             f"overflow_risk_boxes: {metrics.overflow_risk_boxes}",
         ]
     )
+    if result.render_trace is not None:
+        lines.extend(
+            [
+                f"input_kind: {result.render_trace.input_kind}",
+                f"body_render_mode: {result.render_trace.body_render_mode}",
+                f"reference_import_applied: {result.render_trace.reference_import_applied}",
+            ]
+        )
+        if result.render_trace.reference_import_reason:
+            lines.append(f"reference_import_reason: {result.render_trace.reference_import_reason}")
+        for page_trace in result.render_trace.page_traces:
+            lines.append(
+                "page_render_trace: "
+                f"{page_trace.page_key} | requested={page_trace.requested_pattern_id} | "
+                f"actual={page_trace.actual_pattern_id} | route={page_trace.render_route}"
+            )
+            if page_trace.fallback_reason:
+                lines.append(f"page_fallback_reason: {page_trace.page_key} | {page_trace.fallback_reason}")
     for note in result.notes:
         lines.append(f"note: {note}")
     return "\n".join(lines)

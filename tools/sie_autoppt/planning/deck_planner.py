@@ -11,7 +11,12 @@ from ..inputs.html_parser import (
     parse_html_payload,
     validate_payload,
 )
-from ..models import BodyPageSpec, DeckSpec, InputPayload
+from ..models import (
+    BodyPageSpec,
+    BodyPagePayload,
+    DeckSpec,
+    InputPayload,
+)
 from ..patterns import infer_pattern
 
 
@@ -167,7 +172,7 @@ def build_governance_cards(items: list[str]) -> list[dict[str, str]]:
     return cards
 
 
-def build_generic_page_payload(page: BodyPageSpec, pattern_id: str, payload: InputPayload) -> dict[str, object]:
+def build_generic_page_payload(page: BodyPageSpec, pattern_id: str, payload: InputPayload) -> BodyPagePayload:
     if pattern_id == "solution_architecture":
         layers = build_architecture_layers(payload)
         if layers:
