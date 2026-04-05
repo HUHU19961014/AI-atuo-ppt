@@ -31,6 +31,16 @@ $cases = @(
     )
   },
   @{
+    Name = "architecture_program_sample"
+    Label = "Architecture and governance test deck"
+    Html = Join-Path $ProjectRoot "input\architecture_program_sample.html"
+    Focus = @(
+      "Check architecture-heavy content still maps to the right layouts.",
+      "Check directory image assets remain intact after generation.",
+      "Check architecture, process, and governance pages stay readable."
+    )
+  },
+  @{
     Name = "default_erp_blueprint"
     Label = "ERP architecture, process, and governance"
     Html = Join-Path $ProjectRoot "input\default_erp_blueprint.html"
@@ -38,6 +48,16 @@ $cases = @(
       "Check solution_architecture, process_flow, and org_governance layouts.",
       "Check shapes, color blocks, and text for overlap.",
       "Check governance footer text remains readable."
+    )
+  },
+  @{
+    Name = "pcb_erp_general_solution"
+    Label = "PCB industry ERP general solution"
+    Html = Join-Path $ProjectRoot "input\pcb_erp_general_solution.html"
+    Focus = @(
+      "Check PCB-specific terminology such as CAM, MI, APS, MES, and WMS remains readable.",
+      "Check solution_architecture, process_flow, and org_governance pages fit denser industry content.",
+      "Check directory labels still read naturally for a more domain-specific deck."
     )
   },
   @{
