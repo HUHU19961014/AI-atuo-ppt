@@ -1,5 +1,6 @@
 import io
 import json
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
@@ -102,3 +103,17 @@ class CliTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue().strip())
         self.assertEqual(payload["api_style"], "external_command")
         self.assertEqual(payload["model"], "external-command")
+
+    def test_clarify_outputs_session_json_and_persists_state_file(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = f"{temp_dir}\\clarifier_state.json"
+            with (
+                patch("sys.argv", ["sie-autoppt", "clarify", "--topic", "帮我做PPT", "--clarifier-state-file", state_path]),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+            payload = json.loads(stdout.getvalue().strip())
+            self.assertEqual(payload["status"], "needs_clarification")
+            self.assertTrue(payload["session"]["pending_dimensions"])

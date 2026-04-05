@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -6,12 +8,23 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
+from ..clarifier import DEFAULT_AUDIENCE_HINT, derive_planning_context
 from ..config import DEFAULT_AI_SOURCE_CHAR_LIMIT, MAX_BODY_CHAPTERS
 from ..deck_spec_io import deck_spec_from_dict
 from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
 from ..models import BodyPageSpec, DeckSpec
 from ..patterns import infer_pattern
-from .deck_planner import compact_text, shorten_for_nav
+from ..prompting import render_prompt_template
+from .deck_planner import (
+    build_governance_cards,
+    build_pipeline_payload,
+    build_process_steps,
+    compact_text,
+    concise_text,
+    short_stage_label,
+    shorten_for_nav,
+    split_title_detail,
+)
 
 
 SUPPORTED_AI_PATTERNS = (
@@ -19,21 +32,27 @@ SUPPORTED_AI_PATTERNS = (
     "solution_architecture",
     "process_flow",
     "org_governance",
+    "comparison_upgrade",
+    "capability_ring",
+    "five_phase_path",
     "pain_cards",
 )
 
-# Maps semantic pattern IDs to supported AI rendering patterns.
-# pain_points -> pain_cards: Three-column pain point breakdown layout exists and is suitable for pain analysis.
-# Other mappings fall back to general_business when no specialized layout fits the semantic intent.
+# Accept both direct renderer pattern ids and higher-level semantic aliases.
 PATTERN_COMPATIBILITY_MAP = {
-    "policy_timeline": "general_business",
-    "pain_points": "pain_cards",
-    "value_benefit": "general_business",
+    "general_business": "general_business",
     "solution_architecture": "solution_architecture",
     "process_flow": "process_flow",
     "org_governance": "org_governance",
+    "comparison_upgrade": "comparison_upgrade",
+    "capability_ring": "capability_ring",
+    "five_phase_path": "five_phase_path",
+    "pain_cards": "pain_cards",
+    "policy_timeline": "general_business",
+    "pain_points": "pain_cards",
+    "value_benefit": "general_business",
     "implementation_plan": "process_flow",
-    "capability_matrix": "general_business",
+    "capability_matrix": "capability_ring",
     "case_proof": "general_business",
     "action_next_steps": "general_business",
 }
@@ -51,7 +70,7 @@ class AiPlanningRequest:
     chapters: int | None = None
     min_slides: int | None = None
     max_slides: int | None = None
-    audience: str = "管理层 + 业务负责人"
+    audience: str = DEFAULT_AUDIENCE_HINT
     brief: str = ""
     language: str = "zh-CN"
 
@@ -100,6 +119,10 @@ def resolve_ai_slide_bounds(request: AiPlanningRequest) -> AiSlideBounds:
     return AiSlideBounds(min_slides=resolved_min, max_slides=resolved_max)
 
 
+def _supported_pattern_enum() -> list[str]:
+    return sorted(PATTERN_COMPATIBILITY_MAP.keys())
+
+
 def build_ai_outline_schema(slide_bounds: AiSlideBounds) -> dict[str, Any]:
     return {
         "type": "object",
@@ -121,12 +144,12 @@ def build_ai_outline_schema(slide_bounds: AiSlideBounds) -> dict[str, Any]:
                         "bullets": {
                             "type": "array",
                             "minItems": 2,
-                            "maxItems": 4,
-                            "items": {"type": "string", "minLength": 4, "maxLength": 80},
+                            "maxItems": 5,
+                            "items": {"type": "string", "minLength": 4, "maxLength": 90},
                         },
                         "pattern_id": {
                             "type": "string",
-                            "enum": list(PATTERN_COMPATIBILITY_MAP.keys()),
+                            "enum": _supported_pattern_enum(),
                         },
                         "nav_title": {"type": "string", "maxLength": 10},
                     },
@@ -140,12 +163,61 @@ def build_ai_outline_schema(slide_bounds: AiSlideBounds) -> dict[str, Any]:
     }
 
 
+def normalize_ai_planning_request(request: AiPlanningRequest, model: str | None = None) -> tuple[AiPlanningRequest, Any]:
+    context = derive_planning_context(
+        topic=request.topic.strip(),
+        brief=request.brief,
+        audience=request.audience,
+        chapters=request.chapters,
+        min_slides=request.min_slides,
+        max_slides=request.max_slides,
+        model=model,
+        prefer_llm=False,
+    )
+    normalized_request = AiPlanningRequest(
+        topic=context.topic.strip(),
+        chapters=context.chapters,
+        min_slides=context.min_slides,
+        max_slides=context.max_slides,
+        audience=context.audience.strip() or DEFAULT_AUDIENCE_HINT,
+        brief=context.brief.strip(),
+        language=request.language.strip() or "zh-CN",
+    )
+    return normalized_request, context
+
+
+def _render_supported_pattern_guide() -> str:
+    entries = [
+        "- general_business: summary, value points, key takeaways, generic business pages",
+        "- solution_architecture: layered architecture, capability stack, system landscape",
+        "- process_flow: step flow, roadmap, staged execution, user journey",
+        "- org_governance: ownership, responsibilities, operating model, governance split",
+        "- comparison_upgrade: before/after, current vs target, upgrade narrative",
+        "- capability_ring: capability themes, principle clusters, dimension overviews",
+        "- five_phase_path: explicit phased plan, multi-stage delivery roadmap",
+        "- pain_cards: pain points, issues, bottlenecks, challenge breakdown",
+    ]
+    return "\n".join(entries)
+
+
+def _render_clarifier_context(context: Any) -> str:
+    lines = []
+    if context.requirements.topic:
+        lines.append(f"- topic: {context.requirements.topic}")
+    for dimension, value in context.requirements.known_dimensions().items():
+        lines.append(f"- {dimension}: {value}")
+    if not lines:
+        return "- none"
+    return "\n".join(lines)
+
+
 def build_ai_planning_prompts(request: AiPlanningRequest, slide_bounds: AiSlideBounds | None = None) -> tuple[str, str]:
-    slide_bounds = slide_bounds or resolve_ai_slide_bounds(request)
+    normalized_request, clarifier_context = normalize_ai_planning_request(request)
+    slide_bounds = slide_bounds or resolve_ai_slide_bounds(normalized_request)
     if slide_bounds.is_exact:
         slide_count_rule = f"Return exactly {slide_bounds.min_slides} body pages."
         slide_count_request = str(slide_bounds.min_slides)
-        slide_count_output_rule = f"- Produce a cover title plus exactly {slide_bounds.min_slides} body pages."
+        slide_count_output_rule = f"Produce a cover title plus exactly {slide_bounds.min_slides} body pages."
     else:
         slide_count_rule = (
             f"Return between {slide_bounds.min_slides} and {slide_bounds.max_slides} body pages "
@@ -153,45 +225,39 @@ def build_ai_planning_prompts(request: AiPlanningRequest, slide_bounds: AiSlideB
         )
         slide_count_request = f"{slide_bounds.min_slides}-{slide_bounds.max_slides}"
         slide_count_output_rule = (
-            f"- Produce a cover title plus {slide_bounds.min_slides}-{slide_bounds.max_slides} body pages.\n"
-            "- Choose the actual page count based on content density rather than padding or over-compressing the deck."
+            f"Produce a cover title plus {slide_bounds.min_slides}-{slide_bounds.max_slides} body pages. "
+            "Choose the actual page count based on content density."
         )
 
-    developer_prompt = f"""
-You are planning a business PPT outline for an enterprise template-driven renderer.
+    developer_prompt = render_prompt_template(
+        "prompts/system/default.md",
+        slide_count_rule=slide_count_rule,
+        pattern_enum=", ".join(_supported_pattern_enum()),
+        pattern_guide=_render_supported_pattern_guide(),
+        clarifier_context=_render_clarifier_context(clarifier_context),
+        missing_dimensions=", ".join(clarifier_context.missing_dimensions) or "none",
+        language=normalized_request.language,
+    )
 
-Your job is to output only structured content decisions. Do not output coordinates, PowerPoint APIs, design instructions, or prose outside the JSON schema.
-
-Hard rules:
-- {slide_count_rule}
-- Each page must use one pattern_id from the provided enum.
-- Prefer these stable patterns when possible:
-  - general_business: summary, value points, pain points, key takeaways
-  - solution_architecture: layered architecture, capability stack, system landscape
-  - process_flow: phase flow, journey, implementation steps, roadmap
-  - org_governance: responsibilities, governance, ownership, collaboration
-- Keep titles concise.
-- Keep subtitles concise and executive-friendly.
-- Bullets must be short, specific, and presentation-ready.
-- Avoid filler like "进一步提升效率" unless tied to concrete content.
-- Mirror the user's language when obvious; default to {request.language}.
-""".strip()
-
-    source_brief = request.brief.strip()
+    source_brief = normalized_request.brief.strip()
     if source_brief:
         source_brief = source_brief[:DEFAULT_AI_SOURCE_CHAR_LIMIT]
 
+    clarified_requirements = _render_clarifier_context(clarifier_context)
     user_prompt = f"""
 Plan a PPT deck outline.
 
 Topic:
-{request.topic.strip()}
+{normalized_request.topic.strip()}
 
 Audience:
-{request.audience.strip()}
+{normalized_request.audience.strip()}
 
 Requested body pages:
 {slide_count_request}
+
+Clarified requirements:
+{clarified_requirements}
 
 Additional source material:
 {source_brief or "None"}
@@ -199,8 +265,8 @@ Additional source material:
 Output rules:
 - {slide_count_output_rule}
 - Each page should feel distinct and logically sequenced.
-- Prefer a storyline like context -> solution -> execution, but adapt to the topic.
-- If the source material is sparse, create a sensible executive outline rather than repeating the same point.
+- Prefer a storyline like context -> analysis -> solution -> execution -> conclusion, but adapt to the topic.
+- If some clarification dimensions are missing, use the known context and avoid making up fake facts or metrics.
 """.strip()
     return developer_prompt, user_prompt
 
@@ -220,15 +286,122 @@ def normalize_ai_pattern_id(pattern_id: str, title: str, bullets: list[str]) -> 
 def normalize_ai_bullets(bullets: list[Any], title: str) -> list[str]:
     normalized = []
     for item in bullets:
-        text = compact_text(str(item).strip(), 80)
+        text = compact_text(str(item).strip(), 90)
         if text:
             normalized.append(text)
     if len(normalized) >= 2:
-        return normalized[:4]
+        return normalized[:5]
     fallback = compact_text(title, 40) or "关键信息"
     while len(normalized) < 2:
         normalized.append(fallback)
-    return normalized[:4]
+    return normalized[:5]
+
+
+def _build_architecture_payload(title: str, bullets: list[str]) -> dict[str, object]:
+    layers = []
+    for index, bullet in enumerate(bullets[:4], start=1):
+        layer_title, layer_detail = split_title_detail(bullet)
+        layers.append(
+            {
+                "label": f"L{index:02d}",
+                "title": compact_text(layer_title or f"Layer {index}", 18),
+                "detail": concise_text(layer_detail or bullet, 54),
+            }
+        )
+    return {"layers": layers, "banner_text": compact_text(title, 16)}
+
+
+def _build_comparison_payload(title: str, subtitle: str, bullets: list[str]) -> dict[str, object]:
+    pivot = max(1, len(bullets) // 2)
+    left_raw = bullets[:pivot]
+    right_raw = bullets[pivot:] or bullets[-1:]
+
+    def build_cards(items: list[str], fallback: str) -> list[dict[str, str]]:
+        cards = []
+        for item in items[:4]:
+            card_title, card_detail = split_title_detail(item)
+            cards.append(
+                {
+                    "title": compact_text(card_title or fallback, 16),
+                    "detail": concise_text(card_detail or item, 36),
+                }
+            )
+        while len(cards) < 2:
+            cards.append({"title": fallback, "detail": concise_text(fallback, 36)})
+        return cards[:4]
+
+    return {
+        "left_label": "当前状态",
+        "right_label": "目标状态",
+        "left_cards": build_cards(left_raw, "当前问题"),
+        "right_cards": build_cards(right_raw, "升级方向"),
+        "center_kicker": "UPGRADE PATH",
+        "center_title": compact_text(title, 20),
+        "center_subtitle": compact_text(subtitle or "从现状过渡到目标方案", 36),
+        "center_bottom_footer": compact_text(subtitle or "升级收益与落地路径并行呈现", 36),
+    }
+
+
+def _build_capability_payload(subtitle: str, bullets: list[str]) -> dict[str, object]:
+    items = []
+    for bullet in bullets[:7]:
+        item_title, item_detail = split_title_detail(bullet)
+        items.append(
+            {
+                "title": compact_text(item_title or bullet, 14),
+                "detail": concise_text(item_detail or bullet, 28),
+            }
+        )
+    return {
+        "headline": compact_text(subtitle or "核心能力维度", 36),
+        "items": items,
+    }
+
+
+def _build_five_phase_payload(subtitle: str, bullets: list[str]) -> dict[str, object]:
+    steps = [split_title_detail(bullet) for bullet in bullets[:4]]
+    return build_pipeline_payload(steps, subtitle or "", subtitle or "阶段化推进路线")
+
+
+def _build_pain_cards_payload(subtitle: str, bullets: list[str]) -> dict[str, object]:
+    cards = []
+    for bullet in bullets[:3]:
+        card_title, card_detail = split_title_detail(bullet)
+        points = [part.strip() for part in re.split(r"[、,，；;]", card_detail or bullet) if part.strip()]
+        cards.append(
+            {
+                "title": compact_text(card_title or "问题", 16),
+                "detail": concise_text(card_detail or bullet, 36),
+                "points": points[:3],
+            }
+        )
+    return {
+        "lead": compact_text(subtitle or "关键问题梳理", 36),
+        "bottom_banner": "聚焦痛点，明确优先级，支撑后续方案落地",
+        "cards": cards,
+    }
+
+
+def build_ai_page_payload(pattern_id: str, title: str, subtitle: str, bullets: list[str]) -> dict[str, object]:
+    if pattern_id == "solution_architecture":
+        return _build_architecture_payload(title, bullets)
+    if pattern_id == "process_flow":
+        return {"steps": build_process_steps(bullets)}
+    if pattern_id == "org_governance":
+        return {
+            "cards": build_governance_cards(bullets),
+            "label_prefix": "重点",
+            "footer_text": compact_text(subtitle or "职责清晰，协同闭环", 36),
+        }
+    if pattern_id == "comparison_upgrade":
+        return _build_comparison_payload(title, subtitle, bullets)
+    if pattern_id == "capability_ring":
+        return _build_capability_payload(subtitle, bullets)
+    if pattern_id == "five_phase_path":
+        return _build_five_phase_payload(subtitle, bullets)
+    if pattern_id == "pain_cards":
+        return _build_pain_cards_payload(subtitle, bullets)
+    return {}
 
 
 def build_deck_spec_from_ai_outline(data: dict[str, Any], slide_bounds: AiSlideBounds) -> DeckSpec:
@@ -260,6 +433,7 @@ def build_deck_spec_from_ai_outline(data: dict[str, Any], slide_bounds: AiSlideB
                 bullets=bullets,
                 pattern_id=pattern_id,
                 nav_title=nav_title,
+                payload=build_ai_page_payload(pattern_id, title, subtitle, bullets),
             )
         )
 
@@ -320,26 +494,6 @@ def parse_external_planner_output(raw_text: str, slide_bounds: AiSlideBounds) ->
 
 
 def _split_windows_command(command: str) -> list[str]:
-    """
-    Parse a Windows command line string into argument list using Windows Shell32 API.
-
-    PLATFORM: Windows-only. This function uses ctypes.windll which is only available
-    on Windows. It will raise AttributeError on Linux/macOS if called.
-
-    This function is only invoked when os.name == "nt", so it should not be called
-    on non-Windows platforms during normal execution. However, if tests are run on
-    non-Windows platforms, test coverage for this branch will be missing.
-
-    Args:
-        command: Windows command line string to parse
-
-    Returns:
-        List of parsed command arguments
-
-    Raises:
-        ValueError: If Windows API fails to parse the command line
-        AttributeError: If called on non-Windows platform (ctypes.windll not available)
-    """
     import ctypes
 
     argc = ctypes.c_int()
@@ -380,9 +534,10 @@ def plan_deck_spec_with_external_command(
     planning_request: AiPlanningRequest,
     planner_command: str,
 ) -> DeckSpec:
-    slide_bounds = resolve_ai_slide_bounds(planning_request)
-    developer_prompt, user_prompt = build_ai_planning_prompts(planning_request, slide_bounds=slide_bounds)
-    payload = build_external_planner_payload(planning_request, developer_prompt, user_prompt, slide_bounds)
+    normalized_request, _ = normalize_ai_planning_request(planning_request)
+    slide_bounds = resolve_ai_slide_bounds(normalized_request)
+    developer_prompt, user_prompt = build_ai_planning_prompts(normalized_request, slide_bounds=slide_bounds)
+    payload = build_external_planner_payload(normalized_request, developer_prompt, user_prompt, slide_bounds)
     command_args = parse_external_planner_command(planner_command)
     try:
         result = subprocess.run(
@@ -413,15 +568,7 @@ def plan_deck_spec_with_ai(
     model: str | None = None,
     planner_command: str | None = None,
 ) -> DeckSpec:
-    normalized_request = AiPlanningRequest(
-        topic=planning_request.topic.strip(),
-        chapters=planning_request.chapters,
-        min_slides=planning_request.min_slides,
-        max_slides=planning_request.max_slides,
-        audience=planning_request.audience.strip() or "管理层 + 业务负责人",
-        brief=planning_request.brief,
-        language=planning_request.language.strip() or "zh-CN",
-    )
+    normalized_request, _ = normalize_ai_planning_request(planning_request, model=model)
     if not normalized_request.topic:
         raise ValueError("AI planning topic must not be empty.")
     slide_bounds = resolve_ai_slide_bounds(normalized_request)

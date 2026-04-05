@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
 
+from .clarifier import DEFAULT_AUDIENCE_HINT, clarify_user_input, load_clarifier_session
 from .config import (
     DEFAULT_HTML,
     DEFAULT_OUTPUT_DIR,
@@ -48,12 +51,12 @@ def validate_slide_args(args, parser: argparse.ArgumentParser):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plan and render SIE template-driven PPT from HTML or DeckSpec JSON."
+        description="Plan and render SIE template-driven PPT from HTML, DeckSpec JSON, or natural-language AI input."
     )
     parser.add_argument(
         "command",
         nargs="?",
-        choices=("make", "plan", "render", "ai-plan", "ai-make", "ai-check"),
+        choices=("make", "plan", "render", "ai-plan", "ai-make", "ai-check", "clarify"),
         default="make",
         help="Workflow stage to execute. Defaults to 'make' for backward compatibility.",
     )
@@ -63,10 +66,19 @@ def main():
     parser.add_argument("--topic", default="", help="Topic or natural-language request used by the AI planner.")
     parser.add_argument("--brief", default="", help="Optional extra business context passed to the AI planner.")
     parser.add_argument("--brief-file", default="", help="Optional path to a text/markdown file with extra source material.")
-    parser.add_argument("--audience", default="管理层 + 业务负责人", help="Target audience hint for the AI planner.")
-    parser.add_argument("--llm-model", default="", help="Optional model override for the AI planner.")
-    parser.add_argument("--planner-command", default="", help="Optional external planner command. Reads JSON from stdin and must print JSON to stdout.")
+    parser.add_argument("--audience", default=DEFAULT_AUDIENCE_HINT, help="Target audience hint for the AI planner.")
+    parser.add_argument("--llm-model", default="", help="Optional model override for the AI planner or clarifier.")
+    parser.add_argument(
+        "--planner-command",
+        default="",
+        help="Optional external planner command. Reads JSON from stdin and must print JSON to stdout.",
+    )
     parser.add_argument("--plan-output", default="", help="Optional output path for the generated DeckSpec JSON.")
+    parser.add_argument(
+        "--clarifier-state-file",
+        default="",
+        help="Optional JSON file used to resume or persist clarifier session state.",
+    )
     parser.add_argument("--min-slides", type=int, default=None, help=f"Optional AI planner lower bound for body pages (1-{MAX_BODY_CHAPTERS}).")
     parser.add_argument("--max-slides", type=int, default=None, help=f"Optional AI planner upper bound for body pages (1-{MAX_BODY_CHAPTERS}).")
     parser.add_argument(
@@ -92,6 +104,25 @@ def main():
     reference_body_path = Path(args.reference_body) if args.reference_body else None
     brief_text = load_brief_text(args.brief, args.brief_file)
     planner_command = resolve_external_planner_command(args.planner_command)
+
+    if args.command == "clarify":
+        if not args.topic.strip():
+            parser.error("--topic is required when command is 'clarify'.")
+        existing_session = None
+        if args.clarifier_state_file:
+            state_path = Path(args.clarifier_state_file)
+            if state_path.exists():
+                existing_session = load_clarifier_session(state_path.read_text(encoding="utf-8"))
+        result = clarify_user_input(
+            args.topic,
+            session=existing_session,
+            original_brief=brief_text,
+            model=args.llm_model or None,
+        )
+        if args.clarifier_state_file:
+            Path(args.clarifier_state_file).write_text(result.session.to_json(), encoding="utf-8")
+        print(result.to_json())
+        return
 
     if args.command == "plan":
         plan_output = generate_plan_from_html(

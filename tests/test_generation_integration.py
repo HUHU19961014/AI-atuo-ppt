@@ -1,4 +1,5 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,7 +7,9 @@ from pathlib import Path
 from tools.sie_autoppt.config import DEFAULT_TEMPLATE, INPUT_DIR
 from tools.sie_autoppt.deck_spec_io import write_deck_spec
 from tools.sie_autoppt.generator import generate_ppt, generate_ppt_artifacts_from_deck_spec, generate_ppt_artifacts_from_html
+from tools.sie_autoppt.planning.ai_planner import AiPlanningRequest
 from tools.sie_autoppt.qa import write_qa_report
+from tools.sie_autoppt.services import render_from_ai_plan
 
 
 class GenerationIntegrationTests(unittest.TestCase):
@@ -246,3 +249,41 @@ class GenerationIntegrationTests(unittest.TestCase):
             self.assertTrue(artifacts.deck_plan.deck.body_pages[1].is_continuation)
             self.assertEqual(artifacts.deck_plan.chapter_lines[:2], ["Roadmap", "Summary"])
             self.assertEqual(len(artifacts.render_trace.page_traces), 3)
+
+    def test_render_from_ai_plan_uses_clarified_context_with_external_planner(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            script_path = temp_path / "external_planner.py"
+            script_path.write_text(
+                "import json, sys\n"
+                "payload = json.load(sys.stdin)\n"
+                "user_prompt = payload.get('user_prompt', '')\n"
+                "assert 'Q2业绩汇报' in user_prompt\n"
+                "assert '公司领导' in user_prompt\n"
+                "assert '商务专业' in user_prompt\n"
+                "assert '增长数据' in user_prompt\n"
+                "print(json.dumps({"
+                "'cover_title': 'Q2业绩汇报', "
+                "'body_pages': ["
+                "{'title': '经营表现', 'subtitle': '关键指标回顾', 'bullets': ['收入增长', '利润改善'], 'pattern_id': 'general_business', 'nav_title': '表现'}"
+                "]"
+                "}, ensure_ascii=False))\n",
+                encoding="utf-8",
+            )
+
+            result = render_from_ai_plan(
+                template_path=DEFAULT_TEMPLATE,
+                request=AiPlanningRequest(
+                    topic="帮我做Q2业绩汇报，5页，给公司领导看，商务专业风格",
+                    brief="重点讲增长数据、技术突破、下阶段计划",
+                    chapters=1,
+                ),
+                reference_body_path=None,
+                output_prefix="Clarifier_Render_Path",
+                active_start=0,
+                output_dir=temp_path,
+                planner_command=f'{sys.executable} "{script_path}"',
+            )
+
+            self.assertTrue(result.output_path.exists())
+            self.assertTrue(result.report_path.exists())
