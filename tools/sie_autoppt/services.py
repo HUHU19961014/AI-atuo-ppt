@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .deck_spec_io import write_deck_spec
+from .exceptions import AiHealthcheckBlockedError, AiHealthcheckFailedError, AiWorkflowError
 from .generator import (
     generate_ppt_artifacts_from_deck_plan,
     generate_ppt_artifacts_from_deck_spec,
@@ -60,18 +61,6 @@ class AiCheckSummary:
         if self.planner_command:
             payload["planner_command"] = self.planner_command
         return json.dumps(payload, ensure_ascii=False)
-
-
-class AiWorkflowError(RuntimeError):
-    pass
-
-
-class AiHealthcheckBlockedError(RuntimeError):
-    pass
-
-
-class AiHealthcheckFailedError(RuntimeError):
-    pass
 
 
 def build_plan_output_path(output_dir: Path, output_prefix: str) -> Path:

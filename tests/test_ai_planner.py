@@ -59,7 +59,7 @@ class AiPlannerTests(unittest.TestCase):
         self.assertEqual(deck.cover_title, "AI 自动化转型方案")
         self.assertEqual(
             [page.pattern_id for page in deck.body_pages],
-            ["general_business", "solution_architecture", "process_flow"],
+            ["pain_cards", "solution_architecture", "process_flow"],
         )
         self.assertEqual([page.page_key for page in deck.body_pages], ["ai_page_01", "ai_page_02", "ai_page_03"])
 
@@ -76,6 +76,35 @@ class AiPlannerTests(unittest.TestCase):
         self.assertIn("Return exactly 3 body pages", developer_prompt)
         self.assertIn("制造业 ERP 智能化升级", user_prompt)
         self.assertIn("现有系统分散", user_prompt)
+
+    def test_build_ai_planning_prompts_contains_critical_constraints(self):
+        developer_prompt, user_prompt = build_ai_planning_prompts(
+            AiPlanningRequest(topic="测试主题", chapters=5)
+        )
+
+        # 验证页数约束
+        self.assertIn("Return exactly 5 body pages", developer_prompt)
+
+        # 验证 pattern 枚举约束
+        self.assertIn("pattern_id from the provided enum", developer_prompt)
+
+        # 验证支持的 pattern 列表
+        self.assertIn("general_business", developer_prompt)
+        self.assertIn("solution_architecture", developer_prompt)
+        self.assertIn("process_flow", developer_prompt)
+        self.assertIn("org_governance", developer_prompt)
+
+    def test_build_ai_planning_prompts_range_mode_constraints(self):
+        developer_prompt, user_prompt = build_ai_planning_prompts(
+            AiPlanningRequest(topic="测试主题", min_slides=3, max_slides=7)
+        )
+
+        # 验证范围约束
+        self.assertIn("between 3 and 7 body pages", developer_prompt)
+        self.assertIn("3-7", user_prompt)
+
+        # 验证内容密度指导
+        self.assertIn("content density", developer_prompt)
 
     def test_resolve_ai_slide_bounds_uses_content_driven_default_range(self):
         bounds = resolve_ai_slide_bounds(

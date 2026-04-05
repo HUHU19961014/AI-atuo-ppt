@@ -231,24 +231,44 @@ class OpenAIResponsesClient:
             url=f"{self._config.base_url}{route}",
             data=raw_body,
             method="POST",
-        headers=self._build_headers(),
+            headers=self._build_headers(),
         )
-        try:
-            with request.urlopen(req, timeout=self._config.timeout_sec) as resp:
-                response_body = resp.read().decode("utf-8")
-        except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise OpenAIResponsesError(format_openai_http_error(exc.code, detail)) from exc
-        except error.URLError as exc:
-            raise OpenAIResponsesError(f"Responses API request failed: {exc.reason}") from exc
 
-        try:
-            data = json.loads(response_body)
-        except json.JSONDecodeError as exc:
-            raise OpenAIResponsesError(f"Responses API returned invalid JSON: {exc}") from exc
-        if not isinstance(data, dict):
-            raise OpenAIResponsesError("Responses API returned a non-object JSON payload.")
-        return data
+        max_retries = 3
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                with request.urlopen(req, timeout=self._config.timeout_sec) as resp:
+                    response_body = resp.read().decode("utf-8")
+
+                try:
+                    data = json.loads(response_body)
+                except json.JSONDecodeError as exc:
+                    raise OpenAIResponsesError(f"Responses API returned invalid JSON: {exc}") from exc
+                if not isinstance(data, dict):
+                    raise OpenAIResponsesError("Responses API returned a non-object JSON payload.")
+                return data
+
+            except error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")
+                if exc.code in {429, 500, 502, 503, 504} and attempt < max_retries - 1:
+                    last_exception = exc
+                    continue
+                raise OpenAIResponsesError(format_openai_http_error(exc.code, detail)) from exc
+            except error.URLError as exc:
+                if attempt < max_retries - 1:
+                    last_exception = exc
+                    continue
+                raise OpenAIResponsesError(f"Responses API request failed: {exc.reason}") from exc
+
+        if last_exception:
+            if isinstance(last_exception, error.HTTPError):
+                detail = last_exception.read().decode("utf-8", errors="replace")
+                raise OpenAIResponsesError(format_openai_http_error(last_exception.code, detail)) from last_exception
+            raise OpenAIResponsesError(f"Responses API request failed after {max_retries} retries") from last_exception
+
+        raise OpenAIResponsesError(f"Responses API request failed after {max_retries} retries")
 
     def _build_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}

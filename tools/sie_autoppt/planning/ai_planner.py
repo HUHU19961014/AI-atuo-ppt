@@ -19,11 +19,15 @@ SUPPORTED_AI_PATTERNS = (
     "solution_architecture",
     "process_flow",
     "org_governance",
+    "pain_cards",
 )
 
+# Maps semantic pattern IDs to supported AI rendering patterns.
+# pain_points -> pain_cards: Three-column pain point breakdown layout exists and is suitable for pain analysis.
+# Other mappings fall back to general_business when no specialized layout fits the semantic intent.
 PATTERN_COMPATIBILITY_MAP = {
     "policy_timeline": "general_business",
-    "pain_points": "general_business",
+    "pain_points": "pain_cards",
     "value_benefit": "general_business",
     "solution_architecture": "solution_architecture",
     "process_flow": "process_flow",
@@ -316,6 +320,26 @@ def parse_external_planner_output(raw_text: str, slide_bounds: AiSlideBounds) ->
 
 
 def _split_windows_command(command: str) -> list[str]:
+    """
+    Parse a Windows command line string into argument list using Windows Shell32 API.
+
+    PLATFORM: Windows-only. This function uses ctypes.windll which is only available
+    on Windows. It will raise AttributeError on Linux/macOS if called.
+
+    This function is only invoked when os.name == "nt", so it should not be called
+    on non-Windows platforms during normal execution. However, if tests are run on
+    non-Windows platforms, test coverage for this branch will be missing.
+
+    Args:
+        command: Windows command line string to parse
+
+    Returns:
+        List of parsed command arguments
+
+    Raises:
+        ValueError: If Windows API fails to parse the command line
+        AttributeError: If called on non-Windows platform (ctypes.windll not available)
+    """
     import ctypes
 
     argc = ctypes.c_int()
