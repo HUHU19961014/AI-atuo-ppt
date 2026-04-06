@@ -13,6 +13,7 @@ from .io import (
     write_outline_document,
 )
 from .ppt_engine import RenderArtifacts, generate_ppt
+from .quality_checks import ContentWarning, check_deck_content, check_slide_content
 from .schema import (
     DeckDocument,
     OutlineDocument,
@@ -44,6 +45,7 @@ __all__ = [
     "RenderArtifacts",
     "SUPPORTED_LAYOUTS",
     "SUPPORTED_THEMES",
+    "ContentWarning",
     "ThemeMeta",
     "ThemeSpec",
     "V2MakeArtifacts",
@@ -54,6 +56,8 @@ __all__ = [
     "build_outline_output_path",
     "build_ppt_output_path",
     "collect_deck_warnings",
+    "check_deck_content",
+    "check_slide_content",
     "default_deck_output_path",
     "default_log_output_path",
     "default_outline_output_path",

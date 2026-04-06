@@ -8,6 +8,7 @@ from pptx.util import Inches
 
 from .io import RenderLog
 from .layout_router import render_slide
+from .quality_checks import ContentWarning, check_deck_content
 from .schema import DeckDocument, ValidatedDeck, validate_deck_payload
 from .theme_loader import load_theme
 
@@ -18,6 +19,7 @@ class RenderArtifacts:
     log_path: Path | None
     slide_count: int
     warnings: tuple[str, ...] = ()
+    content_warnings: tuple[ContentWarning, ...] = ()
 
 
 def _coerce_validated_deck(deck_data: DeckDocument | ValidatedDeck | dict[str, object]) -> ValidatedDeck:
@@ -48,6 +50,9 @@ def generate_ppt(
     log.info(f"deck title: {deck.meta.title}")
     log.info(f"theme: {theme.theme_name}")
     log.extend(validated.warnings)
+    content_warnings = tuple(check_deck_content(deck))
+    for warning in content_warnings:
+        log.warn(warning.to_log_line())
 
     for index, slide in enumerate(deck.slides, start=1):
         render_slide(prs, slide, theme, log, index, len(deck.slides))
@@ -65,4 +70,5 @@ def generate_ppt(
         log_path=final_log_path,
         slide_count=len(deck.slides),
         warnings=tuple(validated.warnings),
+        content_warnings=content_warnings,
     )

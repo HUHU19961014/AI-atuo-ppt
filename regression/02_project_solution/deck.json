@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "title": "集团数据治理平台建设方案",
+    "theme": "tech_blue",
+    "language": "zh-CN",
+    "author": "AI Auto PPT",
+    "version": "2.0"
+  },
+  "slides": [
+    {
+      "slide_id": "s1",
+      "layout": "section_break",
+      "title": "建设背景",
+      "subtitle": "数据资产持续增长，治理机制需要从专项补丁转向平台化能力"
+    },
+    {
+      "slide_id": "s2",
+      "layout": "two_columns",
+      "title": "现状问题",
+      "left": {
+        "heading": "业务侧问题",
+        "items": [
+          "口径不统一，管理报表重复对数",
+          "关键指标追溯链条不完整",
+          "跨部门协同依赖人工沟通"
+        ]
+      },
+      "right": {
+        "heading": "技术侧问题",
+        "items": [
+          "元数据与标准管理分散在多个系统",
+          "质量监控规则缺少统一入口",
+          "权限和责任边界缺乏制度化沉淀"
+        ]
+      }
+    },
+    {
+      "slide_id": "s3",
+      "layout": "title_image",
+      "title": "方案架构",
+      "content": [
+        "统一元数据、标准、质量、目录与权限管理",
+        "建设治理规则中心，形成平台化运营入口",
+        "通过治理流程连接业务系统与分析应用"
+      ],
+      "image": {
+        "mode": "placeholder",
+        "caption": "数据治理平台架构图"
+      }
+    },
+    {
+      "slide_id": "s4",
+      "layout": "title_content",
+      "title": "实施路径",
+      "content": [
+        "第一阶段统一标准与目录，建立治理底座",
+        "第二阶段接入质量规则与问题闭环流程",
+        "第三阶段推动重点域治理运营与效果评估",
+        "第四阶段扩展到跨业务条线的协同治理"
+      ]
+    },
+    {
+      "slide_id": "s5",
+      "layout": "title_only",
+      "title": "先建立统一底座，再推动治理能力运营化"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "title": "工业企业 AI 应用趋势分析",
+    "theme": "tech_blue",
+    "language": "zh-CN",
+    "author": "AI Auto PPT",
+    "version": "2.0"
+  },
+  "slides": [
+    {
+      "slide_id": "s1",
+      "layout": "section_break",
+      "title": "核心判断",
+      "subtitle": "工业 AI 正从局部试点走向围绕效率与质量的规模化应用"
+    },
+    {
+      "slide_id": "s2",
+      "layout": "title_content",
+      "title": "应用扩大的驱动因素",
+      "content": [
+        "模型能力与推理成本改善，试点门槛持续下降",
+        "企业数字化基础逐步成熟，数据可用性提升",
+        "降本增效压力增强，推动管理层关注可量化收益",
+        "行业方案逐步成型，复制路径比早期更清晰"
+      ]
+    },
+    {
+      "slide_id": "s3",
+      "layout": "title_image",
+      "title": "重点应用场景",
+      "content": [
+        "设备运维与异常预警是最易形成闭环的场景",
+        "知识问答与工艺辅助能快速提升一线效率",
+        "质检、排产和客服协同成为下一阶段扩展方向"
+      ],
+      "image": {
+        "mode": "placeholder",
+        "caption": "工业 AI 场景地图"
+      }
+    },
+    {
+      "slide_id": "s4",
+      "layout": "two_columns",
+      "title": "落地约束",
+      "left": {
+        "heading": "共性约束",
+        "items": [
+          "高质量数据准备成本仍然偏高",
+          "业务流程标准化程度不一",
+          "试点与规模化之间存在治理断层"
+        ]
+      },
+      "right": {
+        "heading": "落地要求",
+        "items": [
+          "优先选择收益可量化的高价值场景",
+          "同步建设数据、流程与责任机制",
+          "把试点成果沉淀为可复制模板"
+        ]
+      }
+    },
+    {
+      "slide_id": "s5",
+      "layout": "title_only",
+      "title": "工业 AI 的竞争差距，最终体现在组织执行与复制速度"
+    }
+  ]
+}
