@@ -15,6 +15,7 @@ The project no longer assumes that users hand-write compliant HTML first. It sup
 - classic HTML -> PPTX rendering
   - legacy `phase-*` / `scenario` / `note` blocks
   - explicit `<slide data-pattern="...">...</slide>` pages
+- requirement clarification for fuzzy requests
 - `DeckSpec JSON` planning and rendering
 - AI topic -> `DeckSpec JSON` -> PPTX
 - OpenAI-compatible hosted providers
@@ -80,6 +81,14 @@ Compatibility script entrypoint still works:
 python .\tools\sie_autoppt_cli.py
 ```
 
+Clarify a fuzzy request before planning:
+
+```powershell
+python -m sie_autoppt clarify `
+  --topic "帮我做一个给管理层看的 Q2 汇报" `
+  --clarifier-state-file .\projects\generated\clarifier_state.json
+```
+
 ## Architecture
 
 The current workflow is split into three layers:
@@ -99,6 +108,7 @@ The current workflow is split into three layers:
 - `ai-plan`: topic -> `DeckSpec JSON`
 - `ai-make`: topic -> PPTX
 - `ai-check`: planner connectivity smoke test
+- `clarify`: fuzzy request -> structured clarification state
 
 ## HTML and planning examples
 
@@ -214,6 +224,13 @@ Canonical template files:
 - `assets/templates/sie_template.pptx`
 - `assets/templates/sie_template.manifest.json`
 
+Additional template variants:
+
+- `assets/templates/business_gold/template.pptx`
+- `assets/templates/minimal_gray/template.pptx`
+
+Each variant now carries its own `manifest.json` and `style_guide.md`. The manifest loader supports folder-level manifests plus `extends`, so new template families can inherit the base pool and only override style-specific settings.
+
 Reference-style body pages now use native PPTX package merge by default. The bundled reference deck carries slide metadata names, so lookup order is:
 
 1. slide metadata name
@@ -265,6 +282,8 @@ Already solid in the current codebase:
 - external planner command support
 - safe external planner execution
 - SiliconFlow / OpenAI-compatible provider support
+- template style-guide markdown parsing
+- multi-template variants and demo page prototype
 
 Still in progress:
 

@@ -1,12 +1,15 @@
 import unittest
+from unittest.mock import patch
 
 from tools.sie_autoppt.config import INPUT_DIR
 from tools.sie_autoppt.pipeline import plan_deck_from_html
 from tools.sie_autoppt.planning.deck_planner import (
+    _planning_style_context,
     build_deck_spec_from_html,
     build_directory_lines,
     build_directory_window,
     clamp_requested_chapters,
+    resolve_page_layout,
 )
 from tools.sie_autoppt.planning.pagination import paginate_body_page
 
@@ -56,8 +59,10 @@ class DeckPlannerTests(unittest.TestCase):
         self.assertEqual(len(deck.body_pages), 4)
         self.assertEqual([page.page_key for page in deck.body_pages], ["slide_1", "slide_2", "slide_3", "slide_4"])
         self.assertEqual([page.pattern_id for page in deck.body_pages[:2]], ["general_business", "process_flow"])
-        self.assertEqual(deck.body_pages[0].layout_variant, "general_business_3")
-        self.assertEqual(deck.body_pages[1].layout_variant, "process_flow_3")
+        self.assertIsNone(deck.body_pages[0].layout_variant)
+        self.assertIsNone(deck.body_pages[1].layout_variant)
+        self.assertEqual(deck.body_pages[0].layout_hints["desired_layout_variant"], "general_business_3")
+        self.assertEqual(deck.body_pages[1].layout_hints["desired_layout_variant"], "process_flow_3")
         self.assertEqual(deck.body_pages[1].payload["steps"][0]["title"], "Assess")
         self.assertEqual(deck.body_pages[1].content_count, 3)
         self.assertFalse(deck.body_pages[1].is_continuation)
@@ -114,8 +119,10 @@ class DeckPlannerTests(unittest.TestCase):
             ["solution_architecture", "process_flow", "org_governance"],
         )
         self.assertIsNone(deck.body_pages[0].layout_variant)
-        self.assertEqual(deck.body_pages[1].layout_variant, "process_flow_5")
-        self.assertEqual(deck.body_pages[2].layout_variant, "org_governance_5")
+        self.assertIsNone(deck.body_pages[1].layout_variant)
+        self.assertIsNone(deck.body_pages[2].layout_variant)
+        self.assertEqual(deck.body_pages[1].layout_hints["desired_layout_variant"], "process_flow_5")
+        self.assertEqual(deck.body_pages[2].layout_hints["desired_layout_variant"], "org_governance_5")
         self.assertEqual(len(deck.body_pages[0].payload.get("layers", [])), 4)
         self.assertEqual(len(deck.body_pages[1].payload.get("steps", [])), 4)
         self.assertEqual(deck.body_pages[2].payload.get("label_prefix"), "重点")
@@ -170,12 +177,14 @@ class DeckPlannerTests(unittest.TestCase):
         self.assertEqual(deck.body_pages[0].page_key, "slide_1")
         self.assertEqual(deck.body_pages[0].source_item_range, (0, 9))
         self.assertFalse(deck.body_pages[0].is_continuation)
-        self.assertEqual(deck.body_pages[0].layout_variant, "process_flow_9")
+        self.assertIsNone(deck.body_pages[0].layout_variant)
+        self.assertEqual(deck.body_pages[0].layout_hints["desired_layout_variant"], "process_flow_9")
         self.assertEqual(deck.body_pages[1].page_key, "slide_1_cont_2")
         self.assertTrue(deck.body_pages[1].is_continuation)
         self.assertEqual(deck.body_pages[1].continuation_index, 2)
         self.assertEqual(deck.body_pages[1].source_item_range, (9, 10))
-        self.assertEqual(deck.body_pages[1].layout_variant, "process_flow_3")
+        self.assertIsNone(deck.body_pages[1].layout_variant)
+        self.assertEqual(deck.body_pages[1].layout_hints["desired_layout_variant"], "process_flow_3")
 
     def test_directory_lines_ignore_continuation_pages(self):
         html = """
@@ -204,3 +213,18 @@ class DeckPlannerTests(unittest.TestCase):
         self.assertEqual(lines, ["Page1", "Page2", "Page3", "Page4", "Page5"])
         self.assertEqual(window_lines, ["Page1", "Page2", "Page3", "Page4", "Page5"])
         self.assertEqual(active_index, 0)
+
+    def test_resolve_page_layout_falls_back_when_manifest_is_unavailable(self):
+        with patch("tools.sie_autoppt.planning.deck_planner.load_template_manifest", side_effect=FileNotFoundError("missing")):
+            _planning_style_context.cache_clear()
+            pattern_id, layout_variant, layout_hints, max_items = resolve_page_layout(
+                "process_flow",
+                "Roadmap",
+                ["A", "B", "C", "D"],
+            )
+            _planning_style_context.cache_clear()
+
+        self.assertEqual(pattern_id, "process_flow")
+        self.assertIsNone(layout_variant)
+        self.assertEqual(layout_hints["desired_layout_variant"], "process_flow_5")
+        self.assertEqual(max_items, 5)

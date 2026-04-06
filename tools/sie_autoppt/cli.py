@@ -153,6 +153,7 @@ def main():
                 model=args.llm_model or None,
                 planner_command=planner_command or None,
                 plan_output=Path(args.plan_output) if args.plan_output else None,
+                template_path=template_path,
             )
         except AiWorkflowError as exc:
             parser.exit(status=1, message=f"AI planning failed: {exc}\n")
@@ -171,6 +172,7 @@ def main():
                 ),
                 model=args.llm_model or None,
                 planner_command=planner_command or None,
+                template_path=template_path,
             )
         except AiHealthcheckBlockedError as exc:
             parser.exit(status=1, message=f"AI healthcheck blocked: {exc}\n")

@@ -122,6 +122,14 @@ def _rgb(values):
     return tuple(int(value) for value in values)
 
 
+def _accent_rgb(manifest: TemplateManifest) -> tuple[int, int, int]:
+    return manifest.style_guide.accent_rgb or COLOR_ACTIVE
+
+
+def _inactive_rgb(manifest: TemplateManifest) -> tuple[int, int, int]:
+    return manifest.style_guide.inactive_rgb or COLOR_INACTIVE
+
+
 def _layout(manifest: TemplateManifest, name: str) -> dict[str, object]:
     return _wrap_manifest_value(manifest.render_layout(name), f"render_layouts.{name}")
 
@@ -150,8 +158,10 @@ def fill_directory_slide(slide, chapter_lines, active_chapter_index: int, manife
     title_boxes = [shape for shape in texts if manifest.selectors.directory_title.matches(shape)]
     title_boxes = sorted(title_boxes, key=lambda shape: (shape.top, shape.left))
     safe_active_index = max(0, min(active_chapter_index, len(chapter_lines) - 1))
+    accent_rgb = _accent_rgb(manifest)
+    inactive_rgb = _inactive_rgb(manifest)
     for i, shape in enumerate(title_boxes[: len(chapter_lines)]):
-        color = COLOR_ACTIVE if i == safe_active_index else COLOR_INACTIVE
+        color = accent_rgb if i == safe_active_index else inactive_rgb
         write_text(
             shape,
             chapter_lines[i],
@@ -182,7 +192,7 @@ def apply_theme_title(prs, title: str, manifest: TemplateManifest):
         write_text(
             main_title,
             title,
-            color=COLOR_ACTIVE,
+            color=_accent_rgb(manifest),
             size_pt=int(manifest.fonts.theme_title_pt),
             preserve_runs=True,
         )
@@ -195,7 +205,7 @@ def fill_body_slide(slide, page: BodyPageSpec, manifest: TemplateManifest):
         write_text(
             title_candidates[0],
             page.title,
-            color=COLOR_ACTIVE,
+            color=_accent_rgb(manifest),
             size_pt=choose_title_font_size(page.title),
             preserve_runs=True,
         )
@@ -207,7 +217,7 @@ def fill_body_slide(slide, page: BodyPageSpec, manifest: TemplateManifest):
             manifest.fallback_boxes.body_title.width,
             manifest.fallback_boxes.body_title.height,
             page.title,
-            color=COLOR_ACTIVE,
+            color=_accent_rgb(manifest),
             size_pt=choose_title_font_size(page.title),
             bold=True,
         )
@@ -833,7 +843,7 @@ def _render_pain_cards(slide, page: BodyPageSpec, manifest: TemplateManifest):
             str(card_data.get("title", "")),
             size_pt=int(spec["title_box"]["font_pt"]),
             bold=True,
-            color=COLOR_ACTIVE,
+            color=_accent_rgb(manifest),
         )
         add_textbox(
             slide,

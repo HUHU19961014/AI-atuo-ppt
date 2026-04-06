@@ -1,4 +1,5 @@
 import re
+from functools import lru_cache
 
 from ..config import MAX_BODY_CHAPTERS
 from ..inputs.html_parser import (
@@ -13,7 +14,7 @@ from ..inputs.html_parser import (
 )
 from ..models import BodyPagePayload, BodyPageSpec, DeckSpec, HtmlSlide, InputPayload
 from ..patterns import infer_pattern
-from ..template_manifest import load_template_manifest
+from ..template_manifest import TemplateStyleGuide, load_template_manifest
 from .content_profiler import profile_bullets
 from .layout_policy import resolve_layout_decision
 from .pagination import paginate_body_page
@@ -31,7 +32,15 @@ DEFAULT_EMPTY_SCOPE = "补充 scenario 内容后，可自动生成场景分析�
 DEFAULT_EMPTY_FOCUS = "补充 note 或 footer 内容后，可自动生成重点事项页。"
 DEFAULT_GOVERNANCE_LABEL = "重点"
 DIRECTORY_WINDOW_SIZE = 5
-STYLE_GUIDE = load_template_manifest().style_guide
+
+
+@lru_cache(maxsize=1)
+def _planning_style_context() -> tuple[TemplateStyleGuide, set[str]]:
+    try:
+        manifest = load_template_manifest()
+    except (FileNotFoundError, ValueError):
+        return TemplateStyleGuide(), set()
+    return manifest.style_guide, set(manifest.render_layouts.keys())
 
 
 def build_overview_bullets(payload: InputPayload) -> list[str]:
@@ -170,12 +179,14 @@ def resolve_requested_pattern(pattern_id: str, title: str, bullets: list[str]) -
 
 
 def resolve_page_layout(pattern_id: str, title: str, bullets: list[str]) -> tuple[str, str | None, dict[str, object], int]:
-    content_profile = profile_bullets(bullets, thresholds=STYLE_GUIDE.density_thresholds)
+    style_guide, available_layout_variants = _planning_style_context()
+    content_profile = profile_bullets(bullets, thresholds=style_guide.density_thresholds)
     layout = resolve_layout_decision(
         requested_pattern_id=pattern_id,
         fallback_pattern_id=infer_pattern(title, bullets),
         content_profile=content_profile,
-        preferred_item_counts=STYLE_GUIDE.preferred_item_counts,
+        preferred_item_counts=style_guide.preferred_item_counts,
+        available_layout_variants=available_layout_variants,
     )
     return layout.pattern_id, layout.layout_variant, layout.layout_hints, layout.max_items_per_page
 
@@ -222,38 +233,22 @@ def paginate_page_spec(page: BodyPageSpec, payload: InputPayload, max_items_per_
     pages = []
     for chunk in paged:
         chunk_pattern_id, layout_variant, layout_hints, _ = resolve_page_layout(chunk.pattern_id, chunk.title, chunk.bullets)
-        chunk_page = build_body_page_spec(
-            page_key=chunk.page_key,
-            title=chunk.title,
-            subtitle=chunk.subtitle,
-            bullets=chunk.bullets,
-            pattern_id=chunk_pattern_id,
-            nav_title=chunk.nav_title,
-            reference_style_id=chunk.reference_style_id,
-            payload=chunk.payload,
-            layout_variant=layout_variant,
-            slide_role=chunk.slide_role,
-            layout_hints={**layout_hints, **chunk.layout_hints, "page_item_count": len(chunk.bullets)},
-            is_continuation=chunk.is_continuation,
-            continuation_index=chunk.continuation_index,
-            source_item_range=chunk.source_item_range,
-        )
         pages.append(
             build_body_page_spec(
-                page_key=chunk_page.page_key,
-                title=chunk_page.title,
-                subtitle=chunk_page.subtitle,
-                bullets=chunk_page.bullets,
+                page_key=chunk.page_key,
+                title=chunk.title,
+                subtitle=chunk.subtitle,
+                bullets=chunk.bullets,
                 pattern_id=chunk_pattern_id,
-                nav_title=chunk_page.nav_title,
-                reference_style_id=chunk_page.reference_style_id,
-                payload=build_generic_page_payload(chunk_page, chunk_pattern_id, payload),
-                layout_variant=chunk_page.layout_variant,
-                slide_role=chunk_page.slide_role,
-                layout_hints=chunk_page.layout_hints,
-                is_continuation=chunk_page.is_continuation,
-                continuation_index=chunk_page.continuation_index,
-                source_item_range=chunk_page.source_item_range,
+                nav_title=chunk.nav_title,
+                reference_style_id=chunk.reference_style_id,
+                payload=build_generic_page_payload(chunk, chunk_pattern_id, payload),
+                layout_variant=layout_variant,
+                slide_role=chunk.slide_role,
+                layout_hints={**chunk.layout_hints, **layout_hints, "page_item_count": len(chunk.bullets)},
+                is_continuation=chunk.is_continuation,
+                continuation_index=chunk.continuation_index,
+                source_item_range=chunk.source_item_range,
             )
         )
     return pages

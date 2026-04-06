@@ -15,6 +15,7 @@ from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
 from ..models import BodyPageSpec, DeckSpec
 from ..patterns import infer_pattern
 from ..prompting import render_prompt_template
+from ..template_manifest import load_template_manifest
 from .deck_planner import (
     build_governance_cards,
     build_pipeline_payload,
@@ -211,7 +212,32 @@ def _render_clarifier_context(context: Any) -> str:
     return "\n".join(lines)
 
 
-def build_ai_planning_prompts(request: AiPlanningRequest, slide_bounds: AiSlideBounds | None = None) -> tuple[str, str]:
+def _render_template_style_context(template_path=None) -> str:
+    try:
+        manifest = load_template_manifest(template_path=template_path)
+    except Exception:
+        return "- template_style: default"
+
+    style_guide = manifest.style_guide
+    lines = [
+        f"- template_name: {manifest.template_name}",
+    ]
+    if style_guide.theme_name:
+        lines.append(f"- theme_name: {style_guide.theme_name}")
+    if style_guide.tone_keywords:
+        lines.append(f"- tone_keywords: {', '.join(style_guide.tone_keywords)}")
+    if style_guide.narrative_preferences:
+        lines.append(f"- narrative_preferences: {', '.join(style_guide.narrative_preferences)}")
+    if style_guide.prompt_notes:
+        lines.append(f"- prompt_notes: {' | '.join(style_guide.prompt_notes)}")
+    return "\n".join(lines)
+
+
+def build_ai_planning_prompts(
+    request: AiPlanningRequest,
+    slide_bounds: AiSlideBounds | None = None,
+    template_path=None,
+) -> tuple[str, str]:
     normalized_request, clarifier_context = normalize_ai_planning_request(request)
     slide_bounds = slide_bounds or resolve_ai_slide_bounds(normalized_request)
     if slide_bounds.is_exact:
@@ -258,6 +284,9 @@ Requested body pages:
 
 Clarified requirements:
 {clarified_requirements}
+
+Template style:
+{_render_template_style_context(template_path)}
 
 Additional source material:
 {source_brief or "None"}
@@ -533,10 +562,15 @@ def parse_external_planner_command(planner_command: str) -> list[str]:
 def plan_deck_spec_with_external_command(
     planning_request: AiPlanningRequest,
     planner_command: str,
+    template_path=None,
 ) -> DeckSpec:
     normalized_request, _ = normalize_ai_planning_request(planning_request)
     slide_bounds = resolve_ai_slide_bounds(normalized_request)
-    developer_prompt, user_prompt = build_ai_planning_prompts(normalized_request, slide_bounds=slide_bounds)
+    developer_prompt, user_prompt = build_ai_planning_prompts(
+        normalized_request,
+        slide_bounds=slide_bounds,
+        template_path=template_path,
+    )
     payload = build_external_planner_payload(normalized_request, developer_prompt, user_prompt, slide_bounds)
     command_args = parse_external_planner_command(planner_command)
     try:
@@ -567,6 +601,7 @@ def plan_deck_spec_with_ai(
     planning_request: AiPlanningRequest,
     model: str | None = None,
     planner_command: str | None = None,
+    template_path=None,
 ) -> DeckSpec:
     normalized_request, _ = normalize_ai_planning_request(planning_request, model=model)
     if not normalized_request.topic:
@@ -575,9 +610,17 @@ def plan_deck_spec_with_ai(
 
     resolved_command = resolve_external_planner_command(planner_command)
     if resolved_command:
-        return plan_deck_spec_with_external_command(normalized_request, resolved_command)
+        return plan_deck_spec_with_external_command(
+            normalized_request,
+            resolved_command,
+            template_path=template_path,
+        )
 
-    developer_prompt, user_prompt = build_ai_planning_prompts(normalized_request, slide_bounds=slide_bounds)
+    developer_prompt, user_prompt = build_ai_planning_prompts(
+        normalized_request,
+        slide_bounds=slide_bounds,
+        template_path=template_path,
+    )
     client = OpenAIResponsesClient(load_openai_responses_config(model=model))
     raw_outline = client.create_structured_json(
         developer_prompt=developer_prompt,
@@ -588,5 +631,5 @@ def plan_deck_spec_with_ai(
     return build_deck_spec_from_ai_outline(raw_outline, slide_bounds=slide_bounds)
 
 
-def plan_deck_spec_with_llm(planning_request: AiPlanningRequest, model: str | None = None) -> DeckSpec:
-    return plan_deck_spec_with_ai(planning_request, model=model)
+def plan_deck_spec_with_llm(planning_request: AiPlanningRequest, model: str | None = None, template_path=None) -> DeckSpec:
+    return plan_deck_spec_with_ai(planning_request, model=model, template_path=template_path)

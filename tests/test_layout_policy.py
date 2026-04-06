@@ -35,11 +35,25 @@ class LayoutPolicyTests(unittest.TestCase):
             fallback_pattern_id="general_business",
             content_profile=profile,
             preferred_item_counts=(3, 5, 9),
+            available_layout_variants=set(),
         )
 
         self.assertEqual(decision.pattern_id, "process_flow")
-        self.assertEqual(decision.layout_variant, "process_flow_5")
+        self.assertIsNone(decision.layout_variant)
+        self.assertEqual(decision.layout_hints["desired_layout_variant"], "process_flow_5")
         self.assertEqual(decision.max_items_per_page, 5)
+
+    def test_layout_policy_preserves_variant_when_available(self):
+        profile = profile_bullets(["A", "B", "C", "D"])
+        decision = resolve_layout_decision(
+            requested_pattern_id="process_flow",
+            fallback_pattern_id="general_business",
+            content_profile=profile,
+            preferred_item_counts=(3, 5, 9),
+            available_layout_variants={"process_flow_5"},
+        )
+
+        self.assertEqual(decision.layout_variant, "process_flow_5")
 
     def test_layout_policy_downgrades_dense_content_capacity(self):
         profile = profile_bullets(
@@ -57,7 +71,9 @@ class LayoutPolicyTests(unittest.TestCase):
             fallback_pattern_id="general_business",
             content_profile=profile,
             preferred_item_counts=(3, 5, 9),
+            available_layout_variants=set(),
         )
 
-        self.assertEqual(decision.layout_variant, "org_governance_9")
+        self.assertIsNone(decision.layout_variant)
+        self.assertEqual(decision.layout_hints["desired_layout_variant"], "org_governance_9")
         self.assertEqual(decision.max_items_per_page, 9)

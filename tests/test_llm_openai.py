@@ -1,5 +1,7 @@
 import unittest
+from io import BytesIO
 from unittest.mock import patch
+from urllib import error
 
 from tools.sie_autoppt.llm_openai import (
     OpenAIResponsesClient,
@@ -161,3 +163,43 @@ class OpenAIResponsesTests(unittest.TestCase):
         called_route, called_payload = post_json.call_args.args
         self.assertEqual(called_route, "/chat/completions")
         self.assertEqual(called_payload["response_format"], {"type": "json_object"})
+
+    def test_post_json_retries_with_backoff_for_retryable_http_errors(self):
+        client = OpenAIResponsesClient(
+            OpenAIResponsesConfig(
+                api_key="sk-test",
+                base_url="https://api.openai.com/v1",
+                model="gpt-4o-mini",
+                timeout_sec=30,
+                reasoning_effort="low",
+                text_verbosity="low",
+                api_style="responses",
+            )
+        )
+
+        http_error = error.HTTPError(
+            url="https://api.openai.com/v1/responses",
+            code=429,
+            msg="Too Many Requests",
+            hdrs={"Retry-After": "0.25"},
+            fp=BytesIO(b'{"error":{"message":"rate limited","code":"rate_limit"}}'),
+        )
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'{"output_text":"{\\"ok\\":true}"}'
+
+        with (
+            patch("tools.sie_autoppt.llm_openai.request.urlopen", side_effect=[http_error, _Response()]),
+            patch("tools.sie_autoppt.llm_openai.time.sleep") as sleep,
+        ):
+            payload = client._post_json("/responses", {"test": True})
+
+        self.assertEqual(payload["output_text"], '{"ok":true}')
+        sleep.assert_called_once_with(0.25)

@@ -52,17 +52,23 @@ def resolve_layout_decision(
     fallback_pattern_id: str,
     content_profile: ContentProfile,
     preferred_item_counts: tuple[int, ...] = DEFAULT_ITEM_COUNTS,
+    available_layout_variants: set[str] | None = None,
 ) -> LayoutDecision:
     pattern_id = requested_pattern_id or fallback_pattern_id
     capacity = choose_capacity(content_profile, preferred_item_counts=preferred_item_counts)
+    desired_layout_variant = decide_layout_variant(pattern_id, capacity)
+    resolved_layout_variant = desired_layout_variant
+    if desired_layout_variant and available_layout_variants is not None and desired_layout_variant not in available_layout_variants:
+        resolved_layout_variant = None
     return LayoutDecision(
         pattern_id=pattern_id,
-        layout_variant=decide_layout_variant(pattern_id, capacity),
+        layout_variant=resolved_layout_variant,
         max_items_per_page=capacity,
         layout_hints={
             "density": content_profile.density,
             "item_count": content_profile.item_count,
             "avg_chars": content_profile.avg_chars,
             "max_chars": content_profile.max_chars,
+            "desired_layout_variant": desired_layout_variant or "",
         },
     )

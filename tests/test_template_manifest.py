@@ -39,6 +39,10 @@ class TemplateManifestTests(unittest.TestCase):
     def test_template_path_resolves_to_adjacent_manifest(self):
         self.assertEqual(resolve_template_manifest_path(DEFAULT_TEMPLATE), DEFAULT_TEMPLATE_MANIFEST)
 
+    def test_template_path_resolves_folder_manifest_for_variant_template(self):
+        template_path = Path("assets/templates/business_gold/template.pptx")
+        self.assertEqual(resolve_template_manifest_path(template_path), Path("assets/templates/business_gold/manifest.json"))
+
     def test_shape_bounds_matches_expected_geometry(self):
         bounds = ShapeBounds(min_top=100, max_top=200, min_width=300)
 
@@ -73,3 +77,12 @@ class TemplateManifestTests(unittest.TestCase):
         self.assertEqual(manifest.render_layouts["general_business"]["origin_left"], int(3 * EMU_PER_CM))
         self.assertEqual(manifest.render_layouts["general_business"]["gap_x"], int(0.5 * EMU_PER_CM))
         self.assertEqual(manifest.style_guide.body_max_chars, 140)
+
+    def test_variant_template_manifest_loads_style_guide_markdown(self):
+        manifest = load_template_manifest(template_path=Path("assets/templates/business_gold/template.pptx"))
+
+        self.assertEqual(manifest.template_name, "business_gold")
+        self.assertEqual(manifest.style_guide.theme_name, "Executive Gold")
+        self.assertEqual(manifest.style_guide.accent_rgb, (168, 126, 33))
+        self.assertIn("premium", manifest.style_guide.tone_keywords)
+        self.assertIn("outcome first", manifest.style_guide.narrative_preferences)

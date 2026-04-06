@@ -1,0 +1,102 @@
+{
+  "extends": "../sie_template.manifest.json",
+  "version": "1.0",
+  "template_name": "business_gold",
+  "style_guide_file": "style_guide.md",
+  "fonts": {
+    "theme_title_pt": 38,
+    "directory_title_pt": 24
+  },
+  "render_layouts": {
+    "general_business": {
+      "fill_rgb": [251, 248, 240],
+      "line_rgb": [212, 201, 170]
+    },
+    "process_flow": {
+      "fill_rgb": [250, 247, 238],
+      "line_rgb": [210, 198, 165]
+    },
+    "solution_architecture": {
+      "palette": [
+        {
+          "fill_rgb": [250, 247, 238],
+          "line_rgb": [212, 201, 170],
+          "accent_rgb": [168, 126, 33]
+        },
+        {
+          "fill_rgb": [248, 244, 233],
+          "line_rgb": [207, 195, 160],
+          "accent_rgb": [103, 86, 58]
+        },
+        {
+          "fill_rgb": [252, 249, 243],
+          "line_rgb": [219, 208, 180],
+          "accent_rgb": [103, 86, 58]
+        },
+        {
+          "fill_rgb": [247, 242, 228],
+          "line_rgb": [203, 190, 154],
+          "accent_rgb": [168, 126, 33]
+        }
+      ],
+      "banner": {
+        "fill_rgb": [168, 126, 33]
+      }
+    },
+    "org_governance": {
+      "card_fill_rgb": [250, 247, 240],
+      "card_line_rgb": [212, 201, 170],
+      "label_box": {
+        "fill_rgb": [168, 126, 33],
+        "line_rgb": [168, 126, 33]
+      },
+      "footer_bar": {
+        "fill_rgb": [243, 238, 226],
+        "line_rgb": [213, 203, 176]
+      }
+    },
+    "comparison_upgrade": {
+      "left_panel": {
+        "fill_rgb": [250, 247, 240],
+        "line_rgb": [212, 201, 170],
+        "title_rgb": [98, 82, 55],
+        "detail_rgb": [118, 101, 73]
+      },
+      "right_panel": {
+        "fill_rgb": [168, 126, 33],
+        "line_rgb": [168, 126, 33]
+      },
+      "center_panel": {
+        "fill_rgb": [251, 248, 242],
+        "line_rgb": [214, 203, 175]
+      },
+      "center_kicker": {
+        "fill_rgb": [168, 126, 33]
+      },
+      "center_text": {
+        "title_rgb": [168, 126, 33],
+        "subtitle_rgb": [118, 101, 73],
+        "footer_rgb": [98, 82, 55]
+      }
+    },
+    "capability_ring": {
+      "title_box": {
+        "text_rgb": [98, 82, 55]
+      },
+      "card_fill_rgb": [250, 247, 240],
+      "card_line_rgb": [212, 201, 170]
+    },
+    "five_phase_path": {
+      "header_fill_rgb": [168, 126, 33],
+      "body_fill_rgb": [251, 248, 242],
+      "body_line_rgb": [214, 203, 175]
+    },
+    "pain_cards": {
+      "card_fill_rgb": [251, 248, 242],
+      "card_line_rgb": [214, 203, 175],
+      "banner": {
+        "fill_rgb": [168, 126, 33]
+      }
+    }
+  }
+}

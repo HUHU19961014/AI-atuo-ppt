@@ -90,12 +90,14 @@ def generate_plan_with_ai(
     model: str | None = None,
     planner_command: str | None = None,
     plan_output: Path | None = None,
+    template_path: Path | None = None,
 ) -> Path:
     try:
         deck = plan_deck_spec_with_ai(
             request,
             model=model,
             planner_command=planner_command,
+            template_path=template_path,
         )
     except (OpenAIConfigurationError, OpenAIResponsesError, ExternalPlannerError, ValueError) as exc:
         raise AiWorkflowError(str(exc)) from exc
@@ -109,6 +111,7 @@ def run_ai_healthcheck(
     request: AiPlanningRequest,
     model: str | None = None,
     planner_command: str | None = None,
+    template_path: Path | None = None,
 ) -> AiCheckSummary:
     try:
         config = load_openai_responses_config(model=model) if not planner_command else None
@@ -116,6 +119,7 @@ def run_ai_healthcheck(
             request,
             model=model,
             planner_command=planner_command,
+            template_path=template_path,
         )
     except OpenAIConfigurationError as exc:
         raise AiHealthcheckBlockedError(str(exc)) from exc
@@ -191,6 +195,7 @@ def render_from_ai_plan(
             request,
             model=model,
             planner_command=planner_command,
+            template_path=template_path,
         )
     except (OpenAIConfigurationError, OpenAIResponsesError, ExternalPlannerError, ValueError) as exc:
         raise AiWorkflowError(str(exc)) from exc

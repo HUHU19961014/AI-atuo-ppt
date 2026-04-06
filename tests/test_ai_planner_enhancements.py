@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from tools.sie_autoppt.planning.ai_planner import (
     AiPlanningRequest,
@@ -21,6 +22,16 @@ class AiPlannerEnhancementTests(unittest.TestCase):
         self.assertIn("商务专业", user_prompt)
         self.assertIn("公司领导", user_prompt)
         self.assertIn("5", user_prompt)
+
+    def test_build_ai_planning_prompts_include_template_style_context(self):
+        developer_prompt, user_prompt = build_ai_planning_prompts(
+            AiPlanningRequest(topic="企业经营分析汇报", chapters=3),
+            template_path=Path("assets/templates/business_gold/template.pptx"),
+        )
+
+        self.assertIn("Clarifier context", developer_prompt)
+        self.assertIn("Executive Gold", user_prompt)
+        self.assertIn("premium", user_prompt)
 
     def test_build_deck_spec_from_ai_outline_builds_payload_for_complex_patterns(self):
         deck = build_deck_spec_from_ai_outline(

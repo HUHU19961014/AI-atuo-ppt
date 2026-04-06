@@ -5,6 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from .config import DEFAULT_TEMPLATE, DEFAULT_TEMPLATE_MANIFEST
+from .style_guide import deep_merge_dict, parse_style_guide_markdown
 
 
 EMU_PER_CM = 360000
@@ -146,16 +147,28 @@ class TemplateFonts:
 
 @dataclass(frozen=True)
 class TemplateStyleGuide:
+    theme_name: str = ""
     title_max_chars: int = 32
     subtitle_max_chars: int = 72
     body_max_chars: int = 120
     preferred_item_counts: tuple[int, ...] = ()
     overflow_policy: str = "paginate"
     density_thresholds: dict[str, int] = field(default_factory=dict)
+    accent_rgb: tuple[int, int, int] | None = None
+    inactive_rgb: tuple[int, int, int] | None = None
+    tone_keywords: tuple[str, ...] = ()
+    narrative_preferences: tuple[str, ...] = ()
+    prompt_notes: tuple[str, ...] = ()
+    renderer_hints: dict[str, object] = field(default_factory=dict)
+    raw_text: str = ""
+    source_path: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "TemplateStyleGuide":
+        accent_rgb = data.get("accent_rgb")
+        inactive_rgb = data.get("inactive_rgb")
         return cls(
+            theme_name=str(data.get("theme_name", "")).strip(),
             title_max_chars=int(data.get("title_max_chars", 32)),
             subtitle_max_chars=int(data.get("subtitle_max_chars", 72)),
             body_max_chars=int(data.get("body_max_chars", 120)),
@@ -165,6 +178,16 @@ class TemplateStyleGuide:
                 str(key): int(value)
                 for key, value in dict(data.get("density_thresholds", {})).items()
             },
+            accent_rgb=tuple(int(item) for item in accent_rgb) if isinstance(accent_rgb, (list, tuple)) and len(accent_rgb) == 3 else None,
+            inactive_rgb=tuple(int(item) for item in inactive_rgb) if isinstance(inactive_rgb, (list, tuple)) and len(inactive_rgb) == 3 else None,
+            tone_keywords=tuple(str(item).strip() for item in data.get("tone_keywords", []) if str(item).strip()),
+            narrative_preferences=tuple(
+                str(item).strip() for item in data.get("narrative_preferences", []) if str(item).strip()
+            ),
+            prompt_notes=tuple(str(item).strip() for item in data.get("prompt_notes", []) if str(item).strip()),
+            renderer_hints=dict(data.get("renderer_hints", {})),
+            raw_text=str(data.get("raw_text", "")).strip(),
+            source_path=str(data.get("source_path", "")).strip(),
         )
 
 
@@ -196,6 +219,9 @@ def resolve_template_manifest_path(template_path: Path | None = None) -> Path:
     candidate = selected_template.with_suffix(".manifest.json")
     if candidate.exists():
         return candidate
+    folder_manifest = selected_template.parent / "manifest.json"
+    if folder_manifest.exists():
+        return folder_manifest
     return DEFAULT_TEMPLATE_MANIFEST
 
 
@@ -249,7 +275,11 @@ def _normalize_render_layouts(data: object, parent_key: str = "") -> object:
 @lru_cache(maxsize=None)
 def _load_template_manifest_cached(manifest_path_str: str) -> TemplateManifest:
     manifest_path = Path(manifest_path_str)
-    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data = _load_manifest_data(manifest_path)
+    style_guide_data = dict(data.get("style_guide", {}))
+    style_guide_path = _resolve_style_guide_path(manifest_path, data)
+    if style_guide_path is not None and style_guide_path.exists():
+        style_guide_data = deep_merge_dict(style_guide_data, parse_style_guide_markdown(style_guide_path))
     return TemplateManifest(
         manifest_path=str(manifest_path),
         version=str(data["version"]),
@@ -258,10 +288,35 @@ def _load_template_manifest_cached(manifest_path_str: str) -> TemplateManifest:
         selectors=TemplateSelectors.from_dict(data["selectors"]),
         fallback_boxes=TemplateFallbackBoxes.from_dict(data["fallback_boxes"]),
         fonts=TemplateFonts.from_dict(data["fonts"]),
-        style_guide=TemplateStyleGuide.from_dict(data.get("style_guide", {})),
+        style_guide=TemplateStyleGuide.from_dict(style_guide_data),
         slide_pools=SlidePools.from_dict(data["slide_pools"]) if data.get("slide_pools") else None,
         render_layouts=_normalize_render_layouts(data.get("render_layouts", {})),
     )
+
+
+def _resolve_style_guide_path(manifest_path: Path, data: dict[str, object]) -> Path | None:
+    style_guide_file = str(data.get("style_guide_file", "")).strip()
+    if style_guide_file:
+        return (manifest_path.parent / style_guide_file).resolve()
+    candidate = manifest_path.parent / "style_guide.md"
+    if candidate.exists():
+        return candidate.resolve()
+    return None
+
+
+def _load_manifest_data(manifest_path: Path, visited: tuple[Path, ...] = ()) -> dict[str, object]:
+    resolved_manifest_path = manifest_path.resolve()
+    if resolved_manifest_path in visited:
+        raise ValueError(f"Cyclic template manifest inheritance detected: {resolved_manifest_path}")
+    data = json.loads(resolved_manifest_path.read_text(encoding="utf-8"))
+    parent_ref = str(data.get("extends", "")).strip()
+    if not parent_ref:
+        return data
+    parent_path = (resolved_manifest_path.parent / parent_ref).resolve()
+    parent_data = _load_manifest_data(parent_path, visited=(*visited, resolved_manifest_path))
+    child_data = dict(data)
+    child_data.pop("extends", None)
+    return deep_merge_dict(parent_data, child_data)
 
 
 def load_template_manifest(template_path: Path | None = None, manifest_path: Path | None = None) -> TemplateManifest:

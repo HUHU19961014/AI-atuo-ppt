@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
@@ -235,7 +236,6 @@ class OpenAIResponsesClient:
         )
 
         max_retries = 3
-        last_exception = None
 
         for attempt in range(max_retries):
             try:
@@ -253,22 +253,26 @@ class OpenAIResponsesClient:
             except error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", errors="replace")
                 if exc.code in {429, 500, 502, 503, 504} and attempt < max_retries - 1:
-                    last_exception = exc
+                    time.sleep(self._retry_delay_seconds(attempt=attempt, retry_after_header=exc.headers.get("Retry-After")))
                     continue
                 raise OpenAIResponsesError(format_openai_http_error(exc.code, detail)) from exc
             except error.URLError as exc:
                 if attempt < max_retries - 1:
-                    last_exception = exc
+                    time.sleep(self._retry_delay_seconds(attempt=attempt))
                     continue
                 raise OpenAIResponsesError(f"Responses API request failed: {exc.reason}") from exc
 
-        if last_exception:
-            if isinstance(last_exception, error.HTTPError):
-                detail = last_exception.read().decode("utf-8", errors="replace")
-                raise OpenAIResponsesError(format_openai_http_error(last_exception.code, detail)) from last_exception
-            raise OpenAIResponsesError(f"Responses API request failed after {max_retries} retries") from last_exception
-
         raise OpenAIResponsesError(f"Responses API request failed after {max_retries} retries")
+
+    def _retry_delay_seconds(self, *, attempt: int, retry_after_header: str | None = None) -> float:
+        if retry_after_header:
+            try:
+                retry_after = float(retry_after_header.strip())
+            except ValueError:
+                retry_after = 0.0
+            if retry_after > 0:
+                return retry_after
+        return min(4.0, 0.5 * (2**attempt))
 
     def _build_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
