@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeAlias, TypedDict
+import json
 
 
 class ProcessStepPayload(TypedDict):
@@ -131,6 +132,82 @@ class InputPayload:
     scenarios: list[str]
     notes: list[str]
     slides: list[HtmlSlide] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class StructureArgument:
+    point: str
+    evidence: str = ""
+
+
+@dataclass(frozen=True)
+class StructureSection:
+    title: str
+    key_message: str
+    arguments: list[StructureArgument] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class StructureSpec:
+    core_message: str
+    structure_type: str
+    sections: list[StructureSection] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "core_message": self.core_message,
+            "structure_type": self.structure_type,
+            "sections": [
+                {
+                    "title": section.title,
+                    "key_message": section.key_message,
+                    "arguments": [
+                        {
+                            "point": argument.point,
+                            "evidence": argument.evidence,
+                        }
+                        for argument in section.arguments
+                    ],
+                }
+                for section in self.sections
+            ],
+        }
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "StructureSpec":
+        raw_sections = data.get("sections", [])
+        sections: list[StructureSection] = []
+        if isinstance(raw_sections, list):
+            for raw_section in raw_sections:
+                if not isinstance(raw_section, dict):
+                    continue
+                raw_arguments = raw_section.get("arguments", [])
+                arguments: list[StructureArgument] = []
+                if isinstance(raw_arguments, list):
+                    for raw_argument in raw_arguments:
+                        if not isinstance(raw_argument, dict):
+                            continue
+                        arguments.append(
+                            StructureArgument(
+                                point=str(raw_argument.get("point", "")).strip(),
+                                evidence=str(raw_argument.get("evidence", "")).strip(),
+                            )
+                        )
+                sections.append(
+                    StructureSection(
+                        title=str(raw_section.get("title", "")).strip(),
+                        key_message=str(raw_section.get("key_message", "")).strip(),
+                        arguments=arguments,
+                    )
+                )
+        return cls(
+            core_message=str(data.get("core_message", "")).strip(),
+            structure_type=str(data.get("structure_type", "")).strip(),
+            sections=sections,
+        )
 
 
 @dataclass(frozen=True)

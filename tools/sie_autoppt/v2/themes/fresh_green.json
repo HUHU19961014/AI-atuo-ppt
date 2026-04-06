@@ -1,0 +1,34 @@
+{
+  "theme_name": "fresh_green",
+  "page": {
+    "width": 13.333,
+    "height": 7.5
+  },
+  "colors": {
+    "primary": "#2E7D32",
+    "secondary": "#63A64F",
+    "text_main": "#253126",
+    "text_sub": "#6A796C",
+    "bg": "#F5F8F3",
+    "card_bg": "#FFFFFF",
+    "line": "#D7E1D4"
+  },
+  "fonts": {
+    "title": "Microsoft YaHei",
+    "body": "Microsoft YaHei",
+    "fallback": "Arial"
+  },
+  "font_sizes": {
+    "title": 26,
+    "subtitle": 14,
+    "body": 16,
+    "small": 11
+  },
+  "spacing": {
+    "page_margin_left": 0.6,
+    "page_margin_right": 0.6,
+    "page_margin_top": 0.4,
+    "page_margin_bottom": 0.3,
+    "block_gap": 0.25
+  }
+}

@@ -21,6 +21,36 @@ The project no longer assumes that users hand-write compliant HTML first. It sup
 - OpenAI-compatible hosted providers
 - local gateways and external agent planners
 
+## V2 Recommended Workflow
+
+The repository now also includes a `V2 structure-first pipeline` that is closer to the rebuild PRD:
+
+1. AI generates `outline JSON`
+2. AI generates `deck JSON`
+3. local schema validates the deck
+4. fixed Python renderers generate `.pptx`
+
+Recommended local entrypoint without package installation:
+
+```bash
+python main.py v2-render --deck-json ./samples/sample_deck_v2.json
+```
+
+Recommended one-shot AI flow:
+
+```bash
+python main.py v2-make \
+  --topic "AI Auto PPT V2 重构方案" \
+  --theme business_red
+```
+
+Default V2 outputs now align to the repo-local `output/` directory:
+
+- `output/generated_outline.json`
+- `output/generated_deck.json`
+- `output/generated.pptx`
+- `output/log.txt`
+
 ## Quickstart
 
 ### 1. Install
@@ -91,13 +121,15 @@ python -m sie_autoppt clarify `
 
 ## Architecture
 
-The current workflow is split into three layers:
+The current workflow is split into four layers:
 
-1. `AI planning layer`
-   Converts a topic, brief, or source document into a structured deck outline.
-2. `Python rendering layer`
-   Maps structured pages into deterministic template coordinates and outputs `.pptx`.
-3. `Human polish layer`
+1. `Clarifier layer`
+   Collects missing user intent when the request is still fuzzy.
+2. `Structure layer`
+   Converts a topic into `core_message + sections` before any page writing starts.
+3. `Content + rendering layer`
+   Maps structure into `DeckSpec`, then renders deterministic `.pptx`.
+4. `Human polish layer`
    Final visual tuning, alignment, animation, and client-facing refinement.
 
 ## Main commands
@@ -109,6 +141,25 @@ The current workflow is split into three layers:
 - `ai-make`: topic -> PPTX
 - `ai-check`: planner connectivity smoke test
 - `clarify`: fuzzy request -> structured clarification state
+- `structure`: topic -> `Structure JSON`
+- `structure-plan`: topic / `Structure JSON` -> `DeckSpec JSON`
+- `structure-make`: topic / `Structure JSON` -> PPTX
+
+Structure-first example:
+
+```powershell
+python -m sie_autoppt structure `
+  --topic "做一个 AI 行业趋势汇报" `
+  --structure-output .\projects\generated\trend.structure.json
+
+python -m sie_autoppt structure-plan `
+  --structure-json .\projects\generated\trend.structure.json `
+  --plan-output .\projects\generated\trend.deck.json
+
+python -m sie_autoppt structure-make `
+  --structure-json .\projects\generated\trend.structure.json `
+  --output-name Trend_Structure_Render
+```
 
 ## HTML and planning examples
 
@@ -292,12 +343,17 @@ powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
 - [Input spec](./docs/INPUT_SPEC.md)
 - [Testing](./docs/TESTING.md)
 - [Human visual QA](./docs/HUMAN_VISUAL_QA.md)
+- [Project direction confirmation](./docs/PROJECT_DIRECTION_CONFIRMATION.md)
+- [Structure-first architecture](./docs/STRUCTURE_FIRST_ARCHITECTURE.md)
+- [Structure quality test set](./docs/STRUCTURE_QUALITY_TESTSET.md)
 
 ## Current status
 
 Already solid in the current codebase:
 
 - AI planning entrypoint
+- structure-first generation entrypoint
+- structure validation with retry
 - `DeckSpec JSON` contract
 - `plan/render/make` split workflow
 - render trace and QA transparency

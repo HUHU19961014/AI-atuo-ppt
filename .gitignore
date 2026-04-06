@@ -6,5 +6,6 @@ __pycache__/
 projects/generated/
 projects/visual_review/
 projects/*_preview/
+output/
 *_QA.txt
 *_QA.json

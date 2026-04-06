@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "title": "AI Auto PPT V2 重构方案",
+    "theme": "business_red",
+    "language": "zh-CN",
+    "author": "AI Auto PPT",
+    "version": "2.0"
+  },
+  "slides": [
+    {
+      "slide_id": "s1",
+      "layout": "section_break",
+      "title": "项目背景",
+      "subtitle": "从 AI 生成一切，切换为内容与渲染分层"
+    },
+    {
+      "slide_id": "s2",
+      "layout": "title_content",
+      "title": "现状核心问题",
+      "content": [
+        "HTML 不是 PPT 的天然中间语言，转换损耗高",
+        "AI 同时负责内容、排版和代码，稳定性不足",
+        "错误链路长，定位与调试成本偏高",
+        "样式复用和版式标准化能力较弱"
+      ]
+    },
+    {
+      "slide_id": "s3",
+      "layout": "two_columns",
+      "title": "重构前后对比",
+      "left": {
+        "heading": "旧链路",
+        "items": [
+          "Topic -> HTML -> Python 代码 -> PPT",
+          "AI 承担过多职责，输出波动明显",
+          "调样式依赖反复 Prompt"
+        ]
+      },
+      "right": {
+        "heading": "V2 链路",
+        "items": [
+          "Topic -> Outline -> Deck JSON -> Renderer -> PPT",
+          "AI 只负责内容，程序负责结构与表现",
+          "主题与 layout 可复用、可扩展"
+        ]
+      }
+    },
+    {
+      "slide_id": "s4",
+      "layout": "title_image",
+      "title": "系统架构",
+      "content": [
+        "AI 生成大纲与逐页结构化内容",
+        "Schema 校验拦截非法输出",
+        "固定渲染引擎控制布局与视觉风格"
+      ],
+      "image": {
+        "mode": "placeholder",
+        "caption": "结构化 PPT 引擎示意图"
+      }
+    },
+    {
+      "slide_id": "s5",
+      "layout": "title_only",
+      "title": "先稳定闭环，再逐步增强质量"
+    }
+  ]
+}

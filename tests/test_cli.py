@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 from tools.sie_autoppt import cli
@@ -117,3 +118,16 @@ class CliTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue().strip())
             self.assertEqual(payload["status"], "needs_clarification")
             self.assertTrue(payload["session"]["pending_dimensions"])
+
+    def test_structure_command_prints_generated_structure_path(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            structure_path = f"{temp_dir}\\sample.structure.json"
+            with (
+                patch("sys.argv", ["sie-autoppt", "structure", "--topic", "做一个 AI 行业趋势汇报", "--output-dir", temp_dir]),
+                patch("tools.sie_autoppt.cli.generate_structure_only", return_value=Path(structure_path)),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+        self.assertIn("sample.structure.json", stdout.getvalue())
