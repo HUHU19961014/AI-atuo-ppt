@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 import datetime
 from dataclasses import dataclass
-from pathlib import Path
 import math
+from pathlib import Path
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -14,6 +14,7 @@ from pptx.util import Pt
 
 try:
     from sie_autoppt.config import DEFAULT_TEMPLATE, FONT_NAME
+    from sie_autoppt.onepage_layout_presets import DEFAULT_ONEPAGE_PRESET_ID, get_onepage_layout_preset
     from sie_autoppt.slide_ops import remove_slide
     from sie_autoppt.template_manifest import load_template_manifest
 except ModuleNotFoundError:
@@ -21,6 +22,7 @@ except ModuleNotFoundError:
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from sie_autoppt.config import DEFAULT_TEMPLATE, FONT_NAME
+    from sie_autoppt.onepage_layout_presets import DEFAULT_ONEPAGE_PRESET_ID, get_onepage_layout_preset
     from sie_autoppt.slide_ops import remove_slide
     from sie_autoppt.template_manifest import load_template_manifest
 
@@ -212,7 +214,8 @@ def keep_only_body_template(prs: Presentation) -> None:
             remove_slide(prs, index)
 
 
-def render_title(slide) -> None:
+def render_title(slide, preset_id: str) -> None:
+    preset = get_onepage_layout_preset(preset_id)
     title_shape = slide.shapes[0]
     tf = title_shape.text_frame
     tf.clear()
@@ -220,29 +223,72 @@ def render_title(slide) -> None:
     for text, color, bold in TITLE_SEGMENTS:
         run = paragraph.add_run()
         run.text = text
-        set_run_style(run, size=22.5, color=color, bold=bold)
+        set_run_style(run, size=float(preset.renderer_hints["title_font_size"]), color=color, bold=bold)
 
-    add_text(slide, 720000, 540000, 8500000, 190000, SUBTITLE, font_size=12, color=MUTED)
+    add_text(
+        slide,
+        720000,
+        540000,
+        8500000,
+        190000,
+        SUBTITLE,
+        font_size=float(preset.renderer_hints["subtitle_font_size"]),
+        color=MUTED,
+    )
 
 
-def render_summary(slide, slide_width: int) -> None:
+def render_summary(slide, slide_width: int, preset_id: str) -> None:
+    preset = get_onepage_layout_preset(preset_id)
     add_shape(slide, MSO_AUTO_SHAPE_TYPE.RECTANGLE, 720000, 1140000, 70000, 270000, fill=ACCENT)
-    add_text(slide, 850000, 1135000, 1500000, 180000, SUMMARY_LABEL, font_size=13, color=ACCENT, bold=True)
-    add_text(slide, 720000, 1400000, slide_width - 1440000, 240000, SUMMARY_LINE_1, font_size=13.5, color=MUTED)
-    add_text(slide, 720000, 1600000, slide_width - 1440000, 340000, SUMMARY_LINE_2, font_size=20, color=INK, bold=True)
+    add_text(
+        slide,
+        850000,
+        1135000,
+        1500000,
+        180000,
+        SUMMARY_LABEL,
+        font_size=float(preset.renderer_hints["summary_label_font_size"]),
+        color=ACCENT,
+        bold=True,
+    )
+    add_text(
+        slide,
+        720000,
+        1400000,
+        slide_width - 1440000,
+        240000,
+        SUMMARY_LINE_1,
+        font_size=float(preset.renderer_hints["summary_intro_font_size"]),
+        color=MUTED,
+    )
+    add_text(
+        slide,
+        720000,
+        1600000,
+        slide_width - 1440000,
+        340000,
+        SUMMARY_LINE_2,
+        font_size=float(preset.renderer_hints["summary_headline_font_size"]),
+        color=INK,
+        bold=True,
+    )
+    if bool(preset.renderer_hints.get("show_support_line", False)):
+        add_text(slide, 720000, 1880000, slide_width - 1440000, 170000, "换句话说，页面应以结论先行、论据跟进的方式组织阅读。", font_size=10.8, color=LIGHT_TEXT)
 
 
-def card_geometries(slide_width: int) -> list[tuple[int, int, int, int]]:
+def card_geometries(slide_width: int, preset_id: str) -> list[tuple[int, int, int, int]]:
+    preset = get_onepage_layout_preset(preset_id)
     left = 720000
-    gap = 220000
+    gap = int(preset.renderer_hints["card_gap"])
     usable_width = slide_width - left * 2
     width = int((usable_width - gap * 2) / 3)
-    top = 2100000
-    height = 2850000
+    top = int(preset.renderer_hints["card_top"])
+    height = int(preset.renderer_hints["card_height"])
     return [(left + idx * (width + gap), top, width, height) for idx in range(3)]
 
 
-def render_card(slide, geom: tuple[int, int, int, int], spec: CapabilityCard, style: dict[str, tuple[int, int, int]]) -> None:
+def render_card(slide, geom: tuple[int, int, int, int], spec: CapabilityCard, style: dict[str, tuple[int, int, int]], preset_id: str) -> None:
+    preset = get_onepage_layout_preset(preset_id)
     left, top, width, height = geom
     accent = style["accent"]
     soft = style["soft"]
@@ -250,31 +296,82 @@ def render_card(slide, geom: tuple[int, int, int, int], spec: CapabilityCard, st
     add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, left, top, width, height, fill=WHITE, line=LINE, line_width=1)
     add_shape(slide, MSO_AUTO_SHAPE_TYPE.RECTANGLE, left, top, width, 70000, fill=accent)
     add_text(slide, left + 180000, top + 150000, 280000, 120000, spec.index, font_size=10.5, color=LIGHT_TEXT, bold=True)
-    add_text(slide, left + width - 1100000, top + 150000, 900000, 120000, spec.english, font_size=9, color=accent, bold=True, align=PP_ALIGN.RIGHT)
+    add_text(
+        slide,
+        left + width - 1100000,
+        top + 150000,
+        900000,
+        120000,
+        spec.english,
+        font_size=float(preset.renderer_hints["card_english_font_size"]),
+        color=accent,
+        bold=True,
+        align=PP_ALIGN.RIGHT,
+    )
 
     add_shape(slide, MSO_AUTO_SHAPE_TYPE.OVAL, left + 180000, top + 320000, 350000, 350000, fill=accent)
     add_text(slide, left + 180000, top + 395000, 350000, 110000, spec.index[-1], font_size=18, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
-    add_text(slide, left + 620000, top + 325000, 1200000, 150000, spec.chinese, font_size=18, color=INK, bold=True)
+    add_text(
+        slide,
+        left + 620000,
+        top + 325000,
+        1200000,
+        150000,
+        spec.chinese,
+        font_size=float(preset.renderer_hints["card_title_font_size"]),
+        color=INK,
+        bold=True,
+    )
 
     add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, left + 180000, top + 770000, width - 360000, 380000, fill=soft)
-    add_text(slide, left + 230000, top + 860000, width - 460000, 180000, spec.definition, font_size=11.5, color=accent, bold=True)
+    add_text(
+        slide,
+        left + 230000,
+        top + 860000,
+        width - 460000,
+        180000,
+        spec.definition,
+        font_size=float(preset.renderer_hints["card_definition_font_size"]),
+        color=accent,
+        bold=True,
+    )
 
     bullet_y = top + 1320000
     for bullet in spec.bullets:
         add_shape(slide, MSO_AUTO_SHAPE_TYPE.OVAL, left + 190000, bullet_y + 65000, 65000, 65000, fill=accent)
-        add_text(slide, left + 310000, bullet_y, width - 470000, 300000, bullet, font_size=10.5, color=MUTED)
+        add_text(
+            slide,
+            left + 310000,
+            bullet_y,
+            width - 470000,
+            300000,
+            bullet,
+            font_size=float(preset.renderer_hints["card_bullet_font_size"]),
+            color=MUTED,
+        )
         bullet_y += 520000
 
 
-def render_footer(slide, slide_width: int) -> None:
+def render_footer(slide, slide_width: int, preset_id: str) -> None:
+    preset = get_onepage_layout_preset(preset_id)
     add_shape(slide, MSO_AUTO_SHAPE_TYPE.RECTANGLE, 720000, 5230000, slide_width - 1440000, 1, fill=LINE)
-    add_text(slide, 720000, 5350000, slide_width - 1440000, 160000, FOOTNOTE, font_size=10.4, color=MUTED)
+    add_text(
+        slide,
+        720000,
+        5350000,
+        slide_width - 1440000,
+        160000,
+        FOOTNOTE,
+        font_size=float(preset.renderer_hints["footer_font_size"]),
+        color=MUTED,
+    )
 
 
-def self_check_layout(prs: Presentation) -> list[str]:
+def self_check_layout(prs: Presentation, preset_id: str = DEFAULT_ONEPAGE_PRESET_ID) -> list[str]:
     slide = prs.slides[0]
     slide_width = int(prs.slide_width)
     slide_height = int(prs.slide_height)
+    preset = get_onepage_layout_preset(preset_id)
     issues: list[str] = []
 
     if any(shape.shape_type == MSO_SHAPE_TYPE.PICTURE for shape in slide.shapes):
@@ -284,7 +381,7 @@ def self_check_layout(prs: Presentation) -> list[str]:
         if shape.left < 0 or shape.top < 0 or shape.left + shape.width > slide_width or shape.top + shape.height > slide_height:
             issues.append(f"shape {idx} exceeds slide bounds")
 
-    cards = [Rect(*geom) for geom in card_geometries(slide_width)]
+    cards = [Rect(*geom) for geom in card_geometries(slide_width, preset_id)]
     for i, current in enumerate(cards):
         for j, other in enumerate(cards[i + 1 :], start=i + 1):
             if current.overlaps(other):
@@ -301,35 +398,35 @@ def self_check_layout(prs: Presentation) -> list[str]:
             issues.append(f"footer region overlaps card {idx}")
 
     title_text = "".join(segment[0] for segment in TITLE_SEGMENTS)
-    if estimate_lines(title_text, 10034086, 22.5) > 1:
+    if estimate_lines(title_text, 10034086, float(preset.renderer_hints["title_font_size"])) > 1:
         issues.append("title is likely to wrap to more than one line")
 
-    if estimate_lines(SUMMARY_LINE_2, slide_width - 1440000, 20) > 2:
+    if estimate_lines(SUMMARY_LINE_2, slide_width - 1440000, float(preset.renderer_hints["summary_headline_font_size"])) > 2:
         issues.append("headline is too dense for the allocated summary box")
 
     for spec in CARDS:
-        if estimate_lines(spec.definition, 2500000, 11.5) > 2:
+        if estimate_lines(spec.definition, 2500000, float(preset.renderer_hints["card_definition_font_size"])) > 2:
             issues.append(f"{spec.chinese} definition is too dense")
         for bullet in spec.bullets:
-            if estimate_lines(bullet, 2500000, 10.5) > 2:
+            if estimate_lines(bullet, 2500000, float(preset.renderer_hints["card_bullet_font_size"])) > 2:
                 issues.append(f"{spec.chinese} bullet is too dense")
 
     return issues
 
 
-def build_slide(output_path: Path) -> Path:
+def build_slide(output_path: Path, preset_id: str = DEFAULT_ONEPAGE_PRESET_ID) -> Path:
     prs = Presentation(str(DEFAULT_TEMPLATE))
     keep_only_body_template(prs)
     slide = prs.slides[0]
     slide_width = int(prs.slide_width)
 
-    render_title(slide)
-    render_summary(slide, slide_width)
-    for geom, spec, style in zip(card_geometries(slide_width), CARDS, CARD_STYLES):
-        render_card(slide, geom, spec, style)
-    render_footer(slide, slide_width)
+    render_title(slide, preset_id)
+    render_summary(slide, slide_width, preset_id)
+    for geom, spec, style in zip(card_geometries(slide_width, preset_id), CARDS, CARD_STYLES):
+        render_card(slide, geom, spec, style, preset_id)
+    render_footer(slide, slide_width, preset_id)
 
-    issues = self_check_layout(prs)
+    issues = self_check_layout(prs, preset_id=preset_id)
     if issues:
         raise ValueError("layout self-check failed: " + " | ".join(issues))
 
@@ -347,12 +444,14 @@ def build_slide(output_path: Path) -> Path:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a consulting-style SIE slide for supply-chain traceability key capabilities.")
     parser.add_argument("--output", default=str(OUTPUT_PPT), help="Output PPTX path.")
+    parser.add_argument("--layout-preset", default=DEFAULT_ONEPAGE_PRESET_ID, help="One-page layout preset id.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    output = build_slide(Path(args.output).resolve())
+    get_onepage_layout_preset(args.layout_preset)
+    output = build_slide(Path(args.output).resolve(), preset_id=args.layout_preset)
     print(output)
 
 

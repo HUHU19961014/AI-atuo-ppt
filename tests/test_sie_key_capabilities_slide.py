@@ -26,6 +26,14 @@ class SieKeyCapabilitiesSlideTests(unittest.TestCase):
             prs = Presentation(output)
             self.assertEqual(self_check_layout(prs), [])
 
+    def test_build_slide_supports_alternate_layout_preset(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "key_capabilities_dense.pptx"
+            build_slide(output, preset_id="professional_modular_cards")
+
+            prs = Presentation(output)
+            self.assertEqual(self_check_layout(prs, preset_id="professional_modular_cards"), [])
+
 
 if __name__ == "__main__":
     unittest.main()
