@@ -108,6 +108,9 @@ class RenderLog:
     def warn(self, message: str) -> None:
         self.lines.append(f"WARN: {message}")
 
+    def error(self, message: str) -> None:
+        self.lines.append(f"ERROR: {message}")
+
     def extend(self, messages: Iterable[str]) -> None:
         for message in messages:
             self.warn(str(message))

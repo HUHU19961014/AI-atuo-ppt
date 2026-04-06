@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git pull:*)",
+      "Bash(python -m pytest -q)",
+      "Bash(python -m pytest tests/test_cli.py -q)",
+      "Bash(python -m unittest tests.test_generation_integration -v)",
+      "Bash(python -m unittest discover -s tests -v)",
+      "Bash(python -m unittest discover -s tests -p \"test_*.py\")",
+      "Bash(python -m pytest tests/test_cli.py tests/test_generation_integration.py)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m tools.sie_autoppt make --html input/uat_plan_sample.html --chapters 3 --output-prefix \"UAT_Classic_HTML\")",
+      "Bash(python -c ':*)",
+      "Bash(python -m pytest tests/test_ai_planner.py -v --tb=short)",
+      "Bash(python -m pytest tests/test_ai_planner.py::AiPlannerTests::test_build_deck_spec_from_ai_outline_normalizes_patterns -v)",
+      "Bash(python -m pytest tests/test_ai_planner.py -v)",
+      "Bash(python -m pytest tests/test_llm_openai.py -v)",
+      "Bash(python -m pytest tests/ -k \"test_\" --co -q)",
+      "Bash(git add:*)"
+    ]
+  }
+}
