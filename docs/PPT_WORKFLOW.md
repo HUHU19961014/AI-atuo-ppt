@@ -43,3 +43,23 @@ The review step should at least check:
 - audience-inappropriate meta guidance phrases
 - main card balance and page symmetry
 - preview export availability for manual inspection
+
+For DeckSpec-based V2 testing, use the built-in automated loop:
+
+```powershell
+python -m sie_autoppt v2-review --deck-json .\output\generated_deck.json
+python -m sie_autoppt v2-iterate --deck-json .\output\generated_deck.json --max-rounds 2
+```
+
+The reviewer now scores exactly these 5 dimensions:
+
+- structure
+- title_quality
+- content_density
+- layout_stability
+- deliverability
+
+And the auto-fix loop now follows this guardrail:
+
+- if blocker issues still exist, patch generation must produce concrete DeckSpec patches
+- if blockers remain but no patches are generated, the loop fails fast instead of pretending to converge

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import platform
 import subprocess
 from dataclasses import dataclass
@@ -12,6 +11,60 @@ from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
 from .io import load_deck_document, write_deck_document
 from .ppt_engine import RenderArtifacts, generate_ppt
 from .schema import DeckDocument, validate_deck_payload
+
+RATING_LABELS = ("优秀", "合格", "可用初稿", "质量偏弱", "不合格")
+REVIEW_SCORECARD_TEXT = """
+请按以下 5 个维度对整套 PPT 进行评分，每项 1-5 分：
+
+1. structure：结构与页数合理性
+- 5分：结构成熟、节奏自然、适合正式汇报
+- 3分：基本完整，但有 1-2 页作用重复或节奏偏平
+- 1分：结构混乱，页数明显失衡
+
+2. title_quality：标题自然度
+- 5分：标题结论导向明确，接近高质量人工写法，中文 <= 20 字
+- 3分：基本自然，有少量生硬表达或目录化标题
+- 1分：多数标题像机器生成，或大量目录化措辞
+
+3. content_density：内容密度与表达质量
+- 5分：每页通常 3-4 条 bullet，精炼，支持高效汇报
+- 3分：整体可接受，但有几页需要压缩
+- 1分：内容过密，阅读负担重
+
+4. layout_stability：版式稳定性与溢出风险
+- 5分：无明显溢出、压叠、错位
+- 3分：有 1-2 页轻微排版问题
+- 1分：多页明显异常，无法交付
+视觉检查重点：
+- 文字是否溢出边界
+- 图文是否压叠
+- 字体是否过小（正文建议 >= 16pt）
+- 背景与文字对比度是否足够
+- 目录页序号/标题是否对齐
+
+5. deliverability：可交付水平
+- 5分：基本达到正式交付水平
+- 3分：可作为初稿，需要较多润色
+- 1分：需要大幅重写
+
+输出 JSON 时必须：
+- total 为五项分数求和
+- rating 仅允许：优秀 / 合格 / 可用初稿 / 质量偏弱 / 不合格
+- page_issues 只写具体页问题，page 从 1 开始
+- blocker 表示已经影响交付或必须进入自动修复
+- warning 表示仍可继续人工润色
+- summary 用 2-3 句中文概括整体判断
+""".strip()
+PATCH_WORKFLOW_TEXT = """
+根据刚才的评审结果，请仅针对 blocker 级别的问题生成 DeckSpec JSON 修复 Patch。
+
+要求：
+- 每个 blocker 至少对应一个 patch 对象
+- 优先使用最小可执行修改：标题改写、bullet 压缩、字段替换、布局字段调整
+- field 使用 DeckSpec JSON 路径，例如 slides[2].title 或 slides[2].left.items[0]
+- 不要为 warning 生成 patch
+- 只输出符合 schema 的 JSON，不要附加解释
+""".strip()
 
 
 @dataclass(frozen=True)
@@ -51,7 +104,7 @@ def build_visual_review_schema() -> dict[str, Any]:
                 "additionalProperties": False,
             },
             "total": {"type": "integer", "minimum": 5, "maximum": 25},
-            "rating": {"type": "string", "enum": ["优秀", "合格", "可用初稿", "质量偏弱", "不合格"]},
+            "rating": {"type": "string", "enum": list(RATING_LABELS)},
             "page_issues": {
                 "type": "array",
                 "items": {
@@ -103,11 +156,10 @@ def _review_developer_prompt() -> str:
     return (
         "You are a strict PPT visual QA reviewer. "
         "You will receive DeckSpec JSON plus slide PNG previews in page order. "
-        "Score the deck on 5 dimensions using integers 1-5, identify specific page issues, "
-        "and return only JSON that matches the schema. "
+        "Use the slide images as the primary source for layout_stability and overflow judgment. "
         "Be conservative: only give 5 when the quality is clearly strong. "
-        "Focus especially on overflow, overlap, tiny text, weak contrast, and repetitive structure. "
-        "Use the slide images as the primary source for layout_stability."
+        "Return only JSON that matches the schema.\n\n"
+        + REVIEW_SCORECARD_TEXT
     )
 
 
@@ -117,7 +169,8 @@ def _patch_developer_prompt() -> str:
         "Given a DeckSpec JSON plus a visual review result JSON, output minimal JSON patches only for blocker-level issues. "
         "Prefer content shortening, title rewriting, bullet trimming, and layout field changes that can be applied directly to the deck JSON. "
         "Use field paths like slides[2].title, slides[2].content[1], slides[2].left.items[0]. "
-        "Do not emit patches for warnings. Return only JSON matching the schema."
+        "Return only JSON matching the schema.\n\n"
+        + PATCH_WORKFLOW_TEXT
     )
 
 
@@ -182,7 +235,7 @@ def _build_review_user_items(deck: DeckDocument, previews: list[Path]) -> list[d
         {
             "type": "text",
             "text": (
-                "请按既定 5 个维度严格评分。下面先给出 DeckSpec JSON：\n"
+                "请严格按照既定五维评分标准评审这套 PPT。下面先给出 DeckSpec JSON：\n"
                 + json.dumps(deck.model_dump(mode="json"), ensure_ascii=False, indent=2)
                 + "\n\n下面将按页码顺序提供 PNG 预览图。"
             ),
@@ -214,13 +267,17 @@ def review_rendered_deck(
     return result
 
 
+def _blocker_issues(review_result: dict[str, Any]) -> list[dict[str, Any]]:
+    return [issue for issue in review_result.get("page_issues", []) if issue.get("level") == "blocker"]
+
+
 def generate_blocker_patches(
     deck: DeckDocument,
     review_result: dict[str, Any],
     *,
     model: str | None = None,
 ) -> dict[str, Any]:
-    blockers = [issue for issue in review_result.get("page_issues", []) if issue.get("level") == "blocker"]
+    blockers = _blocker_issues(review_result)
     if not blockers:
         return {"patches": []}
 
@@ -233,7 +290,7 @@ def generate_blocker_patches(
                 + json.dumps(deck.model_dump(mode="json"), ensure_ascii=False, indent=2)
                 + "\n\nVisual review JSON:\n"
                 + json.dumps(review_result, ensure_ascii=False, indent=2)
-                + "\n\n只针对 blocker 输出最小 patch 集合。"
+                + "\n\nOnly generate patches for blocker issues."
             ),
         }
     ]
@@ -332,11 +389,17 @@ def iterate_visual_review(
         review_path = _write_json(review_result, output_dir / f"review_round_{round_index}.json")
         patch_set = generate_blocker_patches(render_artifacts.final_deck, review_result, model=model)
         patch_path = _write_json(patch_set, output_dir / f"patches_round_{round_index}.json")
+        blockers = _blocker_issues(review_result)
 
         final_review_path = review_path
         final_patch_path = patch_path
         final_pptx_path = render_artifacts.output_path
         final_preview_dir = preview_dir
+
+        if blockers and not patch_set.get("patches"):
+            raise RuntimeError(
+                f"Visual review round {round_index} still has {len(blockers)} blocker issue(s), but no repair patches were generated."
+            )
 
         if not patch_set.get("patches"):
             current_deck = render_artifacts.final_deck

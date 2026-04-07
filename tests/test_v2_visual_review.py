@@ -6,6 +6,8 @@ from unittest.mock import patch
 from tools.sie_autoppt.v2.io import write_deck_document
 from tools.sie_autoppt.v2.schema import validate_deck_payload
 from tools.sie_autoppt.v2.visual_review import (
+    _patch_developer_prompt,
+    _review_developer_prompt,
     _score_rating,
     apply_patch_set,
     iterate_visual_review,
@@ -23,8 +25,8 @@ def _sample_deck():
                     "slide_id": "s2",
                     "layout": "two_columns",
                     "title": "第二页",
-                    "left": {"heading": "左侧", "items": ["左1", "左2"]},
-                    "right": {"heading": "右侧", "items": ["右1", "右2"]},
+                    "left": {"heading": "左侧", "items": ["左一", "左二"]},
+                    "right": {"heading": "右侧", "items": ["右一", "右二"]},
                 },
             ],
         }
@@ -32,6 +34,19 @@ def _sample_deck():
 
 
 class V2VisualReviewTests(unittest.TestCase):
+    def test_review_prompt_includes_explicit_scorecard(self):
+        prompt = _review_developer_prompt()
+        self.assertIn("结构与页数合理性", prompt)
+        self.assertIn("标题自然度", prompt)
+        self.assertIn("正文建议 >= 16pt", prompt)
+        self.assertIn("summary 用 2-3 句中文概括整体判断", prompt)
+
+    def test_patch_prompt_requires_blocker_only_fixes(self):
+        prompt = _patch_developer_prompt()
+        self.assertIn("仅针对 blocker 级别的问题生成", prompt)
+        self.assertIn("每个 blocker 至少对应一个 patch 对象", prompt)
+        self.assertIn("不要为 warning 生成 patch", prompt)
+
     def test_score_rating_mapping(self):
         self.assertEqual(_score_rating(22), "优秀")
         self.assertEqual(_score_rating(18), "合格")
@@ -46,7 +61,7 @@ class V2VisualReviewTests(unittest.TestCase):
             {
                 "patches": [
                     {"page": 1, "field": "slides[0].title", "old_value": "第一页", "new_value": "结论页", "reason": "更结论导向"},
-                    {"page": 2, "field": "slides[1].left.items[1]", "old_value": "左2", "new_value": "左二精简", "reason": "压缩文案"},
+                    {"page": 2, "field": "slides[1].left.items[1]", "old_value": "左二", "new_value": "左二精简", "reason": "压缩文案"},
                 ]
             },
         )
@@ -81,7 +96,7 @@ class V2VisualReviewTests(unittest.TestCase):
                         "total": 20,
                         "rating": "合格",
                         "page_issues": [],
-                        "summary": "整体稳定。",
+                        "summary": "整体稳定，可继续作为测试样例。",
                     },
                 ),
                 patch("tools.sie_autoppt.v2.visual_review.generate_blocker_patches", return_value={"patches": []}),
@@ -100,30 +115,24 @@ class V2VisualReviewTests(unittest.TestCase):
             deck_path = Path(temp_dir) / "deck.json"
             write_deck_document(deck, deck_path)
 
-            fake_render = type(
-                "FakeRender",
-                (),
-                {"output_path": Path(temp_dir) / "deck.pptx", "final_deck": deck},
-            )()
-
             review_results = [
                 {
                     "scores": {"structure": 3, "title_quality": 3, "content_density": 3, "layout_stability": 2, "deliverability": 2},
                     "total": 13,
                     "rating": "可用初稿",
-                    "page_issues": [{"page": 1, "level": "blocker", "dimension": "title", "issue": "标题偏目录化", "suggestion": "改成结论句"}],
-                    "summary": "第一页标题需要更结论化。",
+                    "page_issues": [{"page": 1, "level": "blocker", "dimension": "title", "issue": "标题偏目录化", "suggestion": "改成结论式标题"}],
+                    "summary": "第一页标题需要更结论化，才能支撑正式汇报语气。",
                 },
                 {
                     "scores": {"structure": 4, "title_quality": 4, "content_density": 4, "layout_stability": 4, "deliverability": 4},
                     "total": 20,
                     "rating": "合格",
                     "page_issues": [],
-                    "summary": "已明显改善。",
+                    "summary": "主要 blocker 已消除，整体质量明显改善。",
                 },
             ]
             patch_results = [
-                {"patches": [{"page": 1, "field": "slides[0].title", "old_value": "第一页", "new_value": "第一页结论", "reason": "更结论化"}]},
+                {"patches": [{"page": 1, "field": "slides[0].title", "old_value": "第一页", "new_value": "第一页结论", "reason": "让标题更结论化"}]},
                 {"patches": []},
             ]
 
@@ -147,6 +156,37 @@ class V2VisualReviewTests(unittest.TestCase):
             self.assertTrue(result.final_patch_path.exists())
 
         self.assertEqual(final_deck.slides[0].title, "第一页结论")
+
+    def test_iterate_visual_review_raises_when_blockers_have_no_patches(self):
+        deck = _sample_deck()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_path = Path(temp_dir) / "deck.json"
+            write_deck_document(deck, deck_path)
+
+            with (
+                patch(
+                    "tools.sie_autoppt.v2.visual_review.generate_ppt",
+                    side_effect=lambda deck_data, **_: type(
+                        "FakeRender",
+                        (),
+                        {"output_path": Path(temp_dir) / "deck.pptx", "final_deck": deck_data},
+                    )(),
+                ),
+                patch("tools.sie_autoppt.v2.visual_review.export_slide_previews", return_value=[Path(temp_dir) / "slide1.png"]),
+                patch(
+                    "tools.sie_autoppt.v2.visual_review.review_rendered_deck",
+                    return_value={
+                        "scores": {"structure": 3, "title_quality": 2, "content_density": 3, "layout_stability": 2, "deliverability": 2},
+                        "total": 12,
+                        "rating": "可用初稿",
+                        "page_issues": [{"page": 1, "level": "blocker", "dimension": "layout", "issue": "正文溢出边界", "suggestion": "压缩文案并调整布局"}],
+                        "summary": "当前仍有 blocker，不能视为可交付。",
+                    },
+                ),
+                patch("tools.sie_autoppt.v2.visual_review.generate_blocker_patches", return_value={"patches": []}),
+            ):
+                with self.assertRaises(RuntimeError):
+                    iterate_visual_review(deck_path=deck_path, output_dir=Path(temp_dir) / "loop", max_rounds=1)
 
 
 def json_load(path: Path):
