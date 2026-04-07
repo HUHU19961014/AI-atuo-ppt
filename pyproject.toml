@@ -3,7 +3,7 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sie-autoppt"
+name = "enterprise-ai-ppt"
 version = "0.1.0"
 description = "AI planning + deterministic PPTX rendering for enterprise slide generation"
 readme = "README.md"
@@ -27,6 +27,7 @@ dev = [
 ]
 
 [project.scripts]
+enterprise-ai-ppt = "sie_autoppt.cli:main"
 sie-autoppt = "sie_autoppt.cli:main"
 
 [tool.setuptools]

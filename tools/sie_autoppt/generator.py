@@ -31,7 +31,7 @@ LEGACY_CLONE_DEPRECATION_MESSAGE = (
 
 def build_output_path(output_dir: Path, output_prefix: str) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
-    safe_prefix = re.sub(r'[<>:"/\\\\|?*]+', "_", output_prefix).strip(" ._") or "SIE_AutoPPT"
+    safe_prefix = re.sub(r'[<>:"/\\\\|?*]+', "_", output_prefix).strip(" ._") or "Enterprise-AI-PPT"
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
     return output_dir / f"{safe_prefix}_{timestamp}.pptx"
 

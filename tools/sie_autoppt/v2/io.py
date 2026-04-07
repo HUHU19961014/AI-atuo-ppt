@@ -15,7 +15,7 @@ DEFAULT_V2_OUTPUT_DIR = PROJECT_ROOT / "output"
 
 
 def _safe_prefix(prefix: str) -> str:
-    return re.sub(r'[<>:"/\\|?*]+', "_", prefix).strip(" ._") or "SIE_AutoPPT_V2"
+    return re.sub(r'[<>:"/\\|?*]+', "_", prefix).strip(" ._") or "Enterprise-AI-PPT-V2"
 
 
 def _timestamp() -> str:

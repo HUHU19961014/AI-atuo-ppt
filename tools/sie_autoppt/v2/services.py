@@ -53,7 +53,7 @@ class DeckGenerationRequest:
     audience: str = DEFAULT_AUDIENCE_HINT
     language: str = "zh-CN"
     theme: str = "business_red"
-    author: str = "AI Auto PPT"
+    author: str = "Enterprise AI PPT"
 
 
 @dataclass(frozen=True)
@@ -361,12 +361,12 @@ def make_v2_ppt(
     audience: str = DEFAULT_AUDIENCE_HINT,
     language: str = "zh-CN",
     theme: str = "business_red",
-    author: str = "AI Auto PPT",
+    author: str = "Enterprise AI PPT",
     exact_slides: int | None = None,
     min_slides: int = 6,
     max_slides: int = 10,
     output_dir: Path | None = None,
-    output_prefix: str = "SIE_AutoPPT_V2",
+    output_prefix: str = "Enterprise-AI-PPT-V2",
     model: str | None = None,
     outline_output: Path | None = None,
     deck_output: Path | None = None,

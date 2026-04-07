@@ -1,25 +1,23 @@
-# Docs Index
+# 文档索引
 
-This repository now keeps only active guides and specs at the top level of `docs/`.
-Historical reviews, migration notes, and one-off delivery reports live under `docs/archive/`.
+这里保留当前项目仍在使用的技术说明和规范文档，便于查阅实际能力、输入输出格式和使用方式。
 
-## Active Guides
+## 推荐阅读
 
-- [AI planner](./AI_PLANNER.md)
-- [Deck JSON spec](./DECK_JSON_SPEC.md)
-- [Input spec](./INPUT_SPEC.md)
-- [Input spec supplement](./INPUT_SPEC_SUPPLEMENT.md)
-- [Testing](./TESTING.md)
-- [Human visual QA](./HUMAN_VISUAL_QA.md)
-- [PPT workflow](./PPT_WORKFLOW.md)
-- [LLM compatibility](./LLM_COMPATIBILITY.md)
-- [Compatibility policy](./COMPATIBILITY.md)
-- [Reference style library](./REFERENCE_STYLE_LIBRARY.md)
-- [Release checklist](./RELEASE_CHECKLIST.md)
-- [Structure-first architecture](./STRUCTURE_FIRST_ARCHITECTURE.md)
-- [Structure quality test set](./STRUCTURE_QUALITY_TESTSET.md)
-- [Deep tuning notes](./DEEP_TUNING.md)
+- [项目一页介绍](./PROJECT_OVERVIEW_CN.md)
+- [AI 规划说明](./AI_PLANNER.md)
+- [Deck JSON 规范](./DECK_JSON_SPEC.md)
+- [输入规范](./INPUT_SPEC.md)
+- [PPT 工作流](./PPT_WORKFLOW.md)
+- [测试说明](./TESTING.md)
+- [兼容性说明](./COMPATIBILITY.md)
 
-## Archive
+## 进阶文档
 
-- [April 2026 archive](./archive/2026-04/README.md)
+- [输入规范补充](./INPUT_SPEC_SUPPLEMENT.md)
+- [人工视觉检查](./HUMAN_VISUAL_QA.md)
+- [LLM 兼容说明](./LLM_COMPATIBILITY.md)
+- [参考样式库](./REFERENCE_STYLE_LIBRARY.md)
+- [结构优先架构](./STRUCTURE_FIRST_ARCHITECTURE.md)
+- [结构质量测试集](./STRUCTURE_QUALITY_TESTSET.md)
+- [深度调优说明](./DEEP_TUNING.md)

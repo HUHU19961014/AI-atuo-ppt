@@ -1,7 +1,7 @@
 param(
   [string]$Template,
   [string]$Html,
-  [string]$OutputName = "SIE_AutoPPT",
+  [string]$OutputName = "Enterprise-AI-PPT",
   [string]$OutputDir,
   [int]$Chapters = 0,
   [int]$ActiveStart = 0

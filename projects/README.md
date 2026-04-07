@@ -12,4 +12,3 @@
 
 - Treat this directory as runtime workspace, not as the source-of-truth for bundled examples.
 - Bundled sample inputs now live in `samples/input/`.
-- Historical notes about old tracked demos belong in `docs/archive/`.

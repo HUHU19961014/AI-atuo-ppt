@@ -24,7 +24,7 @@ DEFAULT_TEMPLATE_MANIFEST = TEMPLATES_DIR / "sie_template.manifest.json"
 DEFAULT_HTML = INPUT_DIR / "uat_plan_sample.html"
 DEFAULT_REFERENCE_BODY = INPUT_DIR / "reference_body_style.pptx"
 DEFAULT_OUTPUT_DIR = _default_output_dir()
-DEFAULT_OUTPUT_PREFIX = "SIE_AutoPPT"
+DEFAULT_OUTPUT_PREFIX = "Enterprise-AI-PPT"
 DEFAULT_MIN_TEMPLATE_SLIDES = 5
 # 0 means "auto": explicit <slide> HTML keeps detected pages, legacy HTML infers 3-5 pages from content density.
 DEFAULT_HTML_BODY_CHAPTERS = 0
