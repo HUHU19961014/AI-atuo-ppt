@@ -27,7 +27,8 @@ DEFAULT_REFERENCE_BODY = INPUT_DIR / "reference_body_style.pptx"
 DEFAULT_OUTPUT_DIR = _default_output_dir()
 DEFAULT_OUTPUT_PREFIX = "SIE_AutoPPT"
 DEFAULT_MIN_TEMPLATE_SLIDES = 5
-DEFAULT_HTML_BODY_CHAPTERS = 3
+# 0 means "auto": explicit <slide> HTML keeps detected pages, legacy HTML infers 3-5 pages from content density.
+DEFAULT_HTML_BODY_CHAPTERS = 0
 MAX_BODY_CHAPTERS = 20
 DEFAULT_AI_MODEL = os.environ.get("SIE_AUTOPPT_LLM_MODEL", "gpt-4o-mini")
 DEFAULT_AI_TIMEOUT_SEC = float(os.environ.get("SIE_AUTOPPT_LLM_TIMEOUT_SEC", "90"))

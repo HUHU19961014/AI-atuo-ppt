@@ -26,6 +26,10 @@ DEFAULT_SCOPE_TITLE = "范围与关键场景"
 DEFAULT_SCOPE_SUBTITLE = "根据输入场景自动归纳覆盖范围。"
 DEFAULT_FOCUS_TITLE = "重点事项与验收标准"
 DEFAULT_FOCUS_SUBTITLE = "根据输入要点自动生成关注事项。"
+DEFAULT_PHASES_TITLE = "实施路径与阶段安排"
+DEFAULT_PHASES_SUBTITLE = "按阶段梳理推进路径、关键动作与责任分工。"
+DEFAULT_NOTES_TITLE = "风险提示与执行要求"
+DEFAULT_NOTES_SUBTITLE = "沉淀需要重点关注的限制条件、风险和补充说明。"
 DEFAULT_SUMMARY_TITLE = "总结"
 DEFAULT_EMPTY_OVERVIEW = "补充 phase-* 内容后，可自动生成项目概览页。"
 DEFAULT_EMPTY_SCOPE = "补充 scenario 内容后，可自动生成场景分析页。"
@@ -72,6 +76,42 @@ def clamp_requested_chapters(chapters: int | None, available_pages: int) -> int:
     if requested <= 0:
         requested = available_pages
     return max(1, min(requested, MAX_BODY_CHAPTERS, available_pages))
+
+
+def infer_legacy_requested_chapters(payload: InputPayload) -> int:
+    weighted_chars = len(payload.title) + len(payload.subtitle) + len(payload.footer)
+    weighted_chars += sum(len(item) for item in payload.scenarios)
+    weighted_chars += sum(len(item) for item in payload.notes)
+    weighted_chars += sum(
+        len(phase.get("name", "")) + len(phase.get("func", "")) + len(phase.get("owner", ""))
+        for phase in payload.phases
+    )
+    item_count = len(payload.phases) + len(payload.scenarios) + len(payload.notes)
+
+    if item_count >= 10 or weighted_chars >= 260:
+        return 5
+    if item_count >= 6 or weighted_chars >= 140:
+        return 4
+    return 3
+
+
+def build_phase_detail_bullets(payload: InputPayload) -> list[str]:
+    bullets = [format_phase_summary(phase) for phase in payload.phases if format_phase_summary(phase)]
+    if bullets:
+        return bullets[:5]
+    fallback = payload.scenarios[:5]
+    return fallback or [DEFAULT_EMPTY_SCOPE]
+
+
+def build_note_detail_bullets(payload: InputPayload) -> list[str]:
+    bullets = payload.notes[:5]
+    if payload.footer and payload.footer not in bullets:
+        bullets.append(payload.footer)
+    bullets = bullets[:5]
+    if bullets:
+        return bullets
+    fallback = payload.scenarios[4:9]
+    return fallback or [DEFAULT_EMPTY_FOCUS]
 
 
 def format_phase_summary(phase: dict[str, str]) -> str:
@@ -447,12 +487,13 @@ def build_slide_tag_page_specs(payload: InputPayload, chapters: int | None) -> D
 
 
 def build_legacy_page_specs(payload: InputPayload, chapters: int | None) -> DeckSpec:
-    requested_chapters = clamp_requested_chapters(chapters, 3)
+    candidate_pages = []
     scope_title = payload.scope_title or DEFAULT_SCOPE_TITLE
     scope_subtitle = payload.scope_subtitle or DEFAULT_SCOPE_SUBTITLE
     focus_title = payload.focus_title or DEFAULT_FOCUS_TITLE
     focus_subtitle = payload.focus_subtitle or payload.footer or DEFAULT_FOCUS_SUBTITLE
-    page_specs = [
+    candidate_pages.extend(
+        [
         build_body_page_spec(
             page_key="overview",
             title=payload.title or DEFAULT_TITLE,
@@ -480,7 +521,38 @@ def build_legacy_page_specs(payload: InputPayload, chapters: int | None) -> Deck
             nav_title=shorten_for_nav(focus_title),
             slide_role="body",
         ),
-    ][:requested_chapters]
+        ]
+    )
+
+    if payload.phases and (len(payload.phases) >= 4 or len(payload.scenarios) >= 4):
+        candidate_pages.append(
+            build_body_page_spec(
+                page_key="phases",
+                title=DEFAULT_PHASES_TITLE,
+                subtitle=DEFAULT_PHASES_SUBTITLE,
+                bullets=build_phase_detail_bullets(payload),
+                pattern_id="process_flow",
+                nav_title=shorten_for_nav(DEFAULT_PHASES_TITLE),
+                slide_role="body",
+            )
+        )
+
+    if payload.notes or payload.footer:
+        candidate_pages.append(
+            build_body_page_spec(
+                page_key="notes",
+                title=DEFAULT_NOTES_TITLE,
+                subtitle=DEFAULT_NOTES_SUBTITLE,
+                bullets=build_note_detail_bullets(payload),
+                pattern_id="org_governance",
+                nav_title=shorten_for_nav(DEFAULT_NOTES_TITLE),
+                slide_role="body",
+            )
+        )
+
+    inferred_chapters = infer_legacy_requested_chapters(payload)
+    requested_chapters = clamp_requested_chapters(chapters if chapters is not None else inferred_chapters, len(candidate_pages))
+    page_specs = candidate_pages[:requested_chapters]
 
     body_pages = []
     for page in page_specs:

@@ -9,6 +9,7 @@ from tools.sie_autoppt.planning.deck_planner import (
     build_directory_lines,
     build_directory_window,
     clamp_requested_chapters,
+    infer_legacy_requested_chapters,
     resolve_page_layout,
 )
 from tools.sie_autoppt.planning.pagination import paginate_body_page
@@ -32,6 +33,57 @@ class DeckPlannerTests(unittest.TestCase):
         self.assertEqual([page.content_count for page in deck.body_pages], [len(page.bullets) for page in deck.body_pages])
         self.assertTrue(all(page.slide_role == "body" for page in deck.body_pages))
         self.assertEqual(len(build_directory_lines(deck.body_pages)), 5)
+
+    def test_legacy_html_auto_expands_when_content_is_dense(self):
+        html = """
+        <div class="title">制造企业数字化升级</div>
+        <div class="subtitle">围绕现状、场景、风险与阶段安排进行结构化呈现</div>
+        <div class="phase-time">Q1</div><div class="phase-name">规划</div><div class="phase-func">明确蓝图和治理边界</div>
+        <div class="phase-time">Q2</div><div class="phase-name">建设</div><div class="phase-func">完成核心流程与主数据打通</div>
+        <div class="phase-time">Q3</div><div class="phase-name">试点</div><div class="phase-func">验证跨部门协同效率</div>
+        <div class="phase-time">Q4</div><div class="phase-name">推广</div><div class="phase-func">复制到更多工厂与业务单元</div>
+        <div class="scenario">采购到库存链路需要统一口径</div>
+        <div class="scenario">生产计划与执行之间存在断点</div>
+        <div class="scenario">质量追溯依赖人工汇总</div>
+        <div class="scenario">海外审计需要可证明的数据链</div>
+        <div class="note">项目组织复杂，需设立明确的治理机制</div>
+        <div class="note">主数据口径不统一会拖慢实施进度</div>
+        <div class="note">需同步设计风险应对与验收标准</div>
+        <div class="footer">阶段推进必须和能力沉淀并行。</div>
+        """
+
+        deck = build_deck_spec_from_html(html, chapters=None)
+
+        self.assertGreaterEqual(len(deck.body_pages), 4)
+        self.assertIn("phases", [page.page_key for page in deck.body_pages])
+        self.assertIn("notes", [page.page_key for page in deck.body_pages])
+        self.assertIn("process_flow", [page.pattern_id for page in deck.body_pages])
+        self.assertIn("org_governance", [page.pattern_id for page in deck.body_pages])
+
+    def test_infer_legacy_requested_chapters_grows_with_content_density(self):
+        html = """
+        <div class="title">升级项目</div>
+        <div class="phase-name">规划</div><div class="phase-func">梳理业务</div>
+        <div class="scenario">链路长</div>
+        <div class="note">风险高</div>
+        """
+        from tools.sie_autoppt.inputs.html_parser import parse_html_payload
+
+        payload = parse_html_payload(html)
+        self.assertEqual(infer_legacy_requested_chapters(payload), 3)
+
+        dense_html = html + """
+        <div class="phase-name">建设</div><div class="phase-func">打通系统</div>
+        <div class="phase-name">推广</div><div class="phase-func">复制推广</div>
+        <div class="scenario">协同复杂</div>
+        <div class="scenario">数据治理要求高</div>
+        <div class="scenario">审计频繁</div>
+        <div class="note">需要跨部门治理</div>
+        <div class="note">需要风险预案</div>
+        <div class="footer">补充长说明补充长说明补充长说明补充长说明补充长说明</div>
+        """
+        dense_payload = parse_html_payload(dense_html)
+        self.assertGreaterEqual(infer_legacy_requested_chapters(dense_payload), 4)
 
     def test_slide_tag_html_uses_all_detected_pages_by_default(self):
         html = """

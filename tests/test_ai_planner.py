@@ -18,6 +18,12 @@ from tools.sie_autoppt.planning.ai_planner import (
 
 
 class AiPlannerTests(unittest.TestCase):
+    def test_plan_deck_spec_with_ai_blocks_fully_ambiguous_requests(self):
+        with self.assertRaises(ValueError) as context:
+            plan_deck_spec_with_ai(AiPlanningRequest(topic="帮我做PPT"))
+
+        self.assertIn("请先回答下面的问题", str(context.exception))
+
     def test_outline_schema_matches_requested_page_count(self):
         schema = build_ai_outline_schema(AiSlideBounds(min_slides=3, max_slides=3))
 
