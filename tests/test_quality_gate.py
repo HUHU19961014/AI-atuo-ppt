@@ -12,11 +12,16 @@ from tools.sie_autoppt.v2.quality_checks import (
     quality_gate,
 )
 from tools.sie_autoppt.v2.schema import (
+    ColumnBlock,
     DeckDocument,
+    MetricEntry,
+    StatsDashboardSlide,
     ThemeMeta,
     SectionBreakSlide,
+    TimelineSlide,
     TitleContentSlide,
     TitleOnlySlide,
+    TwoColumnsSlide,
 )
 
 
@@ -167,7 +172,7 @@ class TestQualityGate:
             slides=[
                 SectionBreakSlide(slide_id="s1", layout="section_break", title="Start", subtitle="Begin"),
                 TitleContentSlide(slide_id="s2", layout="title_content", title="Middle", content=["test"]),
-                TitleOnlySlide(slide_id="s3", layout="title_only", title="End"),
+                TitleOnlySlide(slide_id="s3", layout="title_only", title="Next Step"),
             ],
         )
         warnings_good = check_deck_content(good_deck)
@@ -184,7 +189,7 @@ class TestQualityGate:
         )
         warnings_bad = check_deck_content(bad_deck)
         structure_warnings_bad = [w for w in warnings_bad if "first slide" in w.message or "last slide" in w.message]
-        assert len(structure_warnings_bad) == 2
+        assert len(structure_warnings_bad) == 3
 
     def test_count_errors(self):
         """Test error counting utility."""
@@ -254,3 +259,150 @@ class TestQualityGate:
         assert gate_result.review_required is False
         assert gate_result.summary["error_count"] == 1
         assert gate_result.errors[0].slide_id == "schema"
+
+    def test_quantified_claim_without_data_source_triggers_high_warning(self):
+        slide = TitleContentSlide(
+            slide_id="s1",
+            layout="title_content",
+            title="ROI 可提升 35%",
+            content=["预计 12 个月内回本。"],
+        )
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="business_red"),
+                slides=[slide],
+            )
+        )
+        evidence_warnings = [w for w in warnings if "no data_sources" in w.message]
+        assert len(evidence_warnings) == 1
+        assert evidence_warnings[0].warning_level == WARNING_LEVEL_HIGH
+
+    def test_stats_dashboard_without_data_source_requires_review(self):
+        gate_result = quality_gate(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="business_red"),
+                slides=[
+                    StatsDashboardSlide(
+                        slide_id="s1",
+                        layout="stats_dashboard",
+                        title="经营指标改善",
+                        metrics=[
+                            MetricEntry(label="收入", value="+18%"),
+                            MetricEntry(label="毛利", value="+6pt"),
+                        ],
+                        insights=["效率改善进入兑现期"],
+                    )
+                ],
+            )
+        )
+        assert gate_result.passed is True
+        assert gate_result.review_required is True
+        assert any("no data_sources" in issue.message for issue in gate_result.high)
+
+    def test_two_columns_without_anti_argument_triggers_warning(self):
+        slide = TwoColumnsSlide(
+            slide_id="s1",
+            layout="two_columns",
+            title="集中建设与分步推进对比",
+            left=ColumnBlock(heading="集中建设", items=["统一平台", "投入较大"]),
+            right=ColumnBlock(heading="分步推进", items=["风险更低", "见效较慢"]),
+        )
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="business_red"),
+                slides=[slide],
+            )
+        )
+        objection_warnings = [w for w in warnings if "add anti_argument" in w.message]
+        assert len(objection_warnings) == 1
+        assert objection_warnings[0].warning_level == WARNING_LEVEL_WARNING
+
+    def test_generic_background_opening_triggers_high_warning(self):
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="business_red"),
+                slides=[
+                    TitleOnlySlide(slide_id="s1", layout="title_only", title="项目背景"),
+                    TitleOnlySlide(slide_id="s2", layout="title_only", title="建议先聚焦一条主链"),
+                ],
+            )
+        )
+
+        opening_warnings = [w for w in warnings if "generic-background" in w.message]
+        assert len(opening_warnings) == 1
+        assert opening_warnings[0].warning_level == WARNING_LEVEL_HIGH
+
+    def test_generic_thanks_closing_triggers_high_warning(self):
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="business_red"),
+                slides=[
+                    SectionBreakSlide(slide_id="s1", layout="section_break", title="结论先行", subtitle="先打通关键链路"),
+                    TitleOnlySlide(slide_id="s2", layout="title_only", title="谢谢"),
+                ],
+            )
+        )
+
+        closing_warnings = [w for w in warnings if "generic closing or thanks" in w.message]
+        assert len(closing_warnings) == 1
+        assert closing_warnings[0].warning_level == WARNING_LEVEL_HIGH
+
+    def test_last_slide_without_action_or_decision_triggers_warning(self):
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="business_red"),
+                slides=[
+                    SectionBreakSlide(slide_id="s1", layout="section_break", title="结论先行", subtitle="先打通关键链路"),
+                    TitleContentSlide(slide_id="s2", layout="title_content", title="现状分析", content=["问题一", "问题二"]),
+                ],
+            )
+        )
+
+        decision_warnings = [w for w in warnings if "does not clearly express a recommendation" in w.message]
+        assert len(decision_warnings) == 1
+        assert decision_warnings[0].warning_level == WARNING_LEVEL_WARNING
+
+    def test_repeated_adjacent_content_triggers_warning(self):
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="business_red"),
+                slides=[
+                    TitleContentSlide(
+                        slide_id="s1",
+                        layout="title_content",
+                        title="核心判断",
+                        content=["统一数据底座支撑跨部门协同", "主链路试点已经验证投入产出"],
+                    ),
+                    TitleContentSlide(
+                        slide_id="s2",
+                        layout="title_content",
+                        title="重复展开",
+                        content=["统一数据底座支撑跨部门协同", "主链路试点已经验证投入产出"],
+                    ),
+                ],
+            )
+        )
+
+        overlap_warnings = [w for w in warnings if "adjacent slides repeat" in w.message]
+        assert len(overlap_warnings) == 1
+        assert overlap_warnings[0].warning_level == WARNING_LEVEL_WARNING
+
+    def test_repeated_title_triggers_warning(self):
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="business_red"),
+                slides=[
+                    TitleOnlySlide(slide_id="s1", layout="title_only", title="实施路径"),
+                    TimelineSlide(
+                        slide_id="s2",
+                        layout="timeline",
+                        title="实施路径",
+                        stages=[{"title": "Q1"}, {"title": "Q2"}],
+                    ),
+                ],
+            )
+        )
+
+        title_repeat_warnings = [w for w in warnings if "title repeats an earlier page" in w.message]
+        assert len(title_repeat_warnings) == 1
+        assert title_repeat_warnings[0].warning_level == WARNING_LEVEL_WARNING

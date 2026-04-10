@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import platform
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any
 from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
 from .io import is_semantic_deck_document, load_deck_document, load_semantic_document, write_deck_document, write_semantic_document
 from .ppt_engine import RenderArtifacts, generate_ppt
+from .quality_checks import QualityGateResult, quality_gate
 from .schema import DeckDocument, validate_deck_payload
 
 RATING_LABELS = ("优秀", "合格", "可用初稿", "质量偏弱", "不合格")
@@ -65,6 +67,10 @@ PATCH_WORKFLOW_TEXT = """
 - 不要为 warning 生成 patch
 - 只输出符合 schema 的 JSON，不要附加解释
 """.strip()
+PREVIEW_EXPORT_FALLBACK_NOTE = (
+    "未找到 LibreOffice/soffice，已跳过 PNG 预览导出；本次 review 仅基于 DeckSpec 内容，"
+    "layout_stability 与 deliverability 的判断可靠性会降低。"
+)
 
 
 @dataclass(frozen=True)
@@ -77,6 +83,7 @@ class VisualReviewArtifacts:
     final_review_path: Path
     final_patch_path: Path
     semantic_source_path: Path | None = None
+    preview_mode: str = "content_only"
 
 
 @dataclass(frozen=True)
@@ -87,6 +94,7 @@ class SingleReviewArtifacts:
     pptx_path: Path
     preview_dir: Path
     semantic_source_path: Path | None = None
+    preview_mode: str = "content_only"
 
 
 def build_visual_review_schema() -> dict[str, Any]:
@@ -159,6 +167,8 @@ def _review_developer_prompt() -> str:
         "You are a strict PPT visual QA reviewer. "
         "You will receive DeckSpec JSON plus slide PNG previews in page order. "
         "Use the slide images as the primary source for layout_stability and overflow judgment. "
+        "Do not only judge layout: also inspect narrative closure, evidence sufficiency, repeated pages, and whether the opening and ending pages are presentation-ready. "
+        "You will also receive rule-based quality-gate findings; treat them as prior signals that must be checked, not ignored. "
         "Be conservative: only give 5 when the quality is clearly strong. "
         "Return only JSON that matches the schema.\n\n"
         + REVIEW_SCORECARD_TEXT
@@ -177,6 +187,8 @@ def _patch_developer_prompt() -> str:
 
 
 def _score_rating(total: int) -> str:
+    # Visual review uses five dimensions with a 1-5 score each, so the rating
+    # thresholds stay on the same 5-25 scale instead of mirroring quality_gate.
     if total >= 21:
         return "优秀"
     if total >= 16:
@@ -217,6 +229,8 @@ def export_slide_previews(pptx_path: Path, output_dir: Path) -> list[Path]:
         if result.returncode != 0:
             raise RuntimeError(f"Failed to export slide previews: {(result.stderr or result.stdout).strip()}")
     else:
+        if shutil.which("soffice") is None:
+            return []
         result = subprocess.run(
             ["soffice", "--headless", "--convert-to", "png", "--outdir", str(output_dir), str(pptx_path)],
             text=True,
@@ -232,14 +246,89 @@ def export_slide_previews(pptx_path: Path, output_dir: Path) -> list[Path]:
     return previews
 
 
-def _build_review_user_items(deck: DeckDocument, previews: list[Path]) -> list[dict[str, Any]]:
+def _build_preview_fallback_note(reason: str | None = None) -> str:
+    if not reason:
+        return PREVIEW_EXPORT_FALLBACK_NOTE
+    return f"{PREVIEW_EXPORT_FALLBACK_NOTE} 导出错误：{reason}"
+
+
+def _safe_export_slide_previews(pptx_path: Path, output_dir: Path) -> tuple[list[Path], str | None]:
+    try:
+        previews = export_slide_previews(pptx_path, output_dir)
+    except Exception as exc:
+        return [], _build_preview_fallback_note(str(exc).strip())
+    if previews:
+        return previews, None
+    return [], PREVIEW_EXPORT_FALLBACK_NOTE
+
+
+def _merge_summary_note(summary: str, note: str | None, *, max_length: int = 240) -> str:
+    summary_text = summary.strip()
+    if not note:
+        return summary_text
+    merged = f"{summary_text} 注：{note}".strip() if summary_text else note
+    if len(merged) <= max_length:
+        return merged
+    if not summary_text:
+        return note[:max_length].rstrip()
+    reserved = len(summary_text) + len(" 注：")
+    if reserved >= max_length:
+        return summary_text[:max_length].rstrip()
+    return f"{summary_text} 注：{note[: max_length - reserved].rstrip()}"
+
+
+def _resolve_preview_mode(previews: list[Path]) -> str:
+    if not previews:
+        return "content_only"
+    return "powerpoint" if platform.system().lower() == "windows" else "soffice"
+
+
+def _build_quality_gate_note(result: QualityGateResult, *, limit: int = 8) -> str:
+    issues = list(result.all_issues())
+    if not issues:
+        return (
+            "Rule-based quality gate found no issues. "
+            f"auto_score={result.auto_score}, review_required={str(result.review_required).lower()}."
+        )
+
+    lines = [
+        (
+            "Rule-based quality gate findings "
+            f"(warnings={result.summary['warning_count']}, high={result.summary['high_count']}, errors={result.summary['error_count']}, "
+            f"auto_score={result.auto_score}, review_required={str(result.review_required).lower()}):"
+        )
+    ]
+    for issue in issues[:limit]:
+        lines.append(f"- [{issue.slide_id}] [{issue.warning_level}] {issue.message}")
+    if len(issues) > limit:
+        lines.append(f"- ... {len(issues) - limit} more issue(s)")
+    return "\n".join(lines)
+
+
+def _build_review_user_items(
+    deck: DeckDocument,
+    previews: list[Path],
+    *,
+    quality_gate_note: str,
+    preview_note: str | None = None,
+) -> list[dict[str, Any]]:
+    preview_guidance = (
+        "下面将按页码顺序提供 PNG 预览图。"
+        if previews
+        else "本次没有可用的 PNG 预览图，请基于 DeckSpec 内容评估结构、标题与内容，并对 layout_stability 与 deliverability 保守打分。"
+    )
+    note_text = f"\n\n注意：{preview_note}" if preview_note else ""
     items: list[dict[str, Any]] = [
         {
             "type": "text",
             "text": (
                 "请严格按照既定五维评分标准评审这套 PPT。下面先给出 DeckSpec JSON：\n"
                 + json.dumps(deck.model_dump(mode="json"), ensure_ascii=False, indent=2)
-                + "\n\n下面将按页码顺序提供 PNG 预览图。"
+                + "\n\n"
+                + quality_gate_note
+                + "\n\n"
+                + preview_guidance
+                + note_text
             ),
         }
     ]
@@ -254,11 +343,19 @@ def review_rendered_deck(
     previews: list[Path],
     *,
     model: str | None = None,
+    preview_note: str | None = None,
 ) -> dict[str, Any]:
     client = OpenAIResponsesClient(load_openai_responses_config(model=model))
+    gate_result = quality_gate(deck)
+    preview_mode = _resolve_preview_mode(previews)
     result = client.create_structured_json_with_user_items(
         developer_prompt=_review_developer_prompt(),
-        user_items=_build_review_user_items(deck, previews),
+        user_items=_build_review_user_items(
+            deck,
+            previews,
+            quality_gate_note=_build_quality_gate_note(gate_result),
+            preview_note=preview_note,
+        ),
         schema_name="ppt_visual_review",
         schema=build_visual_review_schema(),
     )
@@ -266,6 +363,8 @@ def review_rendered_deck(
     total = sum(int(scores[key]) for key in ("structure", "title_quality", "content_density", "layout_stability", "deliverability"))
     result["total"] = total
     result["rating"] = _score_rating(total)
+    result["preview_mode"] = preview_mode
+    result["summary"] = _merge_summary_note(str(result.get("summary", "")), preview_note)
     return result
 
 
@@ -325,6 +424,8 @@ def _parse_field_path(path: str) -> list[str | int]:
         if char == "]":
             if not in_index:
                 raise ValueError(f"Invalid field path: {path}")
+            if not index_buffer.isdigit():
+                raise ValueError(f"Invalid list index in field path: {path}")
             tokens.append(int(index_buffer))
             in_index = False
             continue
@@ -332,20 +433,50 @@ def _parse_field_path(path: str) -> list[str | int]:
             index_buffer += char
         else:
             buffer += char
+    if in_index:
+        raise ValueError(f"Unclosed list index in field path: {path}")
     if buffer:
         tokens.append(buffer)
     return tokens
 
 
-def apply_patch_set(deck: DeckDocument, patch_set: dict[str, Any]) -> DeckDocument:
-    payload = deck.model_dump(mode="json")
-    for patch in patch_set.get("patches", []):
-        path = str(patch["field"]).strip()
-        tokens = _parse_field_path(path)
-        cursor: Any = payload
+def _resolve_patch_reference(payload: dict[str, Any], path: str, patch_number: int) -> tuple[Any, str | int, Any]:
+    tokens = _parse_field_path(path)
+    if not tokens:
+        raise ValueError(f"Patch {patch_number} field path must not be empty.")
+    if len(tokens) < 2 or tokens[0] != "slides" or not isinstance(tokens[1], int):
+        raise ValueError(f"Patch {patch_number} must target a slide field under slides[n].")
+
+    cursor: Any = payload
+    try:
         for token in tokens[:-1]:
             cursor = cursor[token]
-        final_token = tokens[-1]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError(f"Patch {patch_number} points to an invalid field path: {path}") from exc
+
+    final_token = tokens[-1]
+    try:
+        current_value = cursor[final_token]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError(f"Patch {patch_number} points to an invalid final field: {path}") from exc
+    return cursor, final_token, current_value
+
+
+def apply_patch_set(deck: DeckDocument, patch_set: dict[str, Any]) -> DeckDocument:
+    payload = deck.model_dump(mode="json")
+    for patch_number, patch in enumerate(patch_set.get("patches", []), start=1):
+        path = str(patch["field"]).strip()
+        cursor, final_token, current_value = _resolve_patch_reference(payload, path, patch_number)
+        expected_page = patch.get("page")
+        slide_index = _parse_field_path(path)[1]
+        if isinstance(expected_page, int) and expected_page != slide_index + 1:
+            raise ValueError(
+                f"Patch {patch_number} page={expected_page} does not match field path slide index {slide_index + 1}."
+            )
+        if "old_value" in patch and current_value != patch["old_value"]:
+            raise ValueError(
+                f"Patch {patch_number} old_value mismatch for {path}: expected {patch['old_value']!r}, found {current_value!r}."
+            )
         cursor[final_token] = patch["new_value"]
     return validate_deck_payload(payload).deck
 
@@ -378,6 +509,7 @@ def iterate_visual_review(
     final_patch_path = output_dir / "patches_round_0.json"
     final_pptx_path = output_dir / "review_round_0.pptx"
     final_preview_dir = output_dir / "previews_round_0"
+    final_preview_mode = "content_only"
 
     for round_index in range(1, max_rounds + 1):
         pptx_path = output_dir / f"review_round_{round_index}.pptx"
@@ -393,8 +525,13 @@ def iterate_visual_review(
         if not deck_out_path.exists():
             write_deck_document(render_artifacts.final_deck, deck_out_path)
         preview_dir = output_dir / f"previews_round_{round_index}"
-        previews = export_slide_previews(render_artifacts.output_path, preview_dir)
-        review_result = review_rendered_deck(render_artifacts.final_deck, previews, model=model)
+        previews, preview_note = _safe_export_slide_previews(render_artifacts.output_path, preview_dir)
+        review_result = review_rendered_deck(
+            render_artifacts.final_deck,
+            previews,
+            model=model,
+            preview_note=preview_note,
+        )
         review_path = _write_json(review_result, output_dir / f"review_round_{round_index}.json")
         patch_set = generate_blocker_patches(render_artifacts.final_deck, review_result, model=model)
         patch_path = _write_json(patch_set, output_dir / f"patches_round_{round_index}.json")
@@ -404,6 +541,7 @@ def iterate_visual_review(
         final_patch_path = patch_path
         final_pptx_path = render_artifacts.output_path
         final_preview_dir = preview_dir
+        final_preview_mode = review_result.get("preview_mode", _resolve_preview_mode(previews))
 
         if blockers and not patch_set.get("patches"):
             raise RuntimeError(
@@ -415,7 +553,10 @@ def iterate_visual_review(
             current_deck_path = deck_out_path
             break
 
-        current_deck = apply_patch_set(render_artifacts.final_deck, patch_set)
+        try:
+            current_deck = apply_patch_set(render_artifacts.final_deck, patch_set)
+        except ValueError as exc:
+            raise RuntimeError(f"Failed to apply repair patches in visual review round {round_index}: {exc}") from exc
         current_deck_path = write_deck_document(current_deck, output_dir / f"review_round_{round_index}_patched.deck.json")
 
     return VisualReviewArtifacts(
@@ -427,6 +568,7 @@ def iterate_visual_review(
         final_review_path=final_review_path,
         final_patch_path=final_patch_path,
         semantic_source_path=semantic_source_path,
+        preview_mode=final_preview_mode,
     )
 
 
@@ -453,8 +595,13 @@ def review_deck_once(
     if not deck_out_path.exists():
         write_deck_document(render_artifacts.final_deck, deck_out_path)
     preview_dir = output_dir / "previews_review_once"
-    previews = export_slide_previews(render_artifacts.output_path, preview_dir)
-    review_result = review_rendered_deck(render_artifacts.final_deck, previews, model=model)
+    previews, preview_note = _safe_export_slide_previews(render_artifacts.output_path, preview_dir)
+    review_result = review_rendered_deck(
+        render_artifacts.final_deck,
+        previews,
+        model=model,
+        preview_note=preview_note,
+    )
     review_path = _write_json(review_result, output_dir / "review_once.json")
     patch_set = generate_blocker_patches(render_artifacts.final_deck, review_result, model=model)
     patch_path = _write_json(patch_set, output_dir / "patches_review_once.json")
@@ -465,4 +612,5 @@ def review_deck_once(
         pptx_path=render_artifacts.output_path,
         preview_dir=preview_dir,
         semantic_source_path=semantic_source_path,
+        preview_mode=review_result.get("preview_mode", _resolve_preview_mode(previews)),
     )

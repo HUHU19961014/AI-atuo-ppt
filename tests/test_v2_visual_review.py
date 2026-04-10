@@ -6,11 +6,14 @@ from unittest.mock import patch
 from tools.sie_autoppt.v2.io import write_deck_document
 from tools.sie_autoppt.v2.schema import validate_deck_payload
 from tools.sie_autoppt.v2.visual_review import (
+    _build_quality_gate_note,
     _patch_developer_prompt,
     _review_developer_prompt,
     _score_rating,
     apply_patch_set,
+    export_slide_previews,
     iterate_visual_review,
+    review_rendered_deck,
     review_deck_once,
 )
 
@@ -40,6 +43,8 @@ class V2VisualReviewTests(unittest.TestCase):
         self.assertIn("标题自然度", prompt)
         self.assertIn("正文建议 >= 16pt", prompt)
         self.assertIn("summary 用 2-3 句中文概括整体判断", prompt)
+        self.assertIn("narrative closure", prompt)
+        self.assertIn("rule-based quality-gate findings", prompt)
 
     def test_patch_prompt_requires_blocker_only_fixes(self):
         prompt = _patch_developer_prompt()
@@ -47,12 +52,110 @@ class V2VisualReviewTests(unittest.TestCase):
         self.assertIn("每个 blocker 至少对应一个 patch 对象", prompt)
         self.assertIn("不要为 warning 生成 patch", prompt)
 
+    def test_quality_gate_note_summarizes_issues(self):
+        deck = validate_deck_payload(
+            {
+                "meta": {"title": "Test Deck", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {"slide_id": "s1", "layout": "title_only", "title": "项目背景"},
+                    {"slide_id": "s2", "layout": "title_only", "title": "谢谢"},
+                ],
+            }
+        ).deck
+        note = _build_quality_gate_note(
+            __import__("tools.sie_autoppt.v2.quality_checks", fromlist=["quality_gate"]).quality_gate(deck)
+        )
+
+        self.assertIn("Rule-based quality gate findings", note)
+        self.assertIn("[s1]", note)
+        self.assertIn("[s2]", note)
+
+    def test_review_rendered_deck_includes_quality_gate_findings_in_user_items(self):
+        deck = validate_deck_payload(
+            {
+                "meta": {"title": "Test Deck", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {"slide_id": "s1", "layout": "title_only", "title": "项目背景"},
+                    {"slide_id": "s2", "layout": "title_only", "title": "谢谢"},
+                ],
+            }
+        ).deck
+        captured: dict[str, object] = {}
+
+        class FakeClient:
+            def create_structured_json_with_user_items(self, **kwargs):
+                captured.update(kwargs)
+                return {
+                    "scores": {
+                        "structure": 3,
+                        "title_quality": 3,
+                        "content_density": 3,
+                        "layout_stability": 3,
+                        "deliverability": 3,
+                    },
+                    "total": 15,
+                    "rating": "可用初稿",
+                    "page_issues": [],
+                    "summary": "Needs refinement.",
+                }
+
+        with (
+            patch("tools.sie_autoppt.v2.visual_review.load_openai_responses_config"),
+            patch("tools.sie_autoppt.v2.visual_review.OpenAIResponsesClient", return_value=FakeClient()),
+        ):
+            review_rendered_deck(deck, previews=[], model="test-model")
+
+        user_items = captured["user_items"]
+        self.assertIn("Rule-based quality gate findings", user_items[0]["text"])
+        self.assertIn("generic-background", user_items[0]["text"])
+        self.assertIn("generic closing or thanks", user_items[0]["text"])
+
+    def test_review_rendered_deck_marks_preview_mode(self):
+        deck = _sample_deck()
+
+        class FakeClient:
+            def create_structured_json_with_user_items(self, **kwargs):
+                return {
+                    "scores": {
+                        "structure": 4,
+                        "title_quality": 4,
+                        "content_density": 4,
+                        "layout_stability": 4,
+                        "deliverability": 4,
+                    },
+                    "total": 20,
+                    "rating": "合格",
+                    "page_issues": [],
+                    "summary": "Looks stable.",
+                }
+
+        with (
+            patch("tools.sie_autoppt.v2.visual_review.load_openai_responses_config"),
+            patch("tools.sie_autoppt.v2.visual_review.OpenAIResponsesClient", return_value=FakeClient()),
+            patch("tools.sie_autoppt.v2.visual_review.platform.system", return_value="Windows"),
+        ):
+            review = review_rendered_deck(deck, previews=[Path("slide1.png")], model="test-model")
+
+        self.assertEqual(review["preview_mode"], "powerpoint")
+
     def test_score_rating_mapping(self):
         self.assertEqual(_score_rating(22), "优秀")
         self.assertEqual(_score_rating(18), "合格")
         self.assertEqual(_score_rating(12), "可用初稿")
         self.assertEqual(_score_rating(8), "质量偏弱")
         self.assertEqual(_score_rating(5), "不合格")
+
+    def test_export_slide_previews_skips_when_soffice_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pptx_path = Path(temp_dir) / "deck.pptx"
+            pptx_path.write_bytes(b"fake-pptx")
+            with (
+                patch("tools.sie_autoppt.v2.visual_review.platform.system", return_value="Linux"),
+                patch("tools.sie_autoppt.v2.visual_review.shutil.which", return_value=None),
+            ):
+                previews = export_slide_previews(pptx_path, Path(temp_dir) / "previews")
+
+        self.assertEqual(previews, [])
 
     def test_apply_patch_set_updates_nested_fields(self):
         deck = _sample_deck()
@@ -68,6 +171,30 @@ class V2VisualReviewTests(unittest.TestCase):
 
         self.assertEqual(patched.slides[0].title, "结论页")
         self.assertEqual(patched.slides[1].left.items[1], "左二精简")
+
+    def test_apply_patch_set_rejects_page_mismatch(self):
+        deck = _sample_deck()
+        with self.assertRaisesRegex(ValueError, "does not match field path"):
+            apply_patch_set(
+                deck,
+                {
+                    "patches": [
+                        {"page": 2, "field": "slides[0].title", "old_value": "第一页", "new_value": "结论页", "reason": "页码错误"}
+                    ]
+                },
+            )
+
+    def test_apply_patch_set_rejects_old_value_mismatch(self):
+        deck = _sample_deck()
+        with self.assertRaisesRegex(ValueError, "old_value mismatch"):
+            apply_patch_set(
+                deck,
+                {
+                    "patches": [
+                        {"page": 1, "field": "slides[0].title", "old_value": "错误旧值", "new_value": "结论页", "reason": "旧值不匹配"}
+                    ]
+                },
+            )
 
     def test_review_once_writes_review_and_patch_outputs(self):
         deck = _sample_deck()
@@ -105,9 +232,92 @@ class V2VisualReviewTests(unittest.TestCase):
 
             self.assertTrue(result.review_path.exists())
             self.assertTrue(result.patch_path.exists())
+            self.assertEqual(result.preview_mode, "powerpoint")
 
         self.assertTrue(result.review_path.name.endswith(".json"))
         self.assertTrue(result.patch_path.name.endswith(".json"))
+
+    def test_review_once_passes_preview_fallback_note_when_previews_are_missing(self):
+        deck = _sample_deck()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_path = Path(temp_dir) / "deck.json"
+            write_deck_document(deck, deck_path)
+            fake_render = type(
+                "FakeRender",
+                (),
+                {"output_path": Path(temp_dir) / "deck.pptx", "final_deck": deck},
+            )()
+            captured: dict[str, object] = {}
+
+            def fake_review(deck_data, previews, *, model=None, preview_note=None):
+                captured["deck"] = deck_data
+                captured["previews"] = previews
+                captured["preview_note"] = preview_note
+                return {
+                    "scores": {
+                        "structure": 4,
+                        "title_quality": 4,
+                        "content_density": 4,
+                        "layout_stability": 3,
+                        "deliverability": 3,
+                    },
+                    "total": 18,
+                    "rating": "合格",
+                    "page_issues": [],
+                    "summary": "Fallback review path.",
+                }
+
+            with (
+                patch("tools.sie_autoppt.v2.visual_review.generate_ppt", return_value=fake_render),
+                patch("tools.sie_autoppt.v2.visual_review.export_slide_previews", return_value=[]),
+                patch("tools.sie_autoppt.v2.visual_review.review_rendered_deck", side_effect=fake_review),
+                patch("tools.sie_autoppt.v2.visual_review.generate_blocker_patches", return_value={"patches": []}),
+            ):
+                review_deck_once(deck_path=deck_path, output_dir=Path(temp_dir) / "review")
+
+        self.assertEqual(captured["previews"], [])
+        self.assertIn("LibreOffice", str(captured["preview_note"]))
+
+    def test_review_once_falls_back_when_preview_export_raises(self):
+        deck = _sample_deck()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_path = Path(temp_dir) / "deck.json"
+            write_deck_document(deck, deck_path)
+            fake_render = type(
+                "FakeRender",
+                (),
+                {"output_path": Path(temp_dir) / "deck.pptx", "final_deck": deck},
+            )()
+            captured: dict[str, object] = {}
+
+            def fake_review(deck_data, previews, *, model=None, preview_note=None):
+                captured["previews"] = previews
+                captured["preview_note"] = preview_note
+                return {
+                    "scores": {
+                        "structure": 4,
+                        "title_quality": 4,
+                        "content_density": 4,
+                        "layout_stability": 2,
+                        "deliverability": 2,
+                    },
+                    "total": 16,
+                    "rating": "合格",
+                    "page_issues": [],
+                    "summary": "Fallback review path.",
+                }
+
+            with (
+                patch("tools.sie_autoppt.v2.visual_review.generate_ppt", return_value=fake_render),
+                patch("tools.sie_autoppt.v2.visual_review.export_slide_previews", side_effect=RuntimeError("PowerPoint COM unavailable")),
+                patch("tools.sie_autoppt.v2.visual_review.review_rendered_deck", side_effect=fake_review),
+                patch("tools.sie_autoppt.v2.visual_review.generate_blocker_patches", return_value={"patches": []}),
+            ):
+                result = review_deck_once(deck_path=deck_path, output_dir=Path(temp_dir) / "review")
+
+        self.assertEqual(captured["previews"], [])
+        self.assertIn("PowerPoint COM unavailable", str(captured["preview_note"]))
+        self.assertEqual(result.preview_mode, "content_only")
 
     def test_review_once_preserves_semantic_input_source(self):
         with tempfile.TemporaryDirectory() as temp_dir:

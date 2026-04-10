@@ -36,6 +36,8 @@ from .schema import (
     validate_deck_payload,
 )
 
+SUPPORTED_GENERATION_MODES = ("quick", "deep")
+
 
 @dataclass(frozen=True)
 class OutlineGenerationRequest:
@@ -47,6 +49,9 @@ class OutlineGenerationRequest:
     exact_slides: int | None = None
     min_slides: int = 6
     max_slides: int = 10
+    generation_mode: str = "deep"
+    structured_context: dict[str, Any] | None = None
+    strategic_analysis: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +63,9 @@ class DeckGenerationRequest:
     language: str = "zh-CN"
     theme: str = "business_red"
     author: str = "Enterprise AI PPT"
+    generation_mode: str = "deep"
+    structured_context: dict[str, Any] | None = None
+    strategic_analysis: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -77,6 +85,13 @@ def _clamp_slide_count(value: int) -> int:
     return max(3, min(int(value), 20))
 
 
+def normalize_generation_mode(value: str | None) -> str:
+    normalized = str(value or "deep").strip().lower()
+    if normalized not in SUPPORTED_GENERATION_MODES:
+        raise ValueError(f"generation_mode must be one of {', '.join(SUPPORTED_GENERATION_MODES)}")
+    return normalized
+
+
 def resolve_slide_bounds(request: OutlineGenerationRequest) -> tuple[int, int]:
     if request.exact_slides is not None:
         exact = _clamp_slide_count(request.exact_slides)
@@ -86,6 +101,250 @@ def resolve_slide_bounds(request: OutlineGenerationRequest) -> tuple[int, int]:
     if minimum > maximum:
         raise ValueError("min_slides cannot be greater than max_slides.")
     return minimum, maximum
+
+
+def _json_block(payload: dict[str, Any] | None, fallback: str = "none") -> str:
+    if not payload:
+        return fallback
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def build_context_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "industry": {"type": "string", "minLength": 1, "maxLength": 40},
+            "business_stage": {"type": "string", "minLength": 1, "maxLength": 40},
+            "constraints": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {"type": "string", "minLength": 1, "maxLength": 60},
+            },
+            "pain_points": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {"type": "string", "minLength": 1, "maxLength": 60},
+            },
+            "known_data": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {"type": "string", "minLength": 1, "maxLength": 80},
+            },
+            "taboo_topics": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {"type": "string", "minLength": 1, "maxLength": 40},
+            },
+            "audience_priorities": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {"type": "string", "minLength": 1, "maxLength": 60},
+            },
+            "decision_focus": {"type": "string", "minLength": 1, "maxLength": 60},
+        },
+        "required": [
+            "industry",
+            "business_stage",
+            "constraints",
+            "pain_points",
+            "known_data",
+            "taboo_topics",
+            "audience_priorities",
+            "decision_focus",
+        ],
+        "additionalProperties": False,
+    }
+
+
+def build_strategy_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "context_assessment": {"type": "string", "minLength": 1, "maxLength": 200},
+            "core_tension": {"type": "string", "minLength": 1, "maxLength": 120},
+            "elephant_in_the_room": {"type": "string", "minLength": 1, "maxLength": 120},
+            "audience_goal": {"type": "string", "minLength": 1, "maxLength": 100},
+            "likely_objections": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {"type": "string", "minLength": 1, "maxLength": 100},
+            },
+            "strongest_argument_for": {"type": "string", "minLength": 1, "maxLength": 140},
+            "strongest_argument_against": {"type": "string", "minLength": 1, "maxLength": 140},
+            "preemptive_response": {"type": "string", "minLength": 1, "maxLength": 140},
+            "recommended_narrative_arc": {"type": "string", "minLength": 1, "maxLength": 140},
+            "slides_to_omit_and_why": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {"type": "string", "minLength": 1, "maxLength": 100},
+            },
+            "data_to_verify": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {"type": "string", "minLength": 1, "maxLength": 100},
+            },
+            "riskiest_claim": {"type": "string", "minLength": 1, "maxLength": 120},
+            "pivot_for_skeptical_audience": {"type": "string", "minLength": 1, "maxLength": 120},
+        },
+        "required": [
+            "context_assessment",
+            "core_tension",
+            "elephant_in_the_room",
+            "audience_goal",
+            "likely_objections",
+            "strongest_argument_for",
+            "strongest_argument_against",
+            "preemptive_response",
+            "recommended_narrative_arc",
+            "slides_to_omit_and_why",
+            "data_to_verify",
+            "riskiest_claim",
+            "pivot_for_skeptical_audience",
+        ],
+        "additionalProperties": False,
+    }
+
+
+def build_context_prompts(
+    *,
+    topic: str,
+    brief: str,
+    audience: str,
+    language: str,
+) -> tuple[str, str]:
+    developer_prompt = (
+        "You convert raw presentation requirements into structured business context JSON.\n"
+        f"Use {language}.\n"
+        "Do not invent facts. If information is missing, use '未知' for strings and [] for arrays.\n"
+        "Extract only from the provided topic, brief, and audience."
+    )
+    user_prompt = (
+        f"Topic:\n{topic.strip()}\n\n"
+        f"Audience:\n{audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
+        f"Brief:\n{brief.strip() or 'none'}\n\n"
+        "Return only JSON."
+    )
+    return developer_prompt, user_prompt
+
+
+def build_strategy_prompts(
+    *,
+    topic: str,
+    brief: str,
+    audience: str,
+    language: str,
+    structured_context: dict[str, Any],
+    validation_feedback: tuple[str, ...] = (),
+) -> tuple[str, str]:
+    feedback_block = ""
+    if validation_feedback:
+        feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(f"- {item}" for item in validation_feedback)
+    developer_prompt = render_prompt_template(
+        "prompts/system/v2_strategy.md",
+        language=language,
+        feedback_block=feedback_block,
+    )
+    user_prompt = (
+        f"Topic:\n{topic.strip()}\n\n"
+        f"Audience:\n{audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
+        f"Brief:\n{brief.strip() or 'none'}\n\n"
+        "Structured Context JSON:\n"
+        f"{_json_block(structured_context)}\n\n"
+        "Return only JSON."
+    )
+    return developer_prompt, user_prompt
+
+
+def extract_structured_context(
+    *,
+    topic: str,
+    brief: str = "",
+    audience: str = DEFAULT_AUDIENCE_HINT,
+    language: str = "zh-CN",
+    model: str | None = None,
+) -> dict[str, Any]:
+    config = load_openai_responses_config(model=model)
+    client = OpenAIResponsesClient(config)
+    developer_prompt, user_prompt = build_context_prompts(
+        topic=topic,
+        brief=brief,
+        audience=audience,
+        language=language,
+    )
+    return client.create_structured_json(
+        developer_prompt=developer_prompt,
+        user_prompt=user_prompt,
+        schema_name="ppt_context_v2",
+        schema=build_context_schema(),
+    )
+
+
+def generate_strategy_with_ai(
+    *,
+    topic: str,
+    brief: str = "",
+    audience: str = DEFAULT_AUDIENCE_HINT,
+    language: str = "zh-CN",
+    structured_context: dict[str, Any],
+    model: str | None = None,
+    max_attempts: int = 3,
+) -> dict[str, Any]:
+    config = load_openai_responses_config(model=model)
+    client = OpenAIResponsesClient(config)
+    feedback: tuple[str, ...] = ()
+    for _attempt in range(1, max_attempts + 1):
+        developer_prompt, user_prompt = build_strategy_prompts(
+            topic=topic,
+            brief=brief,
+            audience=audience,
+            language=language,
+            structured_context=structured_context,
+            validation_feedback=feedback,
+        )
+        payload = client.create_structured_json(
+            developer_prompt=developer_prompt,
+            user_prompt=user_prompt,
+            schema_name="ppt_strategy_v2",
+            schema=build_strategy_schema(),
+        )
+        if payload.get("core_tension") and payload.get("recommended_narrative_arc"):
+            return payload
+        feedback = ("strategy output must include core_tension and recommended_narrative_arc.",)
+    raise ValueError("Strategy generation failed validation after 3 attempts: " + "; ".join(feedback))
+
+
+def ensure_generation_context(
+    *,
+    topic: str,
+    brief: str,
+    audience: str,
+    language: str,
+    generation_mode: str,
+    structured_context: dict[str, Any] | None,
+    strategic_analysis: dict[str, Any] | None,
+    model: str | None,
+    max_attempts: int = 3,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    resolved_mode = normalize_generation_mode(generation_mode)
+    if resolved_mode == "quick" and structured_context is None and strategic_analysis is None:
+        return {}, {}
+    resolved_context = structured_context or extract_structured_context(
+        topic=topic,
+        brief=brief,
+        audience=audience,
+        language=language,
+        model=model,
+    )
+    resolved_strategy = strategic_analysis or generate_strategy_with_ai(
+        topic=topic,
+        brief=brief,
+        audience=audience,
+        language=language,
+        structured_context=resolved_context,
+        model=model,
+        max_attempts=max_attempts,
+    )
+    return resolved_context, resolved_strategy
 
 
 def build_outline_schema(request: OutlineGenerationRequest) -> dict[str, Any]:
@@ -133,6 +392,10 @@ def build_outline_prompts(
         f"Topic:\n{request.topic.strip()}\n\n"
         f"Audience:\n{request.audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
         f"Brief:\n{request.brief.strip() or 'none'}\n\n"
+        "Structured Context JSON:\n"
+        f"{_json_block(request.structured_context)}\n\n"
+        "Strategic Analysis JSON:\n"
+        f"{_json_block(request.strategic_analysis)}\n\n"
         "Return only JSON."
     )
     return developer_prompt, user_prompt
@@ -160,6 +423,10 @@ def build_deck_prompts(
         f"Topic:\n{request.topic.strip()}\n\n"
         f"Audience:\n{request.audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
         f"Brief:\n{request.brief.strip() or 'none'}\n\n"
+        "Structured Context JSON:\n"
+        f"{_json_block(request.structured_context)}\n\n"
+        "Strategic Analysis JSON:\n"
+        f"{_json_block(request.strategic_analysis)}\n\n"
         "Outline JSON:\n"
         f"{json.dumps(request.outline.to_list(), ensure_ascii=False, indent=2)}\n\n"
         "Return only the deck JSON object."
@@ -182,19 +449,44 @@ def generate_outline_with_ai(
 ) -> OutlineDocument:
     if request.theme not in SUPPORTED_THEMES:
         raise ValueError(f"theme must be one of {', '.join(SUPPORTED_THEMES)}")
+    generation_mode = normalize_generation_mode(request.generation_mode)
+    structured_context, strategic_analysis = ensure_generation_context(
+        topic=request.topic,
+        brief=request.brief,
+        audience=request.audience,
+        language=request.language,
+        generation_mode=generation_mode,
+        structured_context=request.structured_context,
+        strategic_analysis=request.strategic_analysis,
+        model=model,
+        max_attempts=max_attempts,
+    )
+    enriched_request = OutlineGenerationRequest(
+        topic=request.topic,
+        brief=request.brief,
+        audience=request.audience,
+        language=request.language,
+        theme=request.theme,
+        exact_slides=request.exact_slides,
+        min_slides=request.min_slides,
+        max_slides=request.max_slides,
+        generation_mode=generation_mode,
+        structured_context=structured_context,
+        strategic_analysis=strategic_analysis,
+    )
     config = load_openai_responses_config(model=model)
     client = OpenAIResponsesClient(config)
     feedback: tuple[str, ...] = ()
     for _attempt in range(1, max_attempts + 1):
-        developer_prompt, user_prompt = build_outline_prompts(request, validation_feedback=feedback)
+        developer_prompt, user_prompt = build_outline_prompts(enriched_request, validation_feedback=feedback)
         payload = client.create_structured_json(
             developer_prompt=developer_prompt,
             user_prompt=user_prompt,
             schema_name="ppt_outline_v2",
-            schema=build_outline_schema(request),
+            schema=build_outline_schema(enriched_request),
         )
         try:
-            return _validate_outline_response(payload, request)
+            return _validate_outline_response(payload, enriched_request)
         except ValueError as exc:
             feedback = (str(exc),)
     raise ValueError("Outline generation failed validation after 3 attempts: " + "; ".join(feedback))
@@ -226,11 +518,35 @@ def generate_semantic_deck_with_ai(
 ) -> dict[str, Any]:
     if request.theme not in SUPPORTED_THEMES:
         raise ValueError(f"theme must be one of {', '.join(SUPPORTED_THEMES)}")
+    generation_mode = normalize_generation_mode(request.generation_mode)
+    structured_context, strategic_analysis = ensure_generation_context(
+        topic=request.topic,
+        brief=request.brief,
+        audience=request.audience,
+        language=request.language,
+        generation_mode=generation_mode,
+        structured_context=request.structured_context,
+        strategic_analysis=request.strategic_analysis,
+        model=model,
+        max_attempts=max_attempts,
+    )
+    enriched_request = DeckGenerationRequest(
+        topic=request.topic,
+        outline=request.outline,
+        brief=request.brief,
+        audience=request.audience,
+        language=request.language,
+        theme=request.theme,
+        author=request.author,
+        generation_mode=generation_mode,
+        structured_context=structured_context,
+        strategic_analysis=strategic_analysis,
+    )
     config = load_openai_responses_config(model=model)
     client = OpenAIResponsesClient(config)
     feedback: tuple[str, ...] = ()
     for _attempt in range(1, max_attempts + 1):
-        developer_prompt, user_prompt = build_deck_prompts(request, validation_feedback=feedback)
+        developer_prompt, user_prompt = build_deck_prompts(enriched_request, validation_feedback=feedback)
         payload = client.create_structured_json(
             developer_prompt=developer_prompt,
             user_prompt=user_prompt,
@@ -240,10 +556,10 @@ def generate_semantic_deck_with_ai(
         try:
             compile_semantic_deck_payload(
                 payload,
-                default_title=request.topic,
-                default_theme=request.theme,
-                default_language=request.language,
-                default_author=request.author,
+                default_title=enriched_request.topic,
+                default_theme=enriched_request.theme,
+                default_language=enriched_request.language,
+                default_author=enriched_request.author,
             )
             return payload
         except ValueError as exc:
@@ -265,6 +581,7 @@ def make_v2_ppt(
     output_dir: Path | None = None,
     output_prefix: str = "Enterprise-AI-PPT-V2",
     model: str | None = None,
+    generation_mode: str = "deep",
     outline_output: Path | None = None,
     semantic_output: Path | None = None,
     deck_output: Path | None = None,
@@ -273,6 +590,17 @@ def make_v2_ppt(
     outline_path: Path | None = None,
 ) -> V2MakeArtifacts:
     final_output_dir = output_dir or DEFAULT_OUTPUT_DIR
+    resolved_generation_mode = normalize_generation_mode(generation_mode)
+    structured_context, strategic_analysis = ensure_generation_context(
+        topic=topic,
+        brief=brief,
+        audience=audience,
+        language=language,
+        generation_mode=resolved_generation_mode,
+        structured_context=None,
+        strategic_analysis=None,
+        model=model,
+    )
     if outline_path is not None:
         outline = load_outline_document(outline_path)
         final_outline_output = outline_path
@@ -287,6 +615,9 @@ def make_v2_ppt(
                 exact_slides=exact_slides,
                 min_slides=min_slides,
                 max_slides=max_slides,
+                generation_mode=resolved_generation_mode,
+                structured_context=structured_context,
+                strategic_analysis=strategic_analysis,
             ),
             model=model,
         )
@@ -302,6 +633,9 @@ def make_v2_ppt(
             language=language,
             theme=theme,
             author=author,
+            generation_mode=resolved_generation_mode,
+            structured_context=structured_context,
+            strategic_analysis=strategic_analysis,
         ),
         model=model,
     )

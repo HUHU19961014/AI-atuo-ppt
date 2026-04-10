@@ -26,6 +26,51 @@ WARNING_LEVEL_WARNING = "warning"
 WARNING_LEVEL_HIGH = "high"
 WARNING_LEVEL_ERROR = "error"
 RULE_CONFIG = load_v2_rule_config()
+GENERIC_OPENING_TITLES = frozenset(
+    {
+        "背景",
+        "项目背景",
+        "背景介绍",
+        "建设背景",
+        "现状",
+        "现状介绍",
+        "背景与现状",
+        "行业背景",
+    }
+)
+GENERIC_CLOSING_TITLES = frozenset(
+    {
+        "谢谢",
+        "感谢",
+        "感谢聆听",
+        "谢 谢",
+        "thanks",
+        "thankyou",
+        "q&a",
+        "qa",
+        "答疑",
+        "结束语",
+    }
+)
+ACTION_OR_DECISION_MARKERS = (
+    "下一步",
+    "next step",
+    "nextstep",
+    "行动",
+    "建议",
+    "决策",
+    "路线图",
+    "推进",
+    "落地",
+    "实施",
+    "计划",
+    "优先级",
+    "请求",
+    "批准",
+    "结论",
+    "判断",
+)
+QUANTIFIED_CLAIM_PATTERN = re.compile(r"(\d+(?:\.\d+)?\s*(?:%|万|亿|倍|x|X|个|家|年|月|周|天))|(\d{2,})")
 
 
 @dataclass(frozen=True)
@@ -115,10 +160,14 @@ def _normalize_title_for_pattern(title: str) -> str:
     return re.sub(r"[\s:：，,。.、（）()\-]+", "", title)
 
 
+def _normalize_free_text(text: str) -> str:
+    return re.sub(r"[\W_]+", "", str(text or "").strip().lower(), flags=re.UNICODE)
+
+
 def _looks_conclusion_oriented(title: str) -> bool:
     if any(marker in title for marker in CONCLUSION_MARKERS):
         return True
-    return "，" in title and _count_hanzi(title) >= 10
+    return any(punct in title for punct in ("：", "，", ":")) and _count_hanzi(title) >= 10
 
 
 def _has_directory_style_title(title: str) -> bool:
@@ -290,6 +339,120 @@ def _title_image_warnings(slide: TitleImageSlide) -> list[ContentWarning]:
     return warnings
 
 
+def _iter_slide_text_fragments(slide) -> list[str]:
+    fragments = [slide.title]
+    subtitle = getattr(slide, "subtitle", None)
+    if subtitle:
+        fragments.append(subtitle)
+    anti_argument = getattr(slide, "anti_argument", None)
+    if anti_argument:
+        fragments.append(anti_argument)
+    if isinstance(slide, TitleContentSlide):
+        fragments.extend(slide.content)
+    elif isinstance(slide, TwoColumnsSlide):
+        fragments.append(slide.left.heading)
+        fragments.extend(slide.left.items)
+        fragments.append(slide.right.heading)
+        fragments.extend(slide.right.items)
+    elif isinstance(slide, TitleImageSlide):
+        fragments.extend(slide.content)
+        if slide.image.caption:
+            fragments.append(slide.image.caption)
+    elif isinstance(slide, TimelineSlide):
+        if slide.heading:
+            fragments.append(slide.heading)
+        for stage in slide.stages:
+            fragments.append(stage.title)
+            if stage.detail:
+                fragments.append(stage.detail)
+    elif isinstance(slide, StatsDashboardSlide):
+        if slide.heading:
+            fragments.append(slide.heading)
+        fragments.extend(slide.insights)
+        for metric in slide.metrics:
+            fragments.append(metric.label)
+            fragments.append(metric.value)
+            if metric.note:
+                fragments.append(metric.note)
+    elif isinstance(slide, MatrixGridSlide):
+        if slide.heading:
+            fragments.append(slide.heading)
+        if slide.x_axis:
+            fragments.append(slide.x_axis)
+        if slide.y_axis:
+            fragments.append(slide.y_axis)
+        for cell in slide.cells:
+            fragments.append(cell.title)
+            if cell.body:
+                fragments.append(cell.body)
+    elif isinstance(slide, CardsGridSlide):
+        if slide.heading:
+            fragments.append(slide.heading)
+        for card in slide.cards:
+            fragments.append(card.title)
+            if card.body:
+                fragments.append(card.body)
+    return [fragment for fragment in fragments if fragment]
+
+
+def _has_action_or_decision_signal(slide) -> bool:
+    normalized_markers = tuple(_normalize_free_text(marker) for marker in ACTION_OR_DECISION_MARKERS)
+    return any(
+        marker in _normalize_free_text(fragment)
+        for fragment in _iter_slide_text_fragments(slide)
+        for marker in normalized_markers
+    )
+
+
+def _slide_repetition_fragments(slide) -> set[str]:
+    signatures: set[str] = set()
+    for fragment in _iter_slide_text_fragments(slide)[1:]:
+        normalized = _normalize_free_text(fragment)
+        if len(normalized) >= 6:
+            signatures.add(normalized)
+    return signatures
+
+
+def _has_quantified_claims(slide) -> bool:
+    return any(QUANTIFIED_CLAIM_PATTERN.search(fragment) for fragment in _iter_slide_text_fragments(slide))
+
+
+def _insight_warnings(slide) -> list[ContentWarning]:
+    warnings: list[ContentWarning] = []
+    data_sources = getattr(slide, "data_sources", [])
+    anti_argument = getattr(slide, "anti_argument", None)
+    evidence_required = isinstance(slide, StatsDashboardSlide) or _has_quantified_claims(slide)
+
+    if evidence_required and not data_sources:
+        warnings.append(
+            ContentWarning(
+                slide_id=slide.slide_id,
+                warning_level=WARNING_LEVEL_HIGH,
+                message="slide contains quantified claims but no data_sources; add evidence or lower the claim strength.",
+            )
+        )
+
+    if data_sources and any(source.confidence == "low" for source in data_sources):
+        warnings.append(
+            ContentWarning(
+                slide_id=slide.slide_id,
+                warning_level=WARNING_LEVEL_WARNING,
+                message="slide includes low-confidence data_sources; verify before external or executive-facing use.",
+            )
+        )
+
+    if isinstance(slide, (TwoColumnsSlide, MatrixGridSlide)) and not anti_argument:
+        warnings.append(
+            ContentWarning(
+                slide_id=slide.slide_id,
+                warning_level=WARNING_LEVEL_WARNING,
+                message=f"{slide.layout} often expresses trade-offs or choices; add anti_argument to pre-empt audience objections.",
+            )
+        )
+
+    return warnings
+
+
 def _timeline_warnings(slide: TimelineSlide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
     if len(slide.stages) > 5:
@@ -396,6 +559,7 @@ def _cards_grid_warnings(slide: CardsGridSlide) -> list[ContentWarning]:
 
 def check_slide_content(slide) -> list[ContentWarning]:
     warnings = _title_warnings(slide)
+    warnings.extend(_insight_warnings(slide))
     if isinstance(slide, TitleContentSlide):
         warnings.extend(_title_content_warnings(slide))
     elif isinstance(slide, TwoColumnsSlide):
@@ -430,6 +594,10 @@ def _check_deck_structure(deck: DeckDocument) -> list[ContentWarning]:
 
     first_slide = deck.slides[0]
     last_slide = deck.slides[-1]
+    normalized_opening_titles = {_normalize_free_text(item) for item in GENERIC_OPENING_TITLES}
+    normalized_closing_titles = {_normalize_free_text(item) for item in GENERIC_CLOSING_TITLES}
+    first_title_normalized = _normalize_free_text(first_slide.title)
+    last_title_normalized = _normalize_free_text(last_slide.title)
 
     # Warning: first slide should ideally be section_break
     if first_slide.layout not in ("section_break", "title_only"):
@@ -438,6 +606,14 @@ def _check_deck_structure(deck: DeckDocument) -> list[ContentWarning]:
                 slide_id=first_slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
                 message=f"first slide uses layout '{first_slide.layout}'; consider using 'section_break' to set context.",
+            )
+        )
+    if first_title_normalized in normalized_opening_titles:
+        warnings.append(
+            ContentWarning(
+                slide_id=first_slide.slide_id,
+                warning_level=WARNING_LEVEL_HIGH,
+                message="first slide title is generic-background oriented; lead with context plus core judgment instead of a background label.",
             )
         )
 
@@ -450,6 +626,58 @@ def _check_deck_structure(deck: DeckDocument) -> list[ContentWarning]:
                 message=f"last slide uses layout '{last_slide.layout}'; consider using 'title_only' to converge conclusion.",
             )
         )
+    if last_title_normalized in normalized_closing_titles:
+        warnings.append(
+            ContentWarning(
+                slide_id=last_slide.slide_id,
+                warning_level=WARNING_LEVEL_HIGH,
+                message="last slide is a generic closing or thanks page; end with a recommendation, decision, roadmap, or next step instead.",
+            )
+        )
+    if not _looks_conclusion_oriented(last_slide.title) and not _has_action_or_decision_signal(last_slide):
+        warnings.append(
+            ContentWarning(
+                slide_id=last_slide.slide_id,
+                warning_level=WARNING_LEVEL_WARNING,
+                message="last slide does not clearly express a recommendation, decision, roadmap, or next step.",
+            )
+        )
+
+    warnings.extend(_check_deck_repetition(deck))
+
+    return warnings
+
+
+def _check_deck_repetition(deck: DeckDocument) -> list[ContentWarning]:
+    warnings: list[ContentWarning] = []
+    seen_titles: dict[str, str] = {}
+
+    for slide in deck.slides:
+        normalized_title = _normalize_free_text(slide.title)
+        if not normalized_title:
+            continue
+        previous_slide_id = seen_titles.get(normalized_title)
+        if previous_slide_id is not None:
+            warnings.append(
+                ContentWarning(
+                    slide_id=slide.slide_id,
+                    warning_level=WARNING_LEVEL_WARNING,
+                    message=f"slide title repeats an earlier page ({previous_slide_id}); consider merging or differentiating the storyline.",
+                )
+            )
+        else:
+            seen_titles[normalized_title] = slide.slide_id
+
+    for previous_slide, current_slide in zip(deck.slides, deck.slides[1:]):
+        overlap = _slide_repetition_fragments(previous_slide) & _slide_repetition_fragments(current_slide)
+        if len(overlap) >= 2:
+            warnings.append(
+                ContentWarning(
+                    slide_id=current_slide.slide_id,
+                    warning_level=WARNING_LEVEL_WARNING,
+                    message=f"adjacent slides repeat {len(overlap)} content fragments; consider merging pages or sharpening the page roles.",
+                )
+            )
 
     return warnings
 
@@ -473,7 +701,10 @@ def calculate_auto_score(
     error_count: int,
     slide_count: int = 0,
 ) -> AutoScoreResult:
+    """Score rule-based content risk for gating, not for subjective visual QA."""
     scoring = RULE_CONFIG.scoring
+    # The penalty weights come from default_rules.toml so the gate policy stays
+    # configurable and intentionally separate from visual_review's 5x5 scorecard.
     weighted_penalty = (
         warning_count * scoring.warning_weight
         + high_count * scoring.high_weight

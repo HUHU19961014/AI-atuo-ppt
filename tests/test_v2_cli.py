@@ -99,6 +99,37 @@ class V2CliTests(unittest.TestCase):
             self.assertTrue(lines[5].endswith(".log.txt"))
             self.assertTrue(lines[6].endswith(".pptx"))
 
+    def test_v2_make_passes_generation_mode_to_services(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch(
+                    "sys.argv",
+                    ["sie-autoppt", "v2-make", "--topic", "AI make", "--output-dir", temp_dir, "--generation-mode", "quick"],
+                ),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
+                patch(
+                    "tools.sie_autoppt.cli.make_v2_ppt",
+                    return_value=type(
+                        "FakeArtifacts",
+                        (),
+                        {
+                            "outline_path": Path(temp_dir) / "deck.outline.json",
+                            "semantic_path": Path(temp_dir) / "deck.semantic.v2.json",
+                            "deck_path": Path(temp_dir) / "deck.deck.v2.json",
+                            "rewrite_log_path": Path(temp_dir) / "rewrite_log.json",
+                            "warnings_path": Path(temp_dir) / "warnings.json",
+                            "log_path": Path(temp_dir) / "deck.log.txt",
+                            "pptx_path": Path(temp_dir) / "deck.pptx",
+                        },
+                    )(),
+                ) as make_mock,
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+        self.assertEqual(make_mock.call_args.kwargs["generation_mode"], "quick")
+
     def test_v2_compile_writes_compiled_deck_from_semantic_json(self):
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:
