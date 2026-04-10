@@ -82,7 +82,7 @@ class SieOnepageStrategyTests(unittest.TestCase):
 
         self.assertEqual(selection.source, "ai")
         self.assertEqual(selection.strategy_id, "comparison_decision")
-        self.assertEqual(resolved_brief.variant, "balanced_dual_panel")
+        self.assertEqual(resolved_brief.variant, "comparison_split")
 
     def test_explicit_variant_skips_auto_selection(self):
         brief = _make_brief(
@@ -97,6 +97,42 @@ class SieOnepageStrategyTests(unittest.TestCase):
         self.assertEqual(selection.source, "manual")
         self.assertEqual(selection.layout_variant, "asymmetric_focus")
         self.assertEqual(resolved_brief.variant, "asymmetric_focus")
+
+    def test_auto_strategy_can_pick_timeline_layout_for_roadmap_content(self):
+        brief = _make_brief(
+            title="年度推进路线图",
+            row_title="阶段里程碑",
+            process_steps=("Q1启动", "Q2落地", "Q3扩展", "Q4固化"),
+            right_title="按季度推进的实施路线图",
+        )
+
+        with patch(
+            "tools.scenario_generators.sie_onepage_designer.load_openai_responses_config",
+            side_effect=OpenAIConfigurationError("OPENAI_API_KEY is required for AI planning."),
+        ):
+            resolved_brief, selection = resolve_onepage_strategy(brief)
+
+        self.assertEqual(selection.source, "heuristic")
+        self.assertEqual(selection.strategy_id, "roadmap_milestones")
+        self.assertEqual(resolved_brief.variant, "timeline_vertical")
+
+    def test_status_dashboard_priority_can_override_generic_process_steps(self):
+        brief = _make_brief(
+            title="文件上传责任人与时限看板",
+            row_title="责任人状态",
+            process_steps=("ERP发货", "ERP送货", "资料归集", "赛意上传", "批次留痕"),
+            right_title="一页看清责任、时限与跟进动作",
+        )
+
+        with patch(
+            "tools.scenario_generators.sie_onepage_designer.load_openai_responses_config",
+            side_effect=OpenAIConfigurationError("OPENAI_API_KEY is required for AI planning."),
+        ):
+            resolved_brief, selection = resolve_onepage_strategy(brief)
+
+        self.assertEqual(selection.source, "heuristic")
+        self.assertEqual(selection.strategy_id, "status_dashboard")
+        self.assertEqual(resolved_brief.variant, "summary_board")
 
 
 if __name__ == "__main__":

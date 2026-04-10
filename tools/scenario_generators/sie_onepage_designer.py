@@ -60,7 +60,14 @@ BADGE_RED_SOFT = (255, 241, 242)
 BADGE_RED_TEXT = (159, 18, 57)
 BADGE_RED_LINE = (254, 205, 211)
 COPY_ALLOWED_KEYWORDS = ("保持一致", "复刻", "一比一", "完全一致", "照着来", "same style", "replicate")
-SUPPORTED_VARIANTS = ("asymmetric_focus", "balanced_dual_panel", "signal_band")
+SUPPORTED_VARIANTS = (
+    "asymmetric_focus",
+    "balanced_dual_panel",
+    "signal_band",
+    "summary_board",
+    "comparison_split",
+    "timeline_vertical",
+)
 AUTO_LAYOUT_STRATEGY = "auto"
 
 
@@ -86,21 +93,21 @@ ONEPAGE_STRATEGIES: tuple[OnePageLayoutStrategy, ...] = (
         strategy_id="executive_summary_board",
         label="Executive Summary Board",
         business_use_case="单页结论汇报、老板决策页、管理层快扫页",
-        layout_variant="asymmetric_focus",
+        layout_variant="summary_board",
         cues=("结论先行", "一句话结论", "三段支撑", "决策建议"),
     ),
     OnePageLayoutStrategy(
         strategy_id="status_dashboard",
         label="Status Dashboard",
         business_use_case="周报、月报、责任分工、状态跟踪、风险与动作同步",
-        layout_variant="asymmetric_focus",
+        layout_variant="summary_board",
         cues=("状态", "责任人", "时限", "动作", "跟进"),
     ),
     OnePageLayoutStrategy(
         strategy_id="comparison_decision",
         label="Comparison Decision",
         business_use_case="方案对比、选型页、竞品比较、取舍判断",
-        layout_variant="balanced_dual_panel",
+        layout_variant="comparison_split",
         cues=("对比", "差异", "选项", "优劣", "判断"),
     ),
     OnePageLayoutStrategy(
@@ -128,7 +135,7 @@ ONEPAGE_STRATEGIES: tuple[OnePageLayoutStrategy, ...] = (
         strategy_id="roadmap_milestones",
         label="Roadmap Milestones",
         business_use_case="路线图、里程碑、分阶段推进页",
-        layout_variant="signal_band",
+        layout_variant="timeline_vertical",
         cues=("路线图", "里程碑", "季度", "年度", "节点"),
     ),
     OnePageLayoutStrategy(
@@ -276,12 +283,12 @@ def select_onepage_strategy_heuristically(brief: OnePageBrief) -> StrategySelect
     elif roadmap_score >= 2:
         strategy = STRATEGY_BY_ID["roadmap_milestones"]
         rationale = "内容带有阶段、里程碑或规划节奏，优先用路线图/里程碑型单页。"
-    elif len(process_steps) >= 4:
-        strategy = STRATEGY_BY_ID["process_storyline"]
-        rationale = "内容自带完整步骤链，优先用流程叙事型单页保持阅读顺序。"
     elif status_score >= 2:
         strategy = STRATEGY_BY_ID["status_dashboard"]
         rationale = "内容以责任人、时限和跟进为核心，更适合状态看板型单页。"
+    elif len(process_steps) >= 4:
+        strategy = STRATEGY_BY_ID["process_storyline"]
+        rationale = "内容自带完整步骤链，优先用流程叙事型单页保持阅读顺序。"
     elif strategy_score >= 2:
         strategy = STRATEGY_BY_ID["strategy_blueprint"]
         rationale = "内容偏战略规划和路径设计，更适合蓝图型单页。"
@@ -741,7 +748,170 @@ def render_signal_band(slide, brief: OnePageBrief) -> None:
     render_strategy_box(slide, brief.strategy_title, brief.strategy_fragments, left=720000, top=5940000, width=10600000, height=420000)
 
 
+def render_summary_board(slide, brief: OnePageBrief) -> None:
+    hero_left = 720000
+    hero_top = 1880000
+    hero_width = 10600000
+    add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, hero_left, hero_top, hero_width, 560000, fill=LIGHT_BG, line=LINE)
+    add_textbox(slide, hero_left + 180000, hero_top + 90000, 3600000, 150000, text=brief.right_kicker or "EXECUTIVE VIEW", font_size=9.4, color=ACCENT, bold=True)
+    add_textbox(slide, hero_left + 180000, hero_top + 220000, 4600000, 220000, text=brief.right_title, font_size=17.0, color=INK, bold=True)
+    hero_summary = add_textbox(slide, hero_left + 5100000, hero_top + 120000, 5200000, 280000)
+    write_fragments(hero_summary, brief.summary_fragments, font_size=10.8, default_color=TEXT_MED)
+
+    card_top = 2620000
+    card_width = 3200000
+    card_height = 1520000
+    gap = 220000
+    for index, item in enumerate(brief.law_rows[:3]):
+        left = 720000 + index * (card_width + gap)
+        add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, left, card_top, card_width, card_height, fill=WHITE, line=LINE)
+        add_textbox(slide, left + 130000, card_top + 90000, 420000, 220000, text=item.number, font_size=24, color=WATERMARK, bold=True)
+        badge_fill = BADGE_RED_SOFT if item.badge_red else BADGE_SOFT
+        badge_line = BADGE_RED_LINE if item.badge_red else LINE
+        badge_text = BADGE_RED_TEXT if item.badge_red else TEXT_MED
+        badge = add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, left + 1800000, card_top + 100000, 980000, 210000, fill=badge_fill, line=badge_line)
+        badge.text_frame.clear()
+        paragraph = badge.text_frame.paragraphs[0]
+        paragraph.alignment = PP_ALIGN.CENTER
+        run = paragraph.add_run()
+        run.text = item.badge
+        set_run_style(run, size=8.8, color=badge_text, bold=True)
+        add_textbox(slide, left + 130000, card_top + 380000, 2880000, 210000, text=item.title, font_size=12.4, color=TEXT_DARK, bold=True)
+        desc = add_textbox(slide, left + 130000, card_top + 640000, 2880000, 650000)
+        write_fragments(desc, item.runs, font_size=9.2, default_color=TEXT_MED)
+
+    process_panel_left = 720000
+    process_panel_top = 4380000
+    process_panel_width = 5000000
+    process_panel_height = 1320000
+    add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, process_panel_left, process_panel_top, process_panel_width, process_panel_height, fill=WHITE, line=LINE)
+    add_textbox(slide, process_panel_left + 180000, process_panel_top + 180000, process_panel_width - 360000, 170000, text="KEY FLOW", font_size=9.4, color=ACCENT, bold=True)
+    add_textbox(slide, process_panel_left + 180000, process_panel_top + 390000, process_panel_width - 360000, 220000, text="关键流程与交接节奏", font_size=15.2, color=INK, bold=True)
+    render_process_flow(slide, brief.process_steps, left=process_panel_left + 180000, top=process_panel_top + 760000, width=process_panel_width - 360000)
+
+    action_panel_left = 5940000
+    action_panel_top = 4380000
+    action_panel_width = 5380000
+    action_panel_height = 1320000
+    add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, action_panel_left, action_panel_top, action_panel_width, action_panel_height, fill=WHITE, line=LINE)
+    add_textbox(slide, action_panel_left + 220000, action_panel_top + 180000, action_panel_width - 440000, 170000, text="ACTION POINTS", font_size=9.4, color=ACCENT, bold=True)
+    add_textbox(slide, action_panel_left + 220000, action_panel_top + 390000, action_panel_width - 440000, 180000, text="关键动作与跟进重点", font_size=15.0, color=INK, bold=True)
+    render_bullets(slide, brief.right_bullets, left=action_panel_left + 220000, top=action_panel_top + 700000, width=action_panel_width - 440000, row_gap=250000)
+
+    render_strategy_box(slide, brief.strategy_title, brief.strategy_fragments, left=720000, top=5860000, width=10600000, height=420000)
+
+
+def render_comparison_split(slide, brief: OnePageBrief) -> None:
+    panel_top = 1940000
+    panel_width = 5000000
+    panel_height = 3060000
+    left_panel = 720000
+    right_panel = 6200000
+
+    left_rows = brief.law_rows[: max(1, math.ceil(len(brief.law_rows) / 2))]
+    right_rows = brief.law_rows[max(1, math.ceil(len(brief.law_rows) / 2)) :] or brief.law_rows[-1:]
+
+    for left, title in ((left_panel, "LEFT VIEW"), (right_panel, "RIGHT VIEW")):
+        add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, left, panel_top, panel_width, panel_height, fill=WHITE, line=LINE)
+        add_shape(slide, MSO_AUTO_SHAPE_TYPE.RECTANGLE, left, panel_top, panel_width, 72000, fill=ACCENT)
+        add_textbox(slide, left + 180000, panel_top + 180000, panel_width - 360000, 160000, text=title, font_size=9.2, color=ACCENT, bold=True)
+
+    render_law_rows(
+        slide,
+        left_rows,
+        left=860000,
+        top=panel_top + 430000,
+        title_width=2500000,
+        desc_width=3200000,
+        badge_left=3050000,
+        row_gap=1150000,
+        font_size=9.6,
+    )
+    render_law_rows(
+        slide,
+        right_rows,
+        left=6340000,
+        top=panel_top + 430000,
+        title_width=2500000,
+        desc_width=3200000,
+        badge_left=8530000,
+        row_gap=1150000,
+        font_size=9.6,
+    )
+    add_textbox(slide, right_panel + 180000, panel_top + 2420000, panel_width - 360000, 170000, text=brief.right_kicker, font_size=9.0, color=ACCENT, bold=True)
+    render_bullets(slide, brief.right_bullets, left=right_panel + 180000, top=panel_top + 2640000, width=panel_width - 360000, row_gap=250000)
+
+    flow_top = 5160000
+    add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, 720000, flow_top, 10600000, 520000, fill=LIGHT_BG, line=LINE)
+    render_process_flow(slide, brief.process_steps, left=900000, top=flow_top + 50000, width=10240000)
+    render_strategy_box(slide, brief.strategy_title, brief.strategy_fragments, left=720000, top=5780000, width=10600000, height=420000)
+
+
+def render_vertical_steps(slide, steps: tuple[str, ...], *, left: int, top: int, width: int, height: int) -> None:
+    count = max(1, len(steps))
+    usable_height = height - 160000
+    step_h = min(420000, max(260000, int((usable_height - (count - 1) * 100000) / count)))
+    current_y = top + 80000
+    for index, step in enumerate(steps):
+        is_last = index == count - 1
+        fill = (255, 250, 251) if is_last else WHITE
+        line = ACCENT if is_last else LINE
+        text_color = ACCENT if is_last else TEXT_DARK
+        step_box = add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, left + 140000, current_y, width - 280000, step_h, fill=fill, line=line)
+        step_box.text_frame.clear()
+        paragraph = step_box.text_frame.paragraphs[0]
+        paragraph.alignment = PP_ALIGN.CENTER
+        run = paragraph.add_run()
+        run.text = step
+        set_run_style(run, size=10.0, color=text_color, bold=True)
+        if index != count - 1:
+            add_shape(slide, MSO_AUTO_SHAPE_TYPE.RECTANGLE, left + width // 2 - 10000, current_y + step_h, 20000, 100000, fill=LINE)
+        current_y += step_h + 100000
+
+
+def render_timeline_vertical(slide, brief: OnePageBrief) -> None:
+    timeline_left = 720000
+    timeline_top = 1940000
+    timeline_width = 2420000
+    timeline_height = 3820000
+    add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, timeline_left, timeline_top, timeline_width, timeline_height, fill=WHITE, line=LINE)
+    add_shape(slide, MSO_AUTO_SHAPE_TYPE.RECTANGLE, timeline_left, timeline_top, timeline_width, 72000, fill=ACCENT)
+    add_textbox(slide, timeline_left + 170000, timeline_top + 180000, timeline_width - 340000, 160000, text=brief.right_kicker or "ROADMAP", font_size=9.2, color=ACCENT, bold=True)
+    add_textbox(slide, timeline_left + 170000, timeline_top + 390000, timeline_width - 340000, 220000, text=brief.right_title, font_size=14.6, color=INK, bold=True)
+    render_vertical_steps(slide, brief.process_steps, left=timeline_left, top=timeline_top + 760000, width=timeline_width, height=2800000)
+
+    summary_left = 3400000
+    summary_top = 1940000
+    summary_width = 7900000
+    add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, summary_left, summary_top, summary_width, 740000, fill=LIGHT_BG, line=LINE)
+    summary_box = add_textbox(slide, summary_left + 200000, summary_top + 120000, summary_width - 400000, 360000)
+    write_fragments(summary_box, brief.summary_fragments, font_size=11.2, default_color=TEXT_MED)
+
+    render_law_rows(
+        slide,
+        brief.law_rows,
+        left=3560000,
+        top=2920000,
+        title_width=2500000,
+        desc_width=3700000,
+        badge_left=6800000,
+        row_gap=930000,
+        font_size=9.5,
+    )
+    render_bullets(slide, brief.right_bullets, left=8300000, top=2880000, width=2800000, row_gap=390000)
+    render_strategy_box(slide, brief.strategy_title, brief.strategy_fragments, left=720000, top=5900000, width=10600000, height=420000)
+
+
 def render_variant(slide, brief: OnePageBrief) -> None:
+    if brief.variant == "summary_board":
+        render_summary_board(slide, brief)
+        return
+    if brief.variant == "comparison_split":
+        render_comparison_split(slide, brief)
+        return
+    if brief.variant == "timeline_vertical":
+        render_timeline_vertical(slide, brief)
+        return
     if brief.variant == "balanced_dual_panel":
         render_balanced_dual_panel(slide, brief)
         return
