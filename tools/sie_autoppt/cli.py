@@ -24,6 +24,7 @@ from .generator import generate_ppt_artifacts_from_deck_spec
 from .healthcheck import run_ai_healthcheck
 from .inputs.source_text import extract_source_text
 from .models import StructureSpec
+from .structure_service import StructureGenerationRequest, generate_structure_with_ai
 from .v2 import (
     build_deck_output_path,
     build_log_output_path,
@@ -91,7 +92,7 @@ COMMAND_ALIASES = {
 RECOMMENDED_WORKFLOW_HELP = (
     "Recommended workflows:\n"
     "  demo                  no-AI sample render using the bundled deck\n"
-    "  sie-render --structure-json ...  actual SIE template render from structured content\n"
+    "  sie-render --topic ... or --structure-json ...  actual SIE template render with optional AI planning\n"
     "  make --topic ...     semantic V2 full generation\n"
     "  review --deck-json   one-pass visual review alias for v2-review\n"
     "  iterate --deck-json  multi-round review alias for v2-iterate\n"
@@ -446,8 +447,13 @@ def main():
     if effective_command == "sie-render":
         structure_json = args.structure_json.strip()
         deck_spec_json = args.deck_spec_json.strip()
-        if bool(structure_json) == bool(deck_spec_json):
-            parser.error("exactly one of --structure-json or --deck-spec-json is required when command is 'sie-render'.")
+        uses_topic_generation = bool(args.topic.strip()) and not structure_json and not deck_spec_json
+        specified_inputs = sum(bool(value) for value in (structure_json, deck_spec_json, uses_topic_generation))
+        if specified_inputs != 1:
+            parser.error(
+                "exactly one actual-template input is required when command is 'sie-render': "
+                "use --structure-json, --deck-spec-json, or --topic."
+            )
 
         template_path = Path(args.template_path) if args.template_path else DEFAULT_TEMPLATE
         reference_body_path = (
@@ -465,6 +471,30 @@ def main():
             deck_spec = build_deck_spec_from_structure(
                 structure,
                 topic=args.topic.strip() or structure.core_message,
+                cover_title=args.cover_title.strip() or None,
+            )
+            deck_spec_path = (
+                Path(args.deck_spec_output)
+                if args.deck_spec_output
+                else template_output_dir / f"{output_stem}.deck_spec.json"
+            )
+            write_deck_spec(deck_spec, deck_spec_path)
+        elif uses_topic_generation:
+            structure_result = generate_structure_with_ai(
+                StructureGenerationRequest(
+                    topic=args.topic.strip(),
+                    brief=brief_text,
+                    audience=args.audience,
+                    language=args.language,
+                    sections=args.chapters,
+                    min_sections=args.min_slides,
+                    max_sections=args.max_slides,
+                ),
+                model=args.llm_model or None,
+            )
+            deck_spec = build_deck_spec_from_structure(
+                structure_result.structure,
+                topic=args.topic.strip(),
                 cover_title=args.cover_title.strip() or None,
             )
             deck_spec_path = (
