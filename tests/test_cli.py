@@ -25,6 +25,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 0)
         help_text = stdout.getvalue()
         self.assertIn("Primary commands: make, review, iterate", help_text)
+        self.assertIn("onepage --topic ...", help_text)
         self.assertIn("sie-render --topic ... or --structure-json ...", help_text)
         self.assertIn("use sie-render for actual SIE template delivery", help_text)
         self.assertNotIn("{make,plan,render", help_text)
@@ -374,6 +375,123 @@ class CliTests(unittest.TestCase):
             self.assertEqual(lines[0], str(deck_spec_path))
             self.assertEqual(lines[1], str(render_trace_path))
             self.assertEqual(lines[2], str(fake_ppt_path))
+
+    def test_onepage_can_generate_structure_with_ai_from_topic(self):
+        stdout = io.StringIO()
+        fake_structure = cli.StructureSpec.from_dict(
+            {
+                "core_message": "上传责任、时限与动作需要放在同一页看清",
+                "structure_type": "analysis",
+                "sections": [
+                    {
+                        "title": "责任分工",
+                        "key_message": "按责任人与时限拆解执行动作。",
+                        "arguments": [
+                            {"point": "明确负责人", "evidence": "减少遗漏"},
+                            {"point": "锁定时限", "evidence": "避免逾期"},
+                        ],
+                    },
+                    {
+                        "title": "执行节奏",
+                        "key_message": "围绕 ERP 触发点组织动作。",
+                        "arguments": [
+                            {"point": "发货单", "evidence": "7-13 天"},
+                            {"point": "送货单", "evidence": "生成后 1 天"},
+                        ],
+                    },
+                    {
+                        "title": "批次说明",
+                        "key_message": "后续批次直接上传赛意系统。",
+                        "arguments": [
+                            {"point": "起始批次", "evidence": "2025-07-15"},
+                            {"point": "系统要求", "evidence": "直接上传"},
+                        ],
+                    },
+                ],
+            }
+        )
+        fake_structure_result = type("FakeStructureResult", (), {"structure": fake_structure})()
+        fake_review_path = Path("C:/tmp/fake.review.json")
+        fake_score_path = Path("C:/tmp/fake.score.json")
+        fake_ppt_path = Path("C:/tmp/fake.onepage.pptx")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "sie-autoppt",
+                        "onepage",
+                        "--topic",
+                        "赛意系统文件上传清单",
+                        "--brief",
+                        "按责任人与时限整理上传要求",
+                        "--output-dir",
+                        temp_dir,
+                    ],
+                ),
+                patch("tools.sie_autoppt.cli.generate_structure_with_ai", return_value=fake_structure_result) as structure_mock,
+                patch(
+                    "tools.sie_autoppt.cli.build_onepage_slide",
+                    return_value=(fake_ppt_path, fake_review_path, fake_score_path, object()),
+                ) as render_mock,
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+            structure_mock.assert_called_once()
+            request = structure_mock.call_args.args[0]
+            self.assertEqual(request.topic, "赛意系统文件上传清单")
+            self.assertEqual(request.brief, "按责任人与时限整理上传要求")
+            self.assertEqual(request.sections, 3)
+
+            render_mock.assert_called_once()
+            brief_output_path = Path(temp_dir) / "Enterprise-AI-PPT.onepage_brief.json"
+            self.assertTrue(brief_output_path.exists())
+            lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+            self.assertEqual(lines[0], str(brief_output_path))
+            self.assertEqual(lines[1], str(fake_review_path))
+            self.assertEqual(lines[2], str(fake_score_path))
+            self.assertEqual(lines[3], str(fake_ppt_path))
+
+    def test_onepage_falls_back_when_ai_key_is_missing(self):
+        stdout = io.StringIO()
+        fake_review_path = Path("C:/tmp/fallback.review.json")
+        fake_score_path = Path("C:/tmp/fallback.score.json")
+        fake_ppt_path = Path("C:/tmp/fallback.onepage.pptx")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "sie-autoppt",
+                        "onepage",
+                        "--topic",
+                        "供应链周报",
+                        "--brief",
+                        "按状态、风险和动作组织一页汇报",
+                        "--output-dir",
+                        temp_dir,
+                    ],
+                ),
+                patch(
+                    "tools.sie_autoppt.cli.generate_structure_with_ai",
+                    side_effect=OpenAIConfigurationError("OPENAI_API_KEY is required for AI planning."),
+                ),
+                patch(
+                    "tools.sie_autoppt.cli.build_onepage_slide",
+                    return_value=(fake_ppt_path, fake_review_path, fake_score_path, object()),
+                ),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+            brief_output_path = Path(temp_dir) / "Enterprise-AI-PPT.onepage_brief.json"
+            payload = json.loads(brief_output_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["title"], "供应链周报")
+            self.assertEqual(payload["layout_strategy"], "auto")
+            lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+            self.assertEqual(lines[0], str(brief_output_path))
+            self.assertEqual(lines[3], str(fake_ppt_path))
 
     def test_removed_legacy_command_is_rejected(self):
         stderr = io.StringIO()

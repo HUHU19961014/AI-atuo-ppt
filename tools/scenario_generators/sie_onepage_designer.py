@@ -19,6 +19,7 @@ try:
         OpenAIResponsesError,
         load_openai_responses_config,
     )
+    from sie_autoppt.models import StructureArgument, StructureSection, StructureSpec
     from sie_autoppt.slide_ops import remove_slide
     from sie_autoppt.template_manifest import TemplateManifest, load_template_manifest
     from sie_autoppt.text_ops import write_text
@@ -33,6 +34,7 @@ except ModuleNotFoundError:
         OpenAIResponsesError,
         load_openai_responses_config,
     )
+    from sie_autoppt.models import StructureArgument, StructureSection, StructureSpec
     from sie_autoppt.slide_ops import remove_slide
     from sie_autoppt.template_manifest import TemplateManifest, load_template_manifest
     from sie_autoppt.text_ops import write_text
@@ -368,6 +370,106 @@ def resolve_onepage_strategy(brief: OnePageBrief, model: str | None = None) -> t
         selection = select_onepage_strategy_heuristically(brief)
 
     return replace(brief, variant=selection.layout_variant), selection
+
+
+def _clip(text: str, limit: int) -> str:
+    normalized = " ".join(str(text).strip().split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _format_argument(argument: StructureArgument) -> str:
+    point = " ".join(argument.point.strip().split())
+    evidence = " ".join(argument.evidence.strip().split())
+    if point and evidence:
+        return f"{point}：{evidence}"
+    return point or evidence
+
+
+def _section_to_law_row(section: StructureSection, index: int) -> LawRow:
+    body_runs: list[TextFragment] = [TextFragment(_clip(section.key_message, 40), bold=True, color=TEXT_DARK)]
+    for argument in section.arguments[:3]:
+        text = _format_argument(argument)
+        if not text:
+            continue
+        body_runs.append(TextFragment(" " + _clip(text, 50)))
+    badge = "重点事项" if index == 1 else "核心支撑"
+    return LawRow(
+        number=f"{index:02d}",
+        title=_clip(section.title, 20),
+        badge=badge,
+        badge_red=index == 1,
+        runs=tuple(body_runs),
+    )
+
+
+def build_onepage_brief_from_structure(
+    structure: StructureSpec,
+    *,
+    topic: str,
+    footer: str = "STRICTLY CONFIDENTIAL | 2026 SIE One-page Brief",
+    page_no: str = "01",
+    layout_strategy: str = AUTO_LAYOUT_STRATEGY,
+) -> OnePageBrief:
+    sections = structure.sections[:3] or [
+        StructureSection(
+            title="核心结论",
+            key_message=structure.core_message or topic,
+            arguments=[StructureArgument(point="补充业务信息后可生成更完整单页", evidence="")],
+        )
+    ]
+    law_rows = tuple(_section_to_law_row(section, index + 1) for index, section in enumerate(sections))
+    summary_intro = _clip(structure.core_message or topic, 72)
+    strongest_section = sections[0]
+    right_bullets: list[BulletItem] = []
+    for section in sections:
+        bullet_body = _clip(
+            "；".join(
+                _format_argument(argument)
+                for argument in section.arguments[:2]
+                if _format_argument(argument)
+            )
+            or section.key_message,
+            72,
+        )
+        right_bullets.append(BulletItem(f"{_clip(section.title, 10)}：", bullet_body))
+
+    process_steps = tuple(_clip(section.title, 8) for section in sections)
+    if len(process_steps) < 4:
+        process_steps = process_steps + ("行动落地",)
+
+    required_terms = tuple(
+        term for term in [topic.strip(), structure.core_message.strip(), *(section.title.strip() for section in sections)] if term
+    )
+    return OnePageBrief(
+        title=_clip(topic.strip() or structure.core_message or "SIE 单页汇报", 24),
+        kicker="",
+        summary_fragments=(
+            TextFragment(summary_intro),
+            TextFragment(
+                _clip(f"当前页围绕“{strongest_section.title}”展开，适合用于商务汇报中的单页正文表达。", 72),
+                bold=True,
+                color=ACCENT,
+                new_paragraph=True,
+            ),
+        ),
+        law_rows=law_rows,
+        right_kicker="EXECUTION VIEW",
+        right_title=_clip(structure.core_message or strongest_section.key_message or topic, 24),
+        process_steps=process_steps,
+        right_bullets=tuple(right_bullets[:3]),
+        strategy_title="行动建议：围绕核心结论组织表达与下一步动作",
+        strategy_fragments=(
+            TextFragment(_clip(f"建议优先突出“{strongest_section.title}”的业务判断，再用 2-3 个支撑点解释原因和动作。", 86)),
+            TextFragment("需要更强管理层风格时，可进一步压缩成结论、动作、风险三块。", bold=True, color=WHITE, new_paragraph=True),
+        ),
+        footer=footer,
+        page_no=page_no,
+        required_terms=required_terms[:8] or ("SIE",),
+        variant="auto",
+        layout_strategy=layout_strategy,
+    )
 
 
 def rgb(color: tuple[int, int, int]) -> RGBColor:

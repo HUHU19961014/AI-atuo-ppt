@@ -23,6 +23,7 @@ from .exceptions import AiHealthcheckBlockedError, AiHealthcheckFailedError
 from .generator import generate_ppt_artifacts_from_deck_spec
 from .healthcheck import run_ai_healthcheck
 from .inputs.source_text import extract_source_text
+from .llm_openai import OpenAIConfigurationError
 from .models import StructureSpec
 from .structure_service import StructureGenerationRequest, generate_structure_with_ai
 from .v2 import (
@@ -51,11 +52,13 @@ from .v2 import (
 from .v2.services import DeckGenerationRequest, OutlineGenerationRequest
 from .v2.visual_review import iterate_visual_review, review_deck_once
 from .v2.io import DEFAULT_V2_OUTPUT_DIR
+from tools.scenario_generators.sie_onepage_designer import build_onepage_brief_from_structure, build_onepage_slide
 
 
 WORKFLOW_COMMANDS = (
     "demo",
     "make",
+    "onepage",
     "sie-render",
     "ai-check",
     "clarify",
@@ -73,6 +76,7 @@ WORKFLOW_COMMANDS = (
 PRIMARY_COMMANDS = ("make", "review", "iterate")
 ADVANCED_COMMANDS = (
     "demo",
+    "onepage",
     "sie-render",
     "v2-plan",
     "v2-render",
@@ -92,6 +96,7 @@ COMMAND_ALIASES = {
 RECOMMENDED_WORKFLOW_HELP = (
     "Recommended workflows:\n"
     "  demo                  no-AI sample render using the bundled deck\n"
+    "  onepage --topic ...   single SIE body page with adaptive business layout\n"
     "  sie-render --topic ... or --structure-json ...  actual SIE template render with optional AI planning\n"
     "  make --topic ...     semantic V2 full generation\n"
     "  review --deck-json   one-pass visual review alias for v2-review\n"
@@ -119,6 +124,7 @@ def validate_slide_args(args, parser: argparse.ArgumentParser):
     is_ai_command = args.command in {
         "ai-check",
         "make",
+        "onepage",
         "v2-outline",
         "v2-plan",
         "v2-make",
@@ -295,6 +301,45 @@ def write_json_artifact(path: Path, payload: dict[str, object]) -> Path:
     return path
 
 
+def build_fallback_structure_spec(topic: str, brief_text: str) -> StructureSpec:
+    brief_lines = [line.strip(" -•\t") for line in brief_text.splitlines() if line.strip()]
+    while len(brief_lines) < 3:
+        brief_lines.append("")
+
+    return StructureSpec.from_dict(
+        {
+            "core_message": (brief_lines[0] or topic or "单页汇报内容").strip(),
+            "structure_type": "general",
+            "sections": [
+                {
+                    "title": "核心结论",
+                    "key_message": (brief_lines[0] or f"{topic}需要先明确核心判断。").strip(),
+                    "arguments": [
+                        {"point": "主题聚焦", "evidence": topic.strip() or "单页汇报"},
+                        {"point": "业务背景", "evidence": brief_lines[1] or "补充业务上下文后可细化"},
+                    ],
+                },
+                {
+                    "title": "关键支撑",
+                    "key_message": (brief_lines[1] or "围绕事实、动作和约束组织支撑信息。").strip(),
+                    "arguments": [
+                        {"point": "事实依据", "evidence": brief_lines[0] or "结合现有输入整理"},
+                        {"point": "执行重点", "evidence": brief_lines[2] or "提炼 2-3 个重点动作"},
+                    ],
+                },
+                {
+                    "title": "行动建议",
+                    "key_message": (brief_lines[2] or "给出下一步动作和落地节奏。").strip(),
+                    "arguments": [
+                        {"point": "下一步动作", "evidence": "压缩成适合单页表达的行动项"},
+                        {"point": "汇报用途", "evidence": "适合管理汇报或商务沟通场景"},
+                    ],
+                },
+            ],
+        }
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate enterprise PPTs with V2 semantics or the actual SIE template delivery path.",
@@ -306,7 +351,7 @@ def main():
         nargs="?",
         metavar="command",
         default="make",
-        help="Primary commands: make, review, iterate. Use sie-render when you need the actual SIE PPTX template path.",
+        help="Primary commands: make, review, iterate. Use onepage for a single SIE body slide, or sie-render for the actual SIE PPTX template path.",
     )
     parser.add_argument("--template", default="", help=argparse.SUPPRESS)
     parser.add_argument(
@@ -371,6 +416,7 @@ def main():
     parser.add_argument("--template-path", default="", help="Optional PPTX template override for sie-render.")
     parser.add_argument("--reference-body-path", default="", help="Optional reference body PPTX override for sie-render.")
     parser.add_argument("--active-start", type=int, default=0, help="Actual-template directory highlight offset used by sie-render.")
+    parser.add_argument("--onepage-strategy", default="auto", help="Optional one-page strategy override. Default is auto.")
     raw_argv = sys.argv[1:]
     args = parser.parse_args()
     validate_command_name(args.command, parser)
@@ -442,6 +488,61 @@ def main():
         print(str(warnings_path))
         print(str(log_output))
         print(str(ppt_output))
+        return
+
+    if effective_command == "onepage":
+        structure_json = args.structure_json.strip()
+        if not structure_json and not args.topic.strip():
+            parser.error("--topic or --structure-json is required when command is 'onepage'.")
+
+        output_stem = build_template_output_stem(args.output_name)
+        template_output_dir = output_dir
+        if structure_json:
+            structure_path = Path(structure_json)
+            payload = json.loads(structure_path.read_text(encoding="utf-8-sig"))
+            structure = StructureSpec.from_dict(payload)
+        else:
+            try:
+                structure_result = generate_structure_with_ai(
+                    StructureGenerationRequest(
+                        topic=args.topic.strip(),
+                        brief=brief_text,
+                        audience=args.audience,
+                        language=args.language,
+                        sections=args.chapters or 3,
+                        min_sections=args.min_slides,
+                        max_sections=args.max_slides,
+                    ),
+                    model=args.llm_model or None,
+                )
+                structure = structure_result.structure
+            except OpenAIConfigurationError:
+                structure = build_fallback_structure_spec(args.topic.strip(), brief_text)
+
+        onepage_brief = build_onepage_brief_from_structure(
+            structure,
+            topic=args.topic.strip() or structure.core_message,
+            footer=f"STRICTLY CONFIDENTIAL | 2026 SIE {output_stem}",
+            page_no="01",
+            layout_strategy=args.onepage_strategy.strip() or "auto",
+        )
+        brief_output_path = template_output_dir / f"{output_stem}.onepage_brief.json"
+        write_json_artifact(brief_output_path, asdict(onepage_brief))
+        onepage_output_path = (
+            Path(args.ppt_output)
+            if args.ppt_output
+            else template_output_dir / f"{output_stem}.onepage.pptx"
+        )
+        built_path, review_path, score_path, _ = build_onepage_slide(
+            onepage_brief,
+            output_path=onepage_output_path,
+            export_review=True,
+            model=args.llm_model or None,
+        )
+        print(str(brief_output_path))
+        print(str(review_path))
+        print(str(score_path))
+        print(str(built_path))
         return
 
     if effective_command == "sie-render":
