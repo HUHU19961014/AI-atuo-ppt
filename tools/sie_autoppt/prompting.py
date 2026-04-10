@@ -5,17 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import PROJECT_ROOT
+from .exceptions import PromptRenderError, PromptTemplateError
 
 
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
-
-
-class PromptTemplateError(FileNotFoundError):
-    pass
-
-
-class PromptRenderError(ValueError):
-    pass
 
 
 @dataclass(frozen=True)

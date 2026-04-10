@@ -1,3 +1,10 @@
+"""
+Legacy V1 body slide renderers.
+
+This module is still used by the classic generator path and scenario scripts.
+New layout work should prefer the V2 semantic renderers under tools/sie_autoppt/v2/renderers/.
+"""
+
 import re
 import textwrap
 

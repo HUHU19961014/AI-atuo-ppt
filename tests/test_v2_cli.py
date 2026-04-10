@@ -51,6 +51,7 @@ class V2CliTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["sie-autoppt", "v2-plan", "--topic", "AI plan", "--output-dir", temp_dir]),
                 patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
+                patch("tools.sie_autoppt.cli.ensure_generation_context", return_value=({}, None)),
                 patch("tools.sie_autoppt.cli.generate_outline_with_ai", return_value=outline),
                 patch("tools.sie_autoppt.cli.generate_semantic_deck_with_ai", return_value=semantic_payload),
                 patch("tools.sie_autoppt.cli.compile_semantic_deck_payload", return_value=validated),

@@ -16,22 +16,7 @@ from .config import (
     DEFAULT_AI_TIMEOUT_SEC,
     infer_llm_api_style,
 )
-
-
-class OpenAIConfigurationError(ValueError):
-    pass
-
-
-class OpenAIResponsesError(RuntimeError):
-    pass
-
-
-class OpenAIHTTPStatusError(OpenAIResponsesError):
-    def __init__(self, status_code: int, detail: str, route: str):
-        super().__init__(format_openai_http_error(status_code, detail))
-        self.status_code = status_code
-        self.detail = detail
-        self.route = route
+from .exceptions import OpenAIConfigurationError, OpenAIHTTPStatusError, OpenAIResponsesError
 
 
 @dataclass(frozen=True)
