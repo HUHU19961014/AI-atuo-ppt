@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from .schema import SUPPORTED_THEMES
@@ -16,16 +17,162 @@ SUPPORTED_SLIDE_INTENTS = (
     "conclusion",
 )
 
-SUPPORTED_BLOCK_KINDS = (
-    "bullets",
-    "comparison",
-    "image",
-    "statement",
-    "timeline",
-    "cards",
-    "stats",
-    "matrix",
-)
+BLOCK_KIND_SCHEMAS: dict[str, dict[str, Any]] = {
+    "bullets": {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "bullets"},
+            "heading": {"type": "string", "maxLength": 24},
+            "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 8,
+                "items": {"type": "string", "minLength": 2, "maxLength": 70},
+            },
+        },
+        "required": ["kind", "items"],
+        "additionalProperties": False,
+    },
+    "comparison": {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "comparison"},
+            "left_heading": {"type": "string", "minLength": 1, "maxLength": 24},
+            "left_items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {"type": "string", "minLength": 2, "maxLength": 60},
+            },
+            "right_heading": {"type": "string", "minLength": 1, "maxLength": 24},
+            "right_items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {"type": "string", "minLength": 2, "maxLength": 60},
+            },
+        },
+        "required": ["kind", "left_heading", "left_items", "right_heading", "right_items"],
+        "additionalProperties": False,
+    },
+    "image": {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "image"},
+            "mode": {"type": "string", "enum": ["placeholder", "local_path"]},
+            "caption": {"type": "string", "maxLength": 40},
+            "path": {"type": "string", "maxLength": 240},
+        },
+        "required": ["kind", "mode"],
+        "additionalProperties": False,
+    },
+    "statement": {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "statement"},
+            "text": {"type": "string", "minLength": 2, "maxLength": 100},
+        },
+        "required": ["kind", "text"],
+        "additionalProperties": False,
+    },
+    "timeline": {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "timeline"},
+            "heading": {"type": "string", "maxLength": 24},
+            "stages": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 6,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "minLength": 1, "maxLength": 24},
+                        "detail": {"type": "string", "maxLength": 60},
+                    },
+                    "required": ["title"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["kind", "stages"],
+        "additionalProperties": False,
+    },
+    "cards": {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "cards"},
+            "heading": {"type": "string", "maxLength": 24},
+            "cards": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 4,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "minLength": 1, "maxLength": 24},
+                        "body": {"type": "string", "maxLength": 60},
+                    },
+                    "required": ["title"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["kind", "cards"],
+        "additionalProperties": False,
+    },
+    "stats": {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "stats"},
+            "heading": {"type": "string", "maxLength": 24},
+            "metrics": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 6,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string", "minLength": 1, "maxLength": 24},
+                        "value": {"type": "string", "minLength": 1, "maxLength": 24},
+                        "note": {"type": "string", "maxLength": 40},
+                    },
+                    "required": ["label", "value"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["kind", "metrics"],
+        "additionalProperties": False,
+    },
+    "matrix": {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "matrix"},
+            "heading": {"type": "string", "maxLength": 24},
+            "x_axis": {"type": "string", "maxLength": 24},
+            "y_axis": {"type": "string", "maxLength": 24},
+            "cells": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 4,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "minLength": 1, "maxLength": 24},
+                        "body": {"type": "string", "maxLength": 60},
+                    },
+                    "required": ["title"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["kind", "cells"],
+        "additionalProperties": False,
+    },
+}
+
+SUPPORTED_BLOCK_KINDS = tuple(BLOCK_KIND_SCHEMAS)
 
 
 def build_semantic_deck_schema() -> dict[str, Any]:
@@ -76,160 +223,7 @@ def build_semantic_deck_schema() -> dict[str, Any]:
                             "minItems": 0,
                             "maxItems": 4,
                             "items": {
-                                "anyOf": [
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "kind": {"const": "bullets"},
-                                            "heading": {"type": "string", "maxLength": 24},
-                                            "items": {
-                                                "type": "array",
-                                                "minItems": 1,
-                                                "maxItems": 8,
-                                                "items": {"type": "string", "minLength": 2, "maxLength": 70},
-                                            },
-                                        },
-                                        "required": ["kind", "items"],
-                                        "additionalProperties": False,
-                                    },
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "kind": {"const": "comparison"},
-                                            "left_heading": {"type": "string", "minLength": 1, "maxLength": 24},
-                                            "left_items": {
-                                                "type": "array",
-                                                "minItems": 1,
-                                                "maxItems": 6,
-                                                "items": {"type": "string", "minLength": 2, "maxLength": 60},
-                                            },
-                                            "right_heading": {"type": "string", "minLength": 1, "maxLength": 24},
-                                            "right_items": {
-                                                "type": "array",
-                                                "minItems": 1,
-                                                "maxItems": 6,
-                                                "items": {"type": "string", "minLength": 2, "maxLength": 60},
-                                            },
-                                        },
-                                        "required": ["kind", "left_heading", "left_items", "right_heading", "right_items"],
-                                        "additionalProperties": False,
-                                    },
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "kind": {"const": "image"},
-                                            "mode": {"type": "string", "enum": ["placeholder", "local_path"]},
-                                            "caption": {"type": "string", "maxLength": 40},
-                                            "path": {"type": "string", "maxLength": 240},
-                                        },
-                                        "required": ["kind", "mode"],
-                                        "additionalProperties": False,
-                                    },
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "kind": {"const": "statement"},
-                                            "text": {"type": "string", "minLength": 2, "maxLength": 100},
-                                        },
-                                        "required": ["kind", "text"],
-                                        "additionalProperties": False,
-                                    },
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "kind": {"const": "timeline"},
-                                            "heading": {"type": "string", "maxLength": 24},
-                                            "stages": {
-                                                "type": "array",
-                                                "minItems": 2,
-                                                "maxItems": 6,
-                                                "items": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "title": {"type": "string", "minLength": 1, "maxLength": 24},
-                                                        "detail": {"type": "string", "maxLength": 60},
-                                                    },
-                                                    "required": ["title"],
-                                                    "additionalProperties": False,
-                                                },
-                                            },
-                                        },
-                                        "required": ["kind", "stages"],
-                                        "additionalProperties": False,
-                                    },
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "kind": {"const": "cards"},
-                                            "heading": {"type": "string", "maxLength": 24},
-                                            "cards": {
-                                                "type": "array",
-                                                "minItems": 2,
-                                                "maxItems": 4,
-                                                "items": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "title": {"type": "string", "minLength": 1, "maxLength": 24},
-                                                        "body": {"type": "string", "maxLength": 60},
-                                                    },
-                                                    "required": ["title"],
-                                                    "additionalProperties": False,
-                                                },
-                                            },
-                                        },
-                                        "required": ["kind", "cards"],
-                                        "additionalProperties": False,
-                                    },
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "kind": {"const": "stats"},
-                                            "heading": {"type": "string", "maxLength": 24},
-                                            "metrics": {
-                                                "type": "array",
-                                                "minItems": 2,
-                                                "maxItems": 6,
-                                                "items": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "label": {"type": "string", "minLength": 1, "maxLength": 24},
-                                                        "value": {"type": "string", "minLength": 1, "maxLength": 24},
-                                                        "note": {"type": "string", "maxLength": 40},
-                                                    },
-                                                    "required": ["label", "value"],
-                                                    "additionalProperties": False,
-                                                },
-                                            },
-                                        },
-                                        "required": ["kind", "metrics"],
-                                        "additionalProperties": False,
-                                    },
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "kind": {"const": "matrix"},
-                                            "heading": {"type": "string", "maxLength": 24},
-                                            "x_axis": {"type": "string", "maxLength": 24},
-                                            "y_axis": {"type": "string", "maxLength": 24},
-                                            "cells": {
-                                                "type": "array",
-                                                "minItems": 2,
-                                                "maxItems": 4,
-                                                "items": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "title": {"type": "string", "minLength": 1, "maxLength": 24},
-                                                        "body": {"type": "string", "maxLength": 60},
-                                                    },
-                                                    "required": ["title"],
-                                                    "additionalProperties": False,
-                                                },
-                                            },
-                                        },
-                                        "required": ["kind", "cells"],
-                                        "additionalProperties": False,
-                                    },
-                                ]
+                                "anyOf": [copy.deepcopy(schema) for schema in BLOCK_KIND_SCHEMAS.values()]
                             },
                         },
                     },

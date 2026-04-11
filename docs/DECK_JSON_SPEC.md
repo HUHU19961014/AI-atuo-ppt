@@ -1,66 +1,129 @@
 # Deck JSON Spec
 
-`SIE AutoPPT` now supports a structured `DeckSpec JSON` workflow:
+Current active workflow is the V2 semantic pipeline:
 
-1. `plan`: convert HTML input into a canonical deck spec
-2. `render`: render PPTX from deck spec JSON
-3. `make`: keep the original one-step HTML -> PPTX workflow
+1. `outline.json`
+2. `semantic_deck.json`
+3. `compiled deck.json`
+4. `.pptx`
 
-## Schema
+`v2-render` accepts either:
+
+- semantic deck JSON and compiles it on load
+- compiled deck JSON and renders it directly
+
+## Semantic Deck JSON
+
+This is the AI-facing structure. It describes slide intent and content blocks, not final coordinates.
 
 ```json
 {
-  "schema_version": "1.0",
-  "cover_title": "Project Title",
-  "body_pages": [
+  "meta": {
+    "title": "Enterprise AI Strategy",
+    "theme": "business_red",
+    "language": "zh-CN",
+    "author": "AI Auto PPT",
+    "version": "2.0"
+  },
+  "slides": [
     {
-      "page_key": "overview",
-      "title": "Overview",
-      "subtitle": "Optional subtitle",
-      "bullets": ["Point A", "Point B"],
-      "pattern_id": "solution_architecture",
-      "nav_title": "Overview",
-      "reference_style_id": null,
-      "payload": {
-        "layers": [
-          { "label": "L01", "title": "Layer 1", "detail": "..." }
-        ]
-      }
+      "slide_id": "s1",
+      "title": "Lead With Judgment",
+      "intent": "conclusion",
+      "key_message": "Start from the decision, not from background.",
+      "anti_argument": "Upfront investment and change cost must be included in the ROI view.",
+      "data_sources": [
+        {
+          "claim": "Pilot ROI",
+          "source": "Internal pilot estimate",
+          "confidence": "medium"
+        }
+      ],
+      "blocks": [
+        {
+          "kind": "statement",
+          "text": "Prioritize one core chain first, then expand."
+        }
+      ]
     }
   ]
 }
 ```
 
-## CLI
+## Compiled Deck JSON
 
-Plan HTML into `DeckSpec JSON`:
+This is the renderer-facing structure. Layout has already been chosen and normalized.
 
-```powershell
-python .\main.py plan `
-  --html .\samples\input\uat_plan_sample.html `
-  --plan-output .\projects\generated\planned.deck.json
+```json
+{
+  "meta": {
+    "title": "Enterprise AI Strategy",
+    "theme": "business_red",
+    "language": "zh-CN",
+    "author": "AI Auto PPT",
+    "version": "2.0"
+  },
+  "slides": [
+    {
+      "slide_id": "s1",
+      "layout": "title_only",
+      "title": "Prioritize one core chain first, then expand.",
+      "anti_argument": "Upfront investment and change cost must be included in the ROI view.",
+      "data_sources": [
+        {
+          "claim": "Pilot ROI",
+          "source": "Internal pilot estimate",
+          "confidence": "medium"
+        }
+      ]
+    }
+  ]
+}
 ```
 
-Render PPTX from `DeckSpec JSON`:
+## Main Commands
+
+Generate the full V2 pipeline:
 
 ```powershell
-python .\main.py render `
-  --deck-json .\projects\generated\planned.deck.json `
-  --output-name SIE_Rendered_From_Json
+python .\main.py make `
+  --topic "企业 AI 战略汇报"
 ```
 
-Keep the original one-step flow:
+Generate outline + semantic deck + compiled deck:
 
 ```powershell
-python .\main.py `
-  --html .\samples\input\uat_plan_sample.html `
-  --output-name SIE_AutoPPT
+python .\main.py v2-plan `
+  --topic "供应链追溯体系建设方案"
+```
+
+Render from an existing deck JSON:
+
+```powershell
+python .\main.py v2-render `
+  --deck-json .\output\generated_deck.json
+```
+
+Render with the actual SIE template from structured content:
+
+```powershell
+python .\main.py sie-render `
+  --structure-json .\projects\generated\traceability.structure.json `
+  --topic "供应链追溯体系建设方案"
+```
+
+Run a no-AI smoke test with the bundled sample:
+
+```powershell
+python .\main.py demo
 ```
 
 ## Notes
 
-- `pattern_id` is the requested layout decision.
-- `payload` is render-ready structured data used by Python renderers.
-- QA output now records `render_trace` so every page shows its actual render route and fallback reason.
-- `html_parser.py` remains a compatibility input adapter; `DeckSpec JSON` is the preferred machine-facing contract for future AI integration.
-- Reference-style pages are imported through a native PPTX merge path, and the bundled reference deck is metadata-aware rather than page-number-only.
+- Semantic deck JSON is the preferred AI contract for V2.
+- Compiled deck JSON is the stable renderer contract.
+- `sie-render` is the preferred branded delivery path when you need the actual SIE PPTX template instead of the generic V2 renderer.
+- Layout selection is performed locally by the deck director, not by the LLM choosing renderer coordinates.
+- The V2 compiler may diversify adjacent generic layouts, but it preserves strong semantic layouts such as timelines, matrices, stats dashboards, and explicit comparisons.
+- `anti_argument` and `data_sources` are first-class fields in the V2 path and should be preserved during compilation.
+- Render logs record rewrite behavior and warnings so each deck has a traceable render path.

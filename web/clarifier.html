@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIE Clarifier</title>
+  <style>
+    :root {
+      --bg: #f6f4f0;
+      --panel: rgba(255, 255, 255, 0.92);
+      --panel-soft: rgba(252, 250, 247, 0.9);
+      --ink: #243443;
+      --muted: #6f7c88;
+      --line: rgba(36, 52, 67, 0.12);
+      --accent: #ad053d;
+      --accent-soft: rgba(173, 5, 61, 0.08);
+      --accent-soft-2: rgba(173, 5, 61, 0.14);
+      --navy-soft: rgba(36, 52, 67, 0.06);
+      --shadow: 0 26px 50px rgba(33, 42, 54, 0.08);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(173, 5, 61, 0.08), transparent 26%),
+        radial-gradient(circle at right top, rgba(84, 102, 124, 0.11), transparent 22%),
+        linear-gradient(180deg, #faf8f5 0%, #f2efe9 100%);
+    }
+
+    .shell {
+      width: min(1280px, calc(100vw - 32px));
+      margin: 22px auto 30px;
+    }
+
+    .hero,
+    .panel,
+    .question-card,
+    .summary-card,
+    .result-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 18px;
+      padding: 26px;
+      margin-bottom: 20px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 240px;
+      height: 240px;
+      right: -80px;
+      top: -100px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(173, 5, 61, 0.18), transparent 68%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin-top: 16px;
+      font-size: clamp(34px, 4vw, 54px);
+      line-height: 1.02;
+      max-width: 10ch;
+    }
+
+    .hero p {
+      margin: 14px 0 0;
+      color: var(--muted);
+      line-height: 1.75;
+      font-size: 15px;
+      max-width: 58ch;
+    }
+
+    .hero-side {
+      display: grid;
+      gap: 12px;
+    }
+
+    .mini-card {
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      background: var(--panel-soft);
+      border: 1px solid rgba(36, 52, 67, 0.08);
+    }
+
+    .mini-card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+
+    .mini-card span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      padding: 22px;
+    }
+
+    .panel h2 {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    textarea,
+    input[type="text"] {
+      width: 100%;
+      border-radius: 18px;
+      border: 1px solid rgba(36, 52, 67, 0.14);
+      background: rgba(255, 255, 255, 0.88);
+      color: var(--ink);
+      font: inherit;
+      outline: none;
+      transition: border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    textarea:focus,
+    input[type="text"]:focus {
+      border-color: rgba(173, 5, 61, 0.42);
+      box-shadow: 0 0 0 4px rgba(173, 5, 61, 0.08);
+    }
+
+    textarea {
+      min-height: 156px;
+      resize: vertical;
+      padding: 16px 18px;
+      margin-top: 16px;
+    }
+
+    .top-actions,
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .top-actions {
+      margin-top: 16px;
+    }
+
+    .button {
+      appearance: none;
+      border: none;
+      border-radius: 999px;
+      padding: 12px 16px;
+      font: inherit;
+      font-size: 14px;
+      cursor: pointer;
+      transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+    }
+
+    .button.primary {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 10px 22px rgba(173, 5, 61, 0.22);
+    }
+
+    .button.secondary {
+      background: white;
+      color: var(--ink);
+      border: 1px solid rgba(36, 52, 67, 0.12);
+    }
+
+    .button.ghost {
+      background: rgba(36, 52, 67, 0.05);
+      color: var(--ink);
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .question-card,
+    .summary-card,
+    .result-card {
+      padding: 18px;
+    }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+
+    .badge.blocking {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: rgba(173, 5, 61, 0.16);
+    }
+
+    .badge.ready {
+      background: rgba(37, 115, 71, 0.12);
+      color: #257347;
+    }
+
+    .badge.partial {
+      background: rgba(36, 52, 67, 0.08);
+      color: var(--ink);
+    }
+
+    .question-header {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .question-no {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }
+
+    .question-title {
+      font-size: 17px;
+      line-height: 1.45;
+    }
+
+    .option-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .option {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(36, 52, 67, 0.10);
+      background: rgba(255, 255, 255, 0.72);
+      cursor: pointer;
+      transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+    }
+
+    .option:hover {
+      transform: translateY(-1px);
+      border-color: rgba(173, 5, 61, 0.26);
+    }
+
+    .option.active {
+      border-color: rgba(173, 5, 61, 0.42);
+      background: rgba(173, 5, 61, 0.06);
+    }
+
+    .option-key {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(36, 52, 67, 0.08);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .option.active .option-key {
+      background: var(--accent);
+      color: white;
+    }
+
+    .option-title {
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .recommended {
+      display: inline-flex;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(173, 5, 61, 0.10);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .option-desc {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    .custom-field {
+      margin-top: 12px;
+    }
+
+    .custom-field input {
+      padding: 12px 14px;
+    }
+
+    .summary-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .summary-item {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(36, 52, 67, 0.04);
+    }
+
+    .summary-item strong {
+      font-size: 13px;
+    }
+
+    .summary-item span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    .response-box,
+    .message-box,
+    .command-box {
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, 0.76);
+      border: 1px solid rgba(36, 52, 67, 0.1);
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--ink);
+      line-height: 1.7;
+      font-size: 13px;
+    }
+
+    .command-box {
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 12px;
+    }
+
+    .empty {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(36, 52, 67, 0.04);
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <section>
+        <div class="eyebrow">SIE Clarifier Flow</div>
+        <h1>先把模糊需求收敛，再让 PPT 生成。</h1>
+        <p>这个页面直接调用项目里的真实 <code>clarifier</code> 能力。你先输入一句模糊请求，系统会自动生成选择题卡片；你可以直接点推荐项，也可以补充自定义答案。只有关键信息收敛到位，才放行到后面的 PPT 规划链路。</p>
+        <textarea id="requestInput">帮我做PPT</textarea>
+        <div class="top-actions">
+          <button class="button primary" id="analyzeButton">开始澄清</button>
+          <button class="button secondary" id="skipButton">跳过并继续</button>
+          <button class="button ghost" id="resetButton">重置示例</button>
+        </div>
+      </section>
+      <section class="hero-side">
+        <article class="mini-card">
+          <strong>为什么要先问清楚</strong>
+          <span>当主题、用途、受众、页数、风格都不明确时，直接生成通常会出现“结构像 PPT，但不是你想要的 PPT”。</span>
+        </article>
+        <article class="mini-card">
+          <strong>这版已经接了真实后端</strong>
+          <span>当前页面调用本地 <code>/api/clarify</code>，不再是纯前端猜测。浏览器点选完，返回的是项目真实澄清结果。</span>
+        </article>
+        <article class="mini-card">
+          <strong>建议的下一步</strong>
+          <span>收敛完成后，可以把得到的结果直接喂给 <code>v2-plan</code> 或 <code>make</code>，减少来回追问和错误生成。</span>
+        </article>
+      </section>
+    </section>
+
+    <section class="layout">
+      <section class="panel">
+        <h2>澄清卡片</h2>
+        <p class="muted">如果当前请求不够清楚，系统会优先给出可点击的选项，并附推荐项。你也可以在每道题下方填自定义内容。</p>
+        <div class="status-row" id="statusRow"></div>
+        <div class="stack" id="questionStack">
+          <div class="empty">输入一个请求后点击“开始澄清”，这里会出现问题卡片。</div>
+        </div>
+        <div class="actions" style="margin-top:16px;">
+          <button class="button primary" id="continueButton">提交这一轮回答</button>
+          <button class="button secondary" id="copyReplyButton">复制回复模板</button>
+        </div>
+      </section>
+
+      <section class="stack">
+        <article class="summary-card">
+          <div class="section-title">当前已识别信息</div>
+          <div class="summary-grid" id="summaryGrid">
+            <div class="empty">还没有结果。</div>
+          </div>
+        </article>
+
+        <article class="result-card">
+          <div class="section-title">系统回复</div>
+          <div class="message-box" id="messageBox">等待澄清结果。</div>
+        </article>
+
+        <article class="result-card">
+          <div class="section-title">推荐回复模板</div>
+          <div class="response-box" id="responseBox">等待澄清结果。</div>
+        </article>
+
+        <article class="result-card">
+          <div class="section-title">下一步命令建议</div>
+          <div class="command-box" id="commandBox">等待澄清完成后生成。</div>
+        </article>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      session: "",
+      result: null,
+      answers: {},
+    };
+
+    const requestInput = document.getElementById("requestInput");
+    const questionStack = document.getElementById("questionStack");
+    const statusRow = document.getElementById("statusRow");
+    const summaryGrid = document.getElementById("summaryGrid");
+    const messageBox = document.getElementById("messageBox");
+    const responseBox = document.getElementById("responseBox");
+    const commandBox = document.getElementById("commandBox");
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function defaultAnswerMap(result) {
+      const answerMap = {};
+      (result.questions || []).forEach((question) => {
+        const recommended = (question.options || []).find((option) => option.recommended);
+        answerMap[question.dimension] = {
+          key: recommended ? recommended.key : "",
+          custom: "",
+        };
+      });
+      return answerMap;
+    }
+
+    function syncQuestionInputs() {
+      document.querySelectorAll("[data-question-dimension]").forEach((card) => {
+        const dimension = card.dataset.questionDimension;
+        const entry = state.answers[dimension] || { key: "", custom: "" };
+        card.querySelectorAll(".option").forEach((option) => {
+          option.classList.toggle("active", option.dataset.key === entry.key);
+        });
+        const customInput = card.querySelector("input[data-role='custom']");
+        if (customInput && customInput.value !== entry.custom) {
+          customInput.value = entry.custom;
+        }
+      });
+    }
+
+    function renderStatus(result) {
+      const chips = [];
+      if (result.blocking) {
+        chips.push(`<span class="badge blocking">阻塞式澄清</span>`);
+      }
+      if (result.status === "ready") {
+        chips.push(`<span class="badge ready">已可生成</span>`);
+      } else {
+        chips.push(`<span class="badge partial">${escapeHtml(result.guide_mode || "clarify")}</span>`);
+      }
+      if (Array.isArray(result.missing_dimensions) && result.missing_dimensions.length) {
+        chips.push(`<span class="badge partial">待补 ${result.missing_dimensions.length} 项</span>`);
+      }
+      statusRow.innerHTML = chips.join("");
+    }
+
+    function renderQuestions(result) {
+      if (!result.questions || !result.questions.length) {
+        questionStack.innerHTML = `<div class="empty">当前请求已经足够清楚，可以直接进入生成流程。</div>`;
+        return;
+      }
+
+      questionStack.innerHTML = result.questions.map((question, index) => {
+        const options = (question.options || []).map((option) => `
+          <button type="button" class="option" data-key="${escapeHtml(option.key)}">
+            <span class="option-key">${escapeHtml(option.key)}</span>
+            <span>
+              <span class="option-title">
+                ${escapeHtml(option.value)}
+                ${option.recommended ? '<span class="recommended">推荐</span>' : ''}
+              </span>
+              <span class="option-desc">${escapeHtml(option.description || "点击即可选中")}</span>
+            </span>
+          </button>
+        `).join("");
+
+        return `
+          <article class="question-card" data-question-dimension="${escapeHtml(question.dimension)}" data-question-index="${index + 1}">
+            <div class="question-header">
+              <span class="question-no">${index + 1}</span>
+              <div class="question-title">${escapeHtml(question.prompt)}</div>
+            </div>
+            ${options ? `<div class="option-grid">${options}</div>` : ""}
+            <div class="custom-field">
+              <input type="text" data-role="custom" placeholder="也可以直接输入自定义答案">
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      questionStack.querySelectorAll(".option").forEach((button) => {
+        button.addEventListener("click", () => {
+          const card = button.closest("[data-question-dimension]");
+          const dimension = card.dataset.questionDimension;
+          const current = state.answers[dimension] || { key: "", custom: "" };
+          state.answers[dimension] = {
+            ...current,
+            key: current.key === button.dataset.key ? "" : button.dataset.key,
+          };
+          syncQuestionInputs();
+        });
+      });
+
+      questionStack.querySelectorAll("input[data-role='custom']").forEach((input) => {
+        input.addEventListener("input", () => {
+          const card = input.closest("[data-question-dimension]");
+          const dimension = card.dataset.questionDimension;
+          const current = state.answers[dimension] || { key: "", custom: "" };
+          state.answers[dimension] = {
+            ...current,
+            custom: input.value,
+          };
+        });
+      });
+
+      syncQuestionInputs();
+    }
+
+    function renderSummary(result) {
+      const items = [
+        ["状态", result.status || "-"],
+        ["主题", result.requirements?.topic || "待补充"],
+        ["用途", result.requirements?.purpose || "待补充"],
+        ["受众", result.requirements?.audience || "待补充"],
+        ["页数", result.requirements?.slide_hint || (result.chapters ? `${result.chapters}页` : "待补充")],
+        ["风格", result.requirements?.style || "待补充"],
+        ["核心内容", result.requirements?.core_content || "待补充"],
+      ];
+      summaryGrid.innerHTML = items.map(([label, value]) => `
+        <article class="summary-item">
+          <strong>${escapeHtml(label)}</strong>
+          <span>${escapeHtml(value)}</span>
+        </article>
+      `).join("");
+    }
+
+    function buildCommand(result) {
+      if (!result || (result.status !== "ready" && !result.skipped)) {
+        return "等待澄清完成后生成。";
+      }
+      const safeTopic = (result.topic || "").replaceAll('"', '\\"');
+      const parts = [
+        "python -m sie_autoppt make \\",
+        `  --topic "${safeTopic}" \\`,
+      ];
+      if (result.audience) {
+        parts.push(`  --audience "${String(result.audience).replaceAll('"', '\\"')}" \\`);
+      }
+      if (result.brief) {
+        parts.push(`  --brief "${String(result.brief).replaceAll('"', '\\"')}" \\`);
+      }
+      parts.push("  --generation-mode deep \\");
+      if (typeof result.chapters === "number" && result.chapters > 0) {
+        parts.push(`  --chapters ${result.chapters} \\`);
+      }
+      parts.push("  --output-name Clarified_Deck");
+      return parts.join("\n");
+    }
+
+    function renderResult(result) {
+      state.result = result;
+      state.session = JSON.stringify(result.session || {});
+      state.answers = defaultAnswerMap(result);
+      renderStatus(result);
+      renderQuestions(result);
+      renderSummary(result);
+      messageBox.textContent = result.message || "无";
+      responseBox.textContent = result.response_template || "当前无需继续回答。";
+      commandBox.textContent = buildCommand(result);
+    }
+
+    async function postClarify(message) {
+      const response = await fetch("/api/clarify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          session: state.session,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "clarify failed");
+      }
+      return payload;
+    }
+
+    function buildFollowupMessage() {
+      if (!state.result || !state.result.questions) {
+        return "";
+      }
+      return state.result.questions.map((question, index) => {
+        const answer = state.answers[question.dimension] || { key: "", custom: "" };
+        if (answer.custom && answer.custom.trim()) {
+          return `${index + 1}. ${answer.custom.trim()}`;
+        }
+        if (answer.key) {
+          return `${index + 1}${answer.key}`;
+        }
+        return `${index + 1}. `;
+      }).join("\n");
+    }
+
+    async function startClarify() {
+      const message = requestInput.value.trim();
+      if (!message) {
+        alert("先输入一句需求。");
+        return;
+      }
+      const result = await postClarify(message);
+      renderResult(result);
+    }
+
+    async function continueClarify() {
+      if (!state.result) {
+        await startClarify();
+        return;
+      }
+      const followup = buildFollowupMessage();
+      const result = await postClarify(followup);
+      renderResult(result);
+    }
+
+    async function skipClarify() {
+      const result = await postClarify("直接生成");
+      renderResult(result);
+    }
+
+    function resetDemo() {
+      requestInput.value = "帮我做PPT";
+      state.session = "";
+      state.result = null;
+      state.answers = {};
+      questionStack.innerHTML = `<div class="empty">输入一个请求后点击“开始澄清”，这里会出现问题卡片。</div>`;
+      summaryGrid.innerHTML = `<div class="empty">还没有结果。</div>`;
+      statusRow.innerHTML = "";
+      messageBox.textContent = "等待澄清结果。";
+      responseBox.textContent = "等待澄清结果。";
+      commandBox.textContent = "等待澄清完成后生成。";
+    }
+
+    async function copyResponseTemplate() {
+      const text = state.result ? buildFollowupMessage() || state.result.response_template || "" : "";
+      if (!text) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        window.prompt("复制下面的内容：", text);
+      }
+    }
+
+    document.getElementById("analyzeButton").addEventListener("click", () => startClarify().catch((error) => alert(error.message)));
+    document.getElementById("continueButton").addEventListener("click", () => continueClarify().catch((error) => alert(error.message)));
+    document.getElementById("skipButton").addEventListener("click", () => skipClarify().catch((error) => alert(error.message)));
+    document.getElementById("resetButton").addEventListener("click", resetDemo);
+    document.getElementById("copyReplyButton").addEventListener("click", copyResponseTemplate);
+
+    resetDemo();
+  </script>
+</body>
+</html>

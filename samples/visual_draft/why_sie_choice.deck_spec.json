@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "cover_title": "为什么选择 SiE 赛意",
+  "body_pages": [
+    {
+      "page_key": "why_sie_choice",
+      "title": "选择赛意，是选择更低风险的追溯合规落地路径",
+      "subtitle": "面向客户决策层的一页销售说服稿",
+      "bullets": [
+        "TUV / SGS / Sedex / EcoVadis 审核经验",
+        "96.5% 客户保有率",
+        "多轮迭代成熟产品能力",
+        "少走弯路、降低试错、加快审核准备"
+      ],
+      "pattern_id": "claim_breakdown",
+      "nav_title": "Why SiE",
+      "reference_style_id": null,
+      "payload": {
+        "headline": "让追溯与合规更快落地",
+        "claims": [
+          {
+            "label": "认证经验",
+            "value": "TUV / SGS / Sedex / EcoVadis",
+            "detail": "熟悉第三方审核关注点"
+          },
+          {
+            "label": "客户验证",
+            "value": "96.5% 客户保有率",
+            "detail": "持续续约和长期合作"
+          },
+          {
+            "label": "行业案例",
+            "value": "晶澳 / 天合 / 正泰 / 横店东磁",
+            "detail": "覆盖多类供应链追溯场景"
+          }
+        ],
+        "footer": "少走弯路，降低试错，确保项目按期落地"
+      }
+    }
+  ]
+}

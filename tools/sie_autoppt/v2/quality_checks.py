@@ -125,6 +125,22 @@ class QualityGateResult:
         }
 
     @property
+    def blocking(self) -> bool:
+        return bool(self.errors)
+
+    @property
+    def soft_issue_count(self) -> int:
+        return len(self.warnings) + len(self.high)
+
+    @property
+    def statistics(self) -> dict[str, int | bool]:
+        return {
+            **self.summary,
+            "soft_issue_count": self.soft_issue_count,
+            "blocking": self.blocking,
+        }
+
+    @property
     def slide_count(self) -> int:
         if self.validated_deck is None:
             return 0
@@ -141,6 +157,8 @@ class QualityGateResult:
             "high": [issue.to_dict() for issue in self.high],
             "errors": [issue.to_dict() for issue in self.errors],
             "summary": self.summary,
+            "statistics": self.statistics,
+            "blocking": self.blocking,
             "auto_score": self.auto_score,
             "auto_level": self.auto_level,
         }
@@ -704,7 +722,7 @@ def calculate_auto_score(
     """Score rule-based content risk for gating, not for subjective visual QA."""
     scoring = RULE_CONFIG.scoring
     # The penalty weights come from default_rules.toml so the gate policy stays
-    # configurable and intentionally separate from visual_review's 5x5 scorecard.
+    # configurable and intentionally separate from visual_review's subjective scorecard.
     weighted_penalty = (
         warning_count * scoring.warning_weight
         + high_count * scoring.high_weight

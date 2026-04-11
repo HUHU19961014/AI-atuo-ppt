@@ -10,6 +10,15 @@ param(
 $ErrorActionPreference = "Stop"
 $ProjectRoot = $PSScriptRoot
 
+throw @"
+run_sie_autoppt.ps1 has been retired.
+
+Use one of these paths instead:
+- Primary V2 workflow: python .\main.py make --topic "企业 AI 战略汇报"
+- No-AI local smoke: python .\main.py demo
+- Legacy HTML compatibility validation only: powershell -ExecutionPolicy Bypass -File .\tools\legacy_html_regression_check.ps1
+"@
+
 if (-not $Template) { $Template = Join-Path $ProjectRoot "assets\templates\sie_template.pptx" }
 if (-not $Html) { $Html = Join-Path $ProjectRoot "samples\input\uat_plan_sample.html" }
 if (-not $OutputDir) { $OutputDir = Join-Path $ProjectRoot "output" }

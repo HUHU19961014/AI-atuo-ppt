@@ -51,13 +51,17 @@ python -m sie_autoppt v2-review --deck-json .\output\generated_deck.json
 python -m sie_autoppt v2-iterate --deck-json .\output\generated_deck.json --max-rounds 2
 ```
 
-The reviewer now scores exactly these 5 dimensions:
+The reviewer now scores exactly these 9 dimensions:
 
 - structure
 - title_quality
 - content_density
 - layout_stability
 - deliverability
+- brand_consistency
+- data_visualization
+- info_hierarchy
+- audience_fit
 
 And the auto-fix loop now follows this guardrail:
 

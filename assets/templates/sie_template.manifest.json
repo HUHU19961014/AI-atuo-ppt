@@ -10,7 +10,7 @@
   "slide_pools": {
     "directory": [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40],
     "body": [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41],
-    "ending": 46
+    "ending": 42
   },
   "selectors": {
     "theme_title": {
@@ -60,6 +60,42 @@
       "balanced": 90,
       "dense": 120
     }
+  },
+  "pattern_variants": {
+    "general_business": [
+      {
+        "id": "general_business_3",
+        "capacity": 3,
+        "description": "Three-card business grid for concise parallel points"
+      },
+      {
+        "id": "general_business_5",
+        "capacity": 5,
+        "description": "Five-item compact business grid for moderate-density points"
+      },
+      {
+        "id": "general_business_9",
+        "capacity": 9,
+        "description": "Dense business grid for many short points"
+      }
+    ],
+    "process_flow": [
+      {
+        "id": "process_flow_3",
+        "capacity": 3,
+        "description": "Three-step process flow"
+      },
+      {
+        "id": "process_flow_5",
+        "capacity": 5,
+        "description": "Five-step process flow"
+      },
+      {
+        "id": "process_flow_9",
+        "capacity": 9,
+        "description": "Dense multi-step process flow"
+      }
+    ]
   },
   "render_layouts": {
     "general_business": {

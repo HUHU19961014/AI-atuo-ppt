@@ -52,7 +52,7 @@ def deck_spec_from_dict(data: dict[str, object]) -> DeckSpec:
 
 
 def load_deck_spec(deck_spec_path: Path) -> DeckSpec:
-    data = json.loads(deck_spec_path.read_text(encoding="utf-8"))
+    data = json.loads(deck_spec_path.read_text(encoding="utf-8-sig"))
     return deck_spec_from_dict(data)
 
 

@@ -206,7 +206,15 @@ class CliTests(unittest.TestCase):
                         {"point": "建立供应链地图", "evidence": "覆盖关键供应商与节点"},
                         {"point": "保留审计证据", "evidence": "支持抽查与举证"},
                     ],
-                }
+                },
+                {
+                    "title": "实施路径",
+                    "key_message": "分阶段完成主数据、流程与审计闭环。",
+                    "arguments": [
+                        {"point": "先试点后推广", "evidence": "降低切换风险"},
+                        {"point": "统一审计口径", "evidence": "提升外审通过率"},
+                    ],
+                },
             ],
         }
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -245,12 +253,19 @@ class CliTests(unittest.TestCase):
                         temp_dir,
                     ],
                 ),
+                patch(
+                    "tools.sie_autoppt.cli.apply_ai_content_layout_to_deck_spec",
+                    side_effect=lambda deck_spec, model=None: (
+                        deck_spec,
+                        [{"page_index": 1, "old_pattern_id": "general_business", "new_pattern_id": "general_business", "rationale": "mock"}],
+                    ),
+                ),
                 patch("tools.sie_autoppt.cli.generate_ppt_artifacts_from_deck_spec", return_value=fake_render_result) as render_mock,
                 redirect_stdout(stdout),
             ):
                 cli.main()
 
-            deck_spec_path = Path(temp_dir) / "Enterprise-AI-PPT.deck_spec.json"
+            deck_spec_path = Path(temp_dir) / "Enterprise-AI-PPT.deck_spec.ai.json"
             render_trace_path = Path(temp_dir) / "Enterprise-AI-PPT.render_trace.json"
             self.assertTrue(deck_spec_path.exists())
             self.assertTrue(render_trace_path.exists())
@@ -295,6 +310,49 @@ class CliTests(unittest.TestCase):
         )
         self.assertIn("--topic", stderr.getvalue())
 
+    def test_sie_render_rejects_single_page_deck_spec_and_guides_onepage(self):
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_spec_path = Path(temp_dir) / "deck_spec.json"
+            deck_spec_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "cover_title": "x",
+                        "body_pages": [
+                            {
+                                "page_key": "p1",
+                                "title": "t",
+                                "subtitle": "",
+                                "bullets": ["a"],
+                                "pattern_id": "claim_breakdown",
+                                "nav_title": "",
+                                "reference_style_id": None,
+                                "payload": {},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "sie-autoppt",
+                        "sie-render",
+                        "--deck-spec-json",
+                        str(deck_spec_path),
+                    ],
+                ),
+                redirect_stderr(stderr),
+            ):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main()
+
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("must use the 'onepage' command", stderr.getvalue())
+
     def test_sie_render_can_generate_structure_with_ai_from_topic(self):
         stdout = io.StringIO()
         fake_structure = cli.StructureSpec.from_dict(
@@ -309,7 +367,15 @@ class CliTests(unittest.TestCase):
                             {"point": "明确负责人", "evidence": "减少遗漏"},
                             {"point": "锁定时限", "evidence": "避免逾期"},
                         ],
-                    }
+                    },
+                    {
+                        "title": "审核准备",
+                        "key_message": "按节点准备证据和追溯链路。",
+                        "arguments": [
+                            {"point": "先整理主数据", "evidence": "减少返工"},
+                            {"point": "统一资料模板", "evidence": "便于第三方核查"},
+                        ],
+                    },
                 ],
             }
         )
@@ -351,6 +417,13 @@ class CliTests(unittest.TestCase):
                     ],
                 ),
                 patch("tools.sie_autoppt.cli.generate_structure_with_ai", return_value=fake_structure_result) as structure_mock,
+                patch(
+                    "tools.sie_autoppt.cli.apply_ai_content_layout_to_deck_spec",
+                    side_effect=lambda deck_spec, model=None: (
+                        deck_spec,
+                        [{"page_index": 1, "old_pattern_id": "general_business", "new_pattern_id": "general_business", "rationale": "mock"}],
+                    ),
+                ),
                 patch("tools.sie_autoppt.cli.generate_ppt_artifacts_from_deck_spec", return_value=fake_render_result) as render_mock,
                 redirect_stdout(stdout),
             ):
@@ -361,7 +434,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(request.topic, "赛意系统文件上传清单")
             self.assertEqual(request.brief, "按责任人与时限整理上传要求")
 
-            deck_spec_path = Path(temp_dir) / "Enterprise-AI-PPT.deck_spec.json"
+            deck_spec_path = Path(temp_dir) / "Enterprise-AI-PPT.deck_spec.ai.json"
             render_trace_path = Path(temp_dir) / "Enterprise-AI-PPT.render_trace.json"
             self.assertTrue(deck_spec_path.exists())
             self.assertTrue(render_trace_path.exists())
@@ -453,6 +526,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(lines[2], str(fake_score_path))
             self.assertEqual(lines[3], str(fake_ppt_path))
 
+    @unittest.skip("onepage now requires AI; fallback mode removed")
     def test_onepage_falls_back_when_ai_key_is_missing(self):
         stdout = io.StringIO()
         fake_review_path = Path("C:/tmp/fallback.review.json")
@@ -492,6 +566,34 @@ class CliTests(unittest.TestCase):
             lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
             self.assertEqual(lines[0], str(brief_output_path))
             self.assertEqual(lines[3], str(fake_ppt_path))
+
+    def test_onepage_requires_ai_and_fails_when_ai_key_is_missing(self):
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "sie-autoppt",
+                        "onepage",
+                        "--topic",
+                        "供应链周报",
+                        "--brief",
+                        "按状态、风险和动作组织一页汇报",
+                        "--output-dir",
+                        temp_dir,
+                    ],
+                ),
+                patch(
+                    "tools.sie_autoppt.cli.generate_structure_with_ai",
+                    side_effect=OpenAIConfigurationError("OPENAI_API_KEY is required for AI planning."),
+                ),
+                redirect_stderr(stderr),
+            ):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main()
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("AI is mandatory for 'onepage' content/layout planning", stderr.getvalue())
 
     def test_v2_plan_reuses_generation_context_between_outline_and_semantic_deck(self):
         stdout = io.StringIO()
@@ -608,6 +710,132 @@ class CliTests(unittest.TestCase):
 
         self.assertIn("'make' routes to semantic v2-make", stderr.getvalue())
         self.assertIn("deck.pptx", stdout.getvalue())
+
+    def test_visual_draft_requires_deck_spec_json(self):
+        stderr = io.StringIO()
+        with (
+            patch("sys.argv", ["sie-autoppt", "visual-draft", "--output-dir", "C:/tmp"]),
+            redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main()
+
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--deck-spec-json is required when command is 'visual-draft'", stderr.getvalue())
+
+    def test_visual_draft_prints_artifact_paths(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_artifacts = type(
+                "VisualDraftArtifacts",
+                (),
+                {
+                    "visual_spec_path": Path(temp_dir) / "why.visual_spec.json",
+                    "preview_html_path": Path(temp_dir) / "why.preview.html",
+                    "preview_png_path": Path(temp_dir) / "why.preview.png",
+                    "visual_score_path": Path(temp_dir) / "why.visual_score.json",
+                    "ai_review_path": Path(temp_dir) / "why.ai_visual_review.json",
+                },
+            )()
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "sie-autoppt",
+                        "visual-draft",
+                        "--deck-spec-json",
+                        "C:/tmp/deck_spec.json",
+                        "--output-dir",
+                        temp_dir,
+                        "--output-name",
+                        "why",
+                    ],
+                ),
+                patch("tools.sie_autoppt.cli.load_deck_spec", return_value=object()) as load_mock,
+                patch("tools.sie_autoppt.cli.generate_visual_draft_artifacts", return_value=fake_artifacts) as run_mock,
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+        load_mock.assert_called_once_with(Path("C:/tmp/deck_spec.json"))
+        self.assertEqual(run_mock.call_args.kwargs["output_name"], "why")
+        self.assertFalse(run_mock.call_args.kwargs["with_ai_review"])
+        self.assertEqual(run_mock.call_args.kwargs["visual_rules_path"], "")
+        lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+        self.assertEqual(len(lines), 5)
+        self.assertTrue(lines[0].endswith(".visual_spec.json"))
+        self.assertTrue(lines[4].endswith(".ai_visual_review.json"))
+
+    def test_visual_draft_with_ai_flag_is_forwarded(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_artifacts = type(
+                "VisualDraftArtifacts",
+                (),
+                {
+                    "visual_spec_path": Path(temp_dir) / "why.visual_spec.json",
+                    "preview_html_path": Path(temp_dir) / "why.preview.html",
+                    "preview_png_path": Path(temp_dir) / "why.preview.png",
+                    "visual_score_path": Path(temp_dir) / "why.visual_score.json",
+                    "ai_review_path": Path(temp_dir) / "why.ai_visual_review.json",
+                },
+            )()
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "sie-autoppt",
+                        "visual-draft",
+                        "--deck-spec-json",
+                        "C:/tmp/deck_spec.json",
+                        "--output-dir",
+                        temp_dir,
+                        "--with-ai-review",
+                    ],
+                ),
+                patch("tools.sie_autoppt.cli.load_deck_spec", return_value=object()),
+                patch("tools.sie_autoppt.cli.generate_visual_draft_artifacts", return_value=fake_artifacts) as run_mock,
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+        self.assertTrue(run_mock.call_args.kwargs["with_ai_review"])
+
+    def test_visual_draft_with_rules_path_is_forwarded(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_artifacts = type(
+                "VisualDraftArtifacts",
+                (),
+                {
+                    "visual_spec_path": Path(temp_dir) / "why.visual_spec.json",
+                    "preview_html_path": Path(temp_dir) / "why.preview.html",
+                    "preview_png_path": Path(temp_dir) / "why.preview.png",
+                    "visual_score_path": Path(temp_dir) / "why.visual_score.json",
+                    "ai_review_path": Path(temp_dir) / "why.ai_visual_review.json",
+                },
+            )()
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "sie-autoppt",
+                        "visual-draft",
+                        "--deck-spec-json",
+                        "C:/tmp/deck_spec.json",
+                        "--output-dir",
+                        temp_dir,
+                        "--visual-rules-path",
+                        "C:/tmp/visual_rules.toml",
+                    ],
+                ),
+                patch("tools.sie_autoppt.cli.load_deck_spec", return_value=object()),
+                patch("tools.sie_autoppt.cli.generate_visual_draft_artifacts", return_value=fake_artifacts) as run_mock,
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+        self.assertEqual(run_mock.call_args.kwargs["visual_rules_path"], "C:/tmp/visual_rules.toml")
 
     def test_make_without_topic_or_outline_errors(self):
         stderr = io.StringIO()

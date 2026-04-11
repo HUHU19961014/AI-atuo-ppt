@@ -1,9 +1,16 @@
 import unittest
 
 from tools.sie_autoppt.v2.deck_director import compile_semantic_deck_payload, plan_semantic_slide_layout
+from tools.sie_autoppt.v2.semantic_schema_builder import BLOCK_KIND_SCHEMAS, SUPPORTED_BLOCK_KINDS, build_semantic_deck_schema
 
 
 class V2DeckDirectorTests(unittest.TestCase):
+    def test_supported_block_kinds_are_derived_from_schema_registry(self):
+        self.assertEqual(tuple(BLOCK_KIND_SCHEMAS), SUPPORTED_BLOCK_KINDS)
+        schema = build_semantic_deck_schema()
+        block_variants = schema["properties"]["slides"]["items"]["properties"]["blocks"]["items"]["anyOf"]
+        self.assertEqual(SUPPORTED_BLOCK_KINDS, tuple(variant["properties"]["kind"]["const"] for variant in block_variants))
+
     def test_plan_semantic_slide_layout_prefers_title_content_for_simple_narrative(self):
         plan = plan_semantic_slide_layout(
             {
@@ -292,6 +299,77 @@ class V2DeckDirectorTests(unittest.TestCase):
         slide = validated.deck.slides[0]
         self.assertEqual(slide.layout, "cards_grid")
         self.assertEqual(len(slide.cards), 3)
+
+    def test_compile_deck_diversifies_adjacent_generic_content_layouts(self):
+        validated = compile_semantic_deck_payload(
+            {
+                "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "title": "Context",
+                        "intent": "narrative",
+                        "blocks": [{"kind": "bullets", "items": ["Set context", "Clarify scope", "Align constraints"]}],
+                    },
+                    {
+                        "slide_id": "s2",
+                        "title": "Actions",
+                        "intent": "analysis",
+                        "blocks": [
+                            {
+                                "kind": "bullets",
+                                "heading": "Actions",
+                                "items": ["Assess baseline", "Design workflow", "Run pilot", "Scale rollout"],
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+
+        first, second = validated.deck.slides
+        self.assertEqual(first.layout, "title_content")
+        self.assertEqual(second.layout, "two_columns")
+        self.assertEqual(second.left.heading, "Actions")
+
+    def test_compile_deck_preserves_strong_adjacent_semantic_layouts(self):
+        validated = compile_semantic_deck_payload(
+            {
+                "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "title": "Risk A",
+                        "intent": "analysis",
+                        "blocks": [
+                            {
+                                "kind": "matrix",
+                                "cells": [
+                                    {"title": "Low-Low", "body": "Monitor"},
+                                    {"title": "High-High", "body": "Escalate"},
+                                ],
+                            }
+                        ],
+                    },
+                    {
+                        "slide_id": "s2",
+                        "title": "Risk B",
+                        "intent": "analysis",
+                        "blocks": [
+                            {
+                                "kind": "matrix",
+                                "cells": [
+                                    {"title": "Low-High", "body": "Prepare"},
+                                    {"title": "High-Low", "body": "Assign"},
+                                ],
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+
+        self.assertEqual([slide.layout for slide in validated.deck.slides], ["matrix_grid", "matrix_grid"])
 
 if __name__ == "__main__":
     unittest.main()

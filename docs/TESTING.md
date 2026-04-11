@@ -1,12 +1,18 @@
 # Testing
 
-`SIE-autoppt` 当前建议分成 5 类测试：
+`SIE-autoppt` 当前建议分成 4 类主测试与 1 类条件性兼容测试：
 
 1. 单元测试
 2. 轻量集成测试
-3. `tools/legacy_html_regression_check.ps1` legacy HTML 样例回归
+3. `python .\main.py demo` 无 AI 冒烟回归
 4. `tools/v2_regression_check.ps1` V2 deck 回归
-5. 少量人工视觉验收
+5. 兼容测试：`tools/legacy_html_regression_check.ps1` legacy HTML 样例回归
+
+## 基线原则
+
+- 只要测试会落到实际渲染、视觉检查、发布验收，就优先使用仓库内的 SIE 模板基线：`assets/templates/sie_template.pptx`。
+- 其他 theme、外部模板、参考样式更适合作为补充覆盖，不应替代 SIE 模板的主回归。
+- 如果某条测试没有直接显式传模板，也应确认它最终走的是当前默认的 SIE 模板链路。
 
 ## 推荐安装
 
@@ -34,7 +40,8 @@ python -m pip install pytest
 - Deck planning 与章节钳制
 - 模板 manifest 加载
 - 最小生成链路
-- `QA.txt` / `QA.json` 结构与关键字段
+- 条件性 `QA.txt` / `QA.json` 结构与关键字段
+- `demo` 无 API 冒烟路径
 
 优先运行方式：
 
@@ -54,16 +61,32 @@ PowerShell 快捷入口：
 powershell -ExecutionPolicy Bypass -File .\tools\run_unit_tests.ps1
 ```
 
-Legacy HTML 样例回归：
+推荐先跑的主路径检查：
+
+```powershell
+python -m pytest tests -q
+python .\main.py demo
+powershell -ExecutionPolicy Bypass -File .\tools\v2_regression_check.ps1
+```
+
+这些主路径检查应默认视为 SIE 模板基线回归。
+
+可选真实 AI 小样本回归：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_real_ai_smoke.ps1
+```
+
+说明：
+
+- 这个 smoke test 默认不参与常规回归，只有显式设置 `OPENAI_API_KEY` 并运行脚本时才执行。
+- 默认使用 `quick` 模式控制成本和时延；如需更接近正式主链路，可传 `-GenerationMode deep`。
+- 如需把 smoke test 跑到实际 PPT 渲染阶段，可传 `-WithRender`，但这会增加耗时和本机依赖。
+
+兼容层回归，仅在修改 legacy HTML/template 路径时需要：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\legacy_html_regression_check.ps1
-```
-
-V2 deck 回归：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\v2_regression_check.ps1
 ```
 
 ## 需要人工配合的部分
@@ -93,11 +116,19 @@ powershell -ExecutionPolicy Bypass -File .\tools\v2_regression_check.ps1
 powershell -ExecutionPolicy Bypass -File .\tools\prepare_visual_review.ps1
 ```
 
+说明：
+
+- `prepare_visual_review.ps1` 属于内部辅助脚本，不是普通用户主路径。
+- 它会使用仓库内置的 V2 `deck.json` 回归样例，而不是旧的 HTML 样例。
+- 这批视觉验收默认也应以当前 SIE 模板输出作为签收基线。
+- 视觉复核若拿不到 PNG 预览，会退化成基于 Deck 内容的保守评审。
+
 人工验收说明见 [docs/HUMAN_VISUAL_QA.md](./HUMAN_VISUAL_QA.md)。
 
 ## 当前测试入口
 
 - 单元与轻集成测试：`tests/`
 - 自动化运行入口：[tools/run_unit_tests.ps1](../tools/run_unit_tests.ps1)
-- Legacy HTML 回归入口：[tools/legacy_html_regression_check.ps1](../tools/legacy_html_regression_check.ps1)
 - V2 回归入口：[tools/v2_regression_check.ps1](../tools/v2_regression_check.ps1)
+- 真实 AI smoke 入口（按需执行）：[tools/run_real_ai_smoke.ps1](../tools/run_real_ai_smoke.ps1)
+- Legacy HTML 回归入口（兼容层，仅按需执行）：[tools/legacy_html_regression_check.ps1](../tools/legacy_html_regression_check.ps1)

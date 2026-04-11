@@ -41,6 +41,12 @@ PATTERN_ALIASES: dict[str, tuple[str, ...]] = {
     "claim_breakdown": ("claim", "breakdown", "amount", "cost", "索赔", "拆解", "金额", "构成"),
 }
 
+LAYOUT_PREFERENCE_AXES: dict[str, tuple[str, ...]] = {
+    "visual_weight": ("left", "right", "center", "balanced"),
+    "density": ("compact", "normal", "spacious"),
+    "alignment": ("left", "center", "right"),
+}
+
 _DIRECT_PATTERN_HINTS: dict[str, tuple[str, ...]] = {
     "roadmap_timeline": ("路线图", "里程碑", "时间轴", "roadmap", "milestone"),
     "kpi_dashboard": ("仪表盘", "kpi", "dashboard", "scorecard", "经营指标"),
@@ -63,6 +69,15 @@ class PatternInferenceResult:
 def load_patterns():
     data = json.loads(PATTERN_FILE.read_text(encoding="utf-8"))
     return data.get("patterns", [])
+
+
+def supported_pattern_ids() -> tuple[str, ...]:
+    pattern_ids: list[str] = []
+    for pattern in load_patterns():
+        pattern_id = str(pattern.get("id", "")).strip()
+        if pattern_id:
+            pattern_ids.append(pattern_id)
+    return tuple(pattern_ids)
 
 
 def _normalize_text(text: str) -> str:

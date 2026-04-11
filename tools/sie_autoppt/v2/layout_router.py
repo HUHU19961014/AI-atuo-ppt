@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Callable
+
 from pptx import Presentation
 
+from .layout_ids import SUPPORTED_LAYOUTS
 from .renderers.cards_grid import render_cards_grid
 from .renderers.matrix_grid import render_matrix_grid
 from .renderers.section_break import render_section_break
@@ -15,6 +18,38 @@ from .schema import SlideModel
 from .theme_loader import ThemeSpec
 
 
+LayoutRenderer = Callable[..., object]
+
+LAYOUT_RENDERERS: dict[str, LayoutRenderer] = {
+    "section_break": render_section_break,
+    "title_only": render_title_only,
+    "title_content": render_title_content,
+    "two_columns": render_two_columns,
+    "title_image": render_title_image,
+    "timeline": render_timeline,
+    "stats_dashboard": render_stats_dashboard,
+    "matrix_grid": render_matrix_grid,
+    "cards_grid": render_cards_grid,
+}
+
+
+def _validate_renderer_registry() -> None:
+    supported = set(SUPPORTED_LAYOUTS)
+    registered = set(LAYOUT_RENDERERS)
+    missing = sorted(supported - registered)
+    extra = sorted(registered - supported)
+    if missing or extra:
+        details = []
+        if missing:
+            details.append(f"missing renderers for: {', '.join(missing)}")
+        if extra:
+            details.append(f"unknown renderer layouts: {', '.join(extra)}")
+        raise RuntimeError(f"V2 layout renderer registry mismatch ({'; '.join(details)}).")
+
+
+_validate_renderer_registry()
+
+
 def render_slide(
     prs: Presentation,
     slide_data: SlideModel,
@@ -24,22 +59,7 @@ def render_slide(
     total_slides: int,
 ):
     layout = slide_data.layout
-    if layout == "section_break":
-        return render_section_break(prs, slide_data, theme, log, slide_number, total_slides)
-    if layout == "title_only":
-        return render_title_only(prs, slide_data, theme, log, slide_number, total_slides)
-    if layout == "title_content":
-        return render_title_content(prs, slide_data, theme, log, slide_number, total_slides)
-    if layout == "two_columns":
-        return render_two_columns(prs, slide_data, theme, log, slide_number, total_slides)
-    if layout == "title_image":
-        return render_title_image(prs, slide_data, theme, log, slide_number, total_slides)
-    if layout == "timeline":
-        return render_timeline(prs, slide_data, theme, log, slide_number, total_slides)
-    if layout == "stats_dashboard":
-        return render_stats_dashboard(prs, slide_data, theme, log, slide_number, total_slides)
-    if layout == "matrix_grid":
-        return render_matrix_grid(prs, slide_data, theme, log, slide_number, total_slides)
-    if layout == "cards_grid":
-        return render_cards_grid(prs, slide_data, theme, log, slide_number, total_slides)
-    raise ValueError(f"Unsupported layout: {layout}")
+    renderer = LAYOUT_RENDERERS.get(layout)
+    if renderer is None:
+        raise ValueError(f"Unsupported layout: {layout}")
+    return renderer(prs, slide_data, theme, log, slide_number, total_slides)

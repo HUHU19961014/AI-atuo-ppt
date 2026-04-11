@@ -202,6 +202,7 @@ class TemplateManifest:
     fonts: TemplateFonts
     style_guide: TemplateStyleGuide = field(default_factory=TemplateStyleGuide)
     slide_pools: SlidePools | None = None
+    pattern_variants: dict[str, tuple[dict[str, object], ...]] = field(default_factory=dict)
     render_layouts: dict[str, dict[str, object]] = field(default_factory=dict)
 
     def render_layout(self, layout_id: str) -> dict[str, object]:
@@ -272,6 +273,44 @@ def _normalize_render_layouts(data: object, parent_key: str = "") -> object:
     return data
 
 
+def _normalize_pattern_variants(data: object) -> dict[str, tuple[dict[str, object], ...]]:
+    if not isinstance(data, dict):
+        return {}
+
+    normalized: dict[str, tuple[dict[str, object], ...]] = {}
+    for pattern_id, raw_variants in data.items():
+        if not isinstance(raw_variants, list):
+            continue
+        variants: list[dict[str, object]] = []
+        for raw_variant in raw_variants:
+            if not isinstance(raw_variant, dict):
+                continue
+            variant_id = str(raw_variant.get("id", "")).strip()
+            if not variant_id:
+                continue
+            variant = dict(raw_variant)
+            variant["id"] = variant_id
+            if "capacity" in variant:
+                variant["capacity"] = int(variant["capacity"])
+            variants.append(variant)
+        if variants:
+            normalized[str(pattern_id).strip()] = tuple(variants)
+    return normalized
+
+
+def _validate_pattern_variants(
+    pattern_variants: dict[str, tuple[dict[str, object], ...]],
+    render_layouts: dict[str, dict[str, object]],
+) -> None:
+    for pattern_id, variants in pattern_variants.items():
+        for variant in variants:
+            variant_id = str(variant["id"])
+            if variant_id not in render_layouts:
+                raise ValueError(
+                    f"Pattern variant '{variant_id}' for pattern '{pattern_id}' is declared but render_layouts.{variant_id} is missing."
+                )
+
+
 @lru_cache(maxsize=None)
 def _load_template_manifest_cached(manifest_path_str: str) -> TemplateManifest:
     manifest_path = Path(manifest_path_str)
@@ -280,6 +319,9 @@ def _load_template_manifest_cached(manifest_path_str: str) -> TemplateManifest:
     style_guide_path = _resolve_style_guide_path(manifest_path, data)
     if style_guide_path is not None and style_guide_path.exists():
         style_guide_data = deep_merge_dict(style_guide_data, parse_style_guide_markdown(style_guide_path))
+    render_layouts = _normalize_render_layouts(data.get("render_layouts", {}))
+    pattern_variants = _normalize_pattern_variants(data.get("pattern_variants", {}))
+    _validate_pattern_variants(pattern_variants, render_layouts)
     return TemplateManifest(
         manifest_path=str(manifest_path),
         version=str(data["version"]),
@@ -290,7 +332,8 @@ def _load_template_manifest_cached(manifest_path_str: str) -> TemplateManifest:
         fonts=TemplateFonts.from_dict(data["fonts"]),
         style_guide=TemplateStyleGuide.from_dict(style_guide_data),
         slide_pools=SlidePools.from_dict(data["slide_pools"]) if data.get("slide_pools") else None,
-        render_layouts=_normalize_render_layouts(data.get("render_layouts", {})),
+        pattern_variants=pattern_variants,
+        render_layouts=render_layouts,
     )
 
 

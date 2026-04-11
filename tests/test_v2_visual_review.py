@@ -6,6 +6,8 @@ from unittest.mock import patch
 from tools.sie_autoppt.v2.io import write_deck_document
 from tools.sie_autoppt.v2.schema import validate_deck_payload
 from tools.sie_autoppt.v2.visual_review import (
+    EXTENDED_REVIEW_DIMENSIONS,
+    VISUAL_REVIEW_DIMENSIONS,
     _build_quality_gate_note,
     _patch_developer_prompt,
     _review_developer_prompt,
@@ -39,12 +41,22 @@ def _sample_deck():
 class V2VisualReviewTests(unittest.TestCase):
     def test_review_prompt_includes_explicit_scorecard(self):
         prompt = _review_developer_prompt()
-        self.assertIn("结构与页数合理性", prompt)
-        self.assertIn("标题自然度", prompt)
+        self.assertIn("structure", prompt)
+        self.assertIn("brand_consistency", prompt)
+        self.assertIn("audience_fit", prompt)
         self.assertIn("正文建议 >= 16pt", prompt)
-        self.assertIn("summary 用 2-3 句中文概括整体判断", prompt)
+        self.assertIn("summary", prompt)
         self.assertIn("narrative closure", prompt)
         self.assertIn("rule-based quality-gate findings", prompt)
+
+    def test_visual_review_schema_uses_dimension_registry(self):
+        schema = __import__("tools.sie_autoppt.v2.visual_review", fromlist=["build_visual_review_schema"]).build_visual_review_schema()
+        score_properties = schema["properties"]["scores"]["properties"]
+        issue_dimension_enum = schema["properties"]["page_issues"]["items"]["properties"]["dimension"]["enum"]
+
+        self.assertEqual(tuple(score_properties), tuple(dimension.key for dimension in VISUAL_REVIEW_DIMENSIONS))
+        self.assertEqual(tuple(issue_dimension_enum), tuple(dimension.key for dimension in VISUAL_REVIEW_DIMENSIONS))
+        self.assertEqual(VISUAL_REVIEW_DIMENSIONS, EXTENDED_REVIEW_DIMENSIONS)
 
     def test_patch_prompt_requires_blocker_only_fixes(self):
         prompt = _patch_developer_prompt()
@@ -144,6 +156,62 @@ class V2VisualReviewTests(unittest.TestCase):
         self.assertEqual(_score_rating(12), "可用初稿")
         self.assertEqual(_score_rating(8), "质量偏弱")
         self.assertEqual(_score_rating(5), "不合格")
+        self.assertEqual(_score_rating(38, max_score=45), "优秀")
+        self.assertEqual(_score_rating(29, max_score=45), "合格")
+
+    def test_review_rendered_deck_accepts_provider_injection(self):
+        deck = _sample_deck()
+
+        class FakeProvider:
+            def __init__(self):
+                self.calls = []
+
+            def create_structured_json_with_user_items(self, **kwargs):
+                self.calls.append(kwargs)
+                return {
+                    "scores": {dimension.key: 4 for dimension in VISUAL_REVIEW_DIMENSIONS},
+                    "total": 1,
+                    "rating": "不合格",
+                    "page_issues": [],
+                    "summary": "Provider injected.",
+                }
+
+        provider = FakeProvider()
+        with patch("tools.sie_autoppt.v2.visual_review.OpenAIResponsesClient") as client_mock:
+            review = review_rendered_deck(deck, previews=[], provider=provider)
+
+        client_mock.assert_not_called()
+        self.assertEqual(len(provider.calls), 1)
+        self.assertEqual(review["total"], len(VISUAL_REVIEW_DIMENSIONS) * 4)
+
+    def test_generate_blocker_patches_accepts_provider_injection(self):
+        from tools.sie_autoppt.v2.visual_review import generate_blocker_patches
+
+        deck = _sample_deck()
+
+        class FakeProvider:
+            def __init__(self):
+                self.calls = []
+
+            def create_structured_json_with_user_items(self, **kwargs):
+                self.calls.append(kwargs)
+                return {"patches": []}
+
+        provider = FakeProvider()
+        with patch("tools.sie_autoppt.v2.visual_review.OpenAIResponsesClient") as client_mock:
+            patches = generate_blocker_patches(
+                deck,
+                {
+                    "page_issues": [
+                        {"page": 1, "level": "blocker", "dimension": "layout_stability", "issue": "Overflow", "suggestion": "Compress"}
+                    ]
+                },
+                provider=provider,
+            )
+
+        client_mock.assert_not_called()
+        self.assertEqual(patches, {"patches": []})
+        self.assertEqual(len(provider.calls), 1)
 
     def test_export_slide_previews_skips_when_soffice_is_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -376,7 +444,7 @@ class V2VisualReviewTests(unittest.TestCase):
                     "scores": {"structure": 3, "title_quality": 3, "content_density": 3, "layout_stability": 2, "deliverability": 2},
                     "total": 13,
                     "rating": "可用初稿",
-                    "page_issues": [{"page": 1, "level": "blocker", "dimension": "title", "issue": "标题偏目录化", "suggestion": "改成结论式标题"}],
+                    "page_issues": [{"page": 1, "level": "blocker", "dimension": "title_quality", "issue": "标题偏目录化", "suggestion": "改成结论式标题"}],
                     "summary": "第一页标题需要更结论化，才能支撑正式汇报语气。",
                 },
                 {
@@ -435,7 +503,7 @@ class V2VisualReviewTests(unittest.TestCase):
                         "scores": {"structure": 3, "title_quality": 2, "content_density": 3, "layout_stability": 2, "deliverability": 2},
                         "total": 12,
                         "rating": "可用初稿",
-                        "page_issues": [{"page": 1, "level": "blocker", "dimension": "layout", "issue": "正文溢出边界", "suggestion": "压缩文案并调整布局"}],
+                        "page_issues": [{"page": 1, "level": "blocker", "dimension": "layout_stability", "issue": "正文溢出边界", "suggestion": "压缩文案并调整布局"}],
                         "summary": "当前仍有 blocker，不能视为可交付。",
                     },
                 ),

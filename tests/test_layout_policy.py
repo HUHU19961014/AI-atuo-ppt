@@ -28,7 +28,7 @@ class LayoutPolicyTests(unittest.TestCase):
 
         self.assertEqual(density, "balanced")
 
-    def test_layout_policy_chooses_variant_for_supported_patterns(self):
+    def test_layout_policy_reports_capacity_without_catalog(self):
         profile = profile_bullets(["A", "B", "C", "D"])
         decision = resolve_layout_decision(
             requested_pattern_id="process_flow",
@@ -40,10 +40,11 @@ class LayoutPolicyTests(unittest.TestCase):
 
         self.assertEqual(decision.pattern_id, "process_flow")
         self.assertIsNone(decision.layout_variant)
-        self.assertEqual(decision.layout_hints["desired_layout_variant"], "process_flow_5")
+        self.assertEqual(decision.layout_hints["desired_capacity"], 5)
+        self.assertEqual(decision.layout_hints["desired_layout_variant"], "")
         self.assertEqual(decision.max_items_per_page, 5)
 
-    def test_layout_policy_preserves_variant_when_available(self):
+    def test_layout_policy_preserves_manifest_variant_when_available(self):
         profile = profile_bullets(["A", "B", "C", "D"])
         decision = resolve_layout_decision(
             requested_pattern_id="process_flow",
@@ -51,11 +52,51 @@ class LayoutPolicyTests(unittest.TestCase):
             content_profile=profile,
             preferred_item_counts=(3, 5, 9),
             available_layout_variants={"process_flow_5"},
+            pattern_variants={
+                "process_flow": (
+                    {"id": "process_flow_3", "capacity": 3},
+                    {"id": "process_flow_5", "capacity": 5},
+                )
+            },
         )
 
         self.assertEqual(decision.layout_variant, "process_flow_5")
 
-    def test_layout_policy_downgrades_dense_content_capacity(self):
+    def test_layout_policy_uses_template_variant_catalog_when_provided(self):
+        profile = profile_bullets(["A", "B", "C", "D"])
+        decision = resolve_layout_decision(
+            requested_pattern_id="general_business",
+            fallback_pattern_id="process_flow",
+            content_profile=profile,
+            preferred_item_counts=(3, 5, 9),
+            available_layout_variants={"gb_manifest_5"},
+            pattern_variants={
+                "general_business": (
+                    {"id": "gb_manifest_3", "capacity": 3},
+                    {"id": "gb_manifest_5", "capacity": 5},
+                )
+            },
+        )
+
+        self.assertEqual(decision.layout_variant, "gb_manifest_5")
+        self.assertEqual(decision.layout_hints["desired_layout_variant"], "gb_manifest_5")
+
+    def test_template_variant_catalog_is_authoritative_when_present(self):
+        profile = profile_bullets(["A", "B", "C", "D"])
+        decision = resolve_layout_decision(
+            requested_pattern_id="process_flow",
+            fallback_pattern_id="general_business",
+            content_profile=profile,
+            preferred_item_counts=(3, 5, 9),
+            available_layout_variants={"process_flow_5"},
+            pattern_variants={"general_business": ({"id": "general_business_5", "capacity": 5},)},
+        )
+
+        self.assertIsNone(decision.layout_variant)
+        self.assertEqual(decision.layout_hints["desired_capacity"], 5)
+        self.assertEqual(decision.layout_hints["desired_layout_variant"], "")
+
+    def test_layout_policy_reports_capacity_without_inventing_unknown_variant_ids(self):
         profile = profile_bullets(
             [
                 "Dense item one with substantial wording for readability review.",
@@ -75,5 +116,6 @@ class LayoutPolicyTests(unittest.TestCase):
         )
 
         self.assertIsNone(decision.layout_variant)
-        self.assertEqual(decision.layout_hints["desired_layout_variant"], "org_governance_9")
+        self.assertEqual(decision.layout_hints["desired_capacity"], 9)
+        self.assertEqual(decision.layout_hints["desired_layout_variant"], "")
         self.assertEqual(decision.max_items_per_page, 9)

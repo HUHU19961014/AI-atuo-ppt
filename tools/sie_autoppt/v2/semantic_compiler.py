@@ -4,6 +4,7 @@ from typing import Any
 
 from .schema import ValidatedDeck, validate_deck_payload
 from .semantic_router import (
+    SemanticLayoutPlan,
     build_slide_features,
     collect_slide_insights,
     plan_semantic_slide_layout,
@@ -232,9 +233,24 @@ def normalize_semantic_payload(
     return {"meta": normalized_meta, "slides": normalized_slides}
 
 
-def compile_semantic_slide(slide: dict[str, Any]) -> dict[str, Any]:
+def diversify_layout_plan(
+    plan: SemanticLayoutPlan,
+    features,
+    *,
+    previous_layout: str | None = None,
+) -> SemanticLayoutPlan:
+    if previous_layout != plan.layout:
+        return plan
+    if plan.layout == "title_content" and len(features.content_items) >= 4:
+        return SemanticLayoutPlan(features.slide_id, "two_columns", "diversity:title_content-to-two_columns")
+    if plan.layout == "two_columns" and plan.reason == "dense-content":
+        return SemanticLayoutPlan(features.slide_id, "title_content", "diversity:two_columns-to-title_content")
+    return plan
+
+
+def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None = None) -> dict[str, Any]:
     features = build_slide_features(slide)
-    plan = plan_semantic_slide_layout(slide)
+    plan = diversify_layout_plan(plan_semantic_slide_layout(slide), features, previous_layout=previous_layout)
 
     if plan.layout == "section_break":
         payload = {"slide_id": features.slide_id, "layout": "section_break", "title": features.title, **slide_annotations(features)}
@@ -428,7 +444,14 @@ def compile_semantic_deck_payload(
         if not slide["title"]:
             raise ValueError(f"slide {slide['slide_id']} title cannot be empty.")
 
-    compiled = {"meta": normalized["meta"], "slides": [compile_semantic_slide(slide) for slide in slides]}
+    compiled_slides: list[dict[str, Any]] = []
+    previous_layout: str | None = None
+    for slide in slides:
+        compiled_slide = compile_semantic_slide(slide, previous_layout=previous_layout)
+        compiled_slides.append(compiled_slide)
+        previous_layout = str(compiled_slide.get("layout", ""))
+
+    compiled = {"meta": normalized["meta"], "slides": compiled_slides}
     return validate_deck_payload(
         compiled,
         default_title=default_title,

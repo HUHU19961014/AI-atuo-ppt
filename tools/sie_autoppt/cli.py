@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import json
 import shutil
 import sys
@@ -18,13 +18,14 @@ from .config import (
     PROJECT_ROOT,
 )
 from .content_service import build_deck_spec_from_structure
-from .deck_spec_io import write_deck_spec
+from .deck_spec_io import load_deck_spec, write_deck_spec
 from .exceptions import AiHealthcheckBlockedError, AiHealthcheckFailedError
 from .generator import generate_ppt_artifacts_from_deck_spec
 from .healthcheck import run_ai_healthcheck
 from .inputs.source_text import extract_source_text
-from .llm_openai import OpenAIConfigurationError
-from .models import StructureSpec
+from .llm_openai import OpenAIConfigurationError, OpenAIResponsesClient, OpenAIResponsesError, load_openai_responses_config
+from .models import BodyPageSpec, DeckSpec, StructureSpec
+from .patterns import supported_pattern_ids
 from .structure_service import StructureGenerationRequest, generate_structure_with_ai
 from .v2 import (
     build_deck_output_path,
@@ -53,6 +54,7 @@ from .v2.services import DeckGenerationRequest, OutlineGenerationRequest
 from .v2.services import ensure_generation_context
 from .v2.visual_review import iterate_visual_review, review_deck_once
 from .v2.io import DEFAULT_V2_OUTPUT_DIR
+from .visual_service import generate_visual_draft_artifacts
 from tools.scenario_generators.sie_onepage_designer import build_onepage_brief_from_structure, build_onepage_slide
 
 
@@ -73,6 +75,7 @@ WORKFLOW_COMMANDS = (
     "v2-iterate",
     "review",
     "iterate",
+    "visual-draft",
 )
 PRIMARY_COMMANDS = ("make", "review", "iterate")
 ADVANCED_COMMANDS = (
@@ -89,6 +92,7 @@ ADVANCED_COMMANDS = (
     "clarify",
     "clarify-web",
     "ai-check",
+    "visual-draft",
 )
 COMMAND_ALIASES = {
     "review": "v2-review",
@@ -102,6 +106,7 @@ RECOMMENDED_WORKFLOW_HELP = (
     "  make --topic ...     semantic V2 full generation\n"
     "  review --deck-json   one-pass visual review alias for v2-review\n"
     "  iterate --deck-json  multi-round review alias for v2-iterate\n"
+    "  visual-draft --deck-spec-json ...  HTML visual draft + scoring before PPTX\n"
     "Advanced commands:\n"
     f"  {', '.join(ADVANCED_COMMANDS)}\n"
     "Legacy HTML/template generation commands remain retired; use sie-render for actual SIE template delivery."
@@ -302,6 +307,95 @@ def write_json_artifact(path: Path, payload: dict[str, object]) -> Path:
     return path
 
 
+def _build_ai_page_schema(candidate_pattern_ids: tuple[str, ...]) -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "minLength": 4, "maxLength": 42},
+            "subtitle": {"type": "string", "minLength": 4, "maxLength": 64},
+            "bullets": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 6,
+                "items": {"type": "string", "minLength": 4, "maxLength": 80},
+            },
+            "pattern_id": {"type": "string", "enum": list(candidate_pattern_ids)},
+            "rationale": {"type": "string", "minLength": 12, "maxLength": 200},
+        },
+        "required": ["title", "subtitle", "bullets", "pattern_id", "rationale"],
+        "additionalProperties": False,
+    }
+
+
+def apply_ai_content_layout_to_deck_spec(
+    deck_spec: DeckSpec,
+    *,
+    model: str | None = None,
+) -> tuple[DeckSpec, list[dict[str, object]]]:
+    candidate_pattern_ids = supported_pattern_ids()
+    if not candidate_pattern_ids:
+        raise ValueError("no supported pattern ids available for AI layout routing.")
+
+    client = OpenAIResponsesClient(load_openai_responses_config(model=model or None))
+    schema = _build_ai_page_schema(candidate_pattern_ids)
+    refined_pages: list[BodyPageSpec] = []
+    trace: list[dict[str, object]] = []
+
+    for index, page in enumerate(deck_spec.body_pages, start=1):
+        developer_prompt = (
+            "You are optimizing one SIE PPT body page.\n"
+            "Tasks:\n"
+            "1) tighten title/subtitle for executive clarity,\n"
+            "2) rewrite bullets to concise business evidence,\n"
+            "3) choose the best pattern_id for layout semantics.\n"
+            "Return JSON only."
+        )
+        user_prompt = (
+            f"Deck cover title: {deck_spec.cover_title}\n"
+            f"Page index: {index}\n"
+            f"Current title: {page.title}\n"
+            f"Current subtitle: {page.subtitle}\n"
+            f"Current bullets:\n{chr(10).join(f'- {item}' for item in page.bullets)}\n"
+            f"Current pattern_id: {page.pattern_id}\n"
+            "Constraints: keep business meaning, avoid fluff, fit one-page reading rhythm."
+        )
+        payload = client.create_structured_json(
+            developer_prompt=developer_prompt,
+            user_prompt=user_prompt,
+            schema_name="sie_template_page_ai_refine",
+            schema=schema,
+        )
+
+        new_title = str(payload.get("title", "")).strip()
+        new_subtitle = str(payload.get("subtitle", "")).strip()
+        new_bullets = [str(item).strip() for item in payload.get("bullets", []) if str(item).strip()]
+        new_pattern_id = str(payload.get("pattern_id", "")).strip()
+        rationale = str(payload.get("rationale", "")).strip()
+
+        if not new_title or not new_subtitle or len(new_bullets) < 3 or not new_pattern_id:
+            raise OpenAIResponsesError(f"AI page refinement produced invalid result at page {index}.")
+
+        refined_pages.append(
+            replace(
+                page,
+                title=new_title,
+                subtitle=new_subtitle,
+                bullets=new_bullets[:6],
+                pattern_id=new_pattern_id,
+            )
+        )
+        trace.append(
+            {
+                "page_index": index,
+                "old_pattern_id": page.pattern_id,
+                "new_pattern_id": new_pattern_id,
+                "rationale": rationale,
+            }
+        )
+
+    return replace(deck_spec, body_pages=refined_pages), trace
+
+
 def build_fallback_structure_spec(topic: str, brief_text: str) -> StructureSpec:
     brief_lines = [line.strip(" -•\t") for line in brief_text.splitlines() if line.strip()]
     while len(brief_lines) < 3:
@@ -385,6 +479,24 @@ def main():
     parser.add_argument("--ppt-output", default="", help="Optional output path for the generated V2 PPTX.")
     parser.add_argument("--render-trace-output", default="", help="Optional output path for the actual-template render trace JSON.")
     parser.add_argument("--review-output-dir", default="", help="Optional output directory for visual review artifacts.")
+    parser.add_argument("--browser", default="", help="Optional Edge/Chrome executable path for visual-draft screenshot.")
+    parser.add_argument("--page-index", type=int, default=0, help="Zero-based page index for visual-draft.")
+    parser.add_argument(
+        "--layout-hint",
+        default="auto",
+        choices=("auto", "sales_proof", "risk_to_value", "executive_summary"),
+        help="Layout hint for visual-draft.",
+    )
+    parser.add_argument(
+        "--with-ai-review",
+        action="store_true",
+        help="For visual-draft: enable model-based visual review and one auto-revision round when score is below configured auto_revise_threshold.",
+    )
+    parser.add_argument(
+        "--visual-rules-path",
+        default="",
+        help="Optional TOML path overriding visual-draft scoring rules.",
+    )
     parser.add_argument("--max-rounds", type=int, default=2, help="Maximum auto-fix review rounds for v2-iterate.")
     parser.add_argument(
         "--clarifier-state-file",
@@ -517,8 +629,16 @@ def main():
                     model=args.llm_model or None,
                 )
                 structure = structure_result.structure
-            except OpenAIConfigurationError:
-                structure = build_fallback_structure_spec(args.topic.strip(), brief_text)
+            except OpenAIConfigurationError as exc:
+                parser.exit(
+                    status=1,
+                    message=(
+                        "AI is mandatory for 'onepage' content/layout planning. "
+                        f"Configure a reachable AI endpoint first. Details: {exc}\n"
+                    ),
+                )
+            except OpenAIResponsesError as exc:
+                parser.exit(status=1, message=f"AI planning failed for 'onepage': {exc}\n")
 
         onepage_brief = build_onepage_brief_from_structure(
             structure,
@@ -534,12 +654,24 @@ def main():
             if args.ppt_output
             else template_output_dir / f"{output_stem}.onepage.pptx"
         )
-        built_path, review_path, score_path, _ = build_onepage_slide(
-            onepage_brief,
-            output_path=onepage_output_path,
-            export_review=True,
-            model=args.llm_model or None,
-        )
+        try:
+            built_path, review_path, score_path, _ = build_onepage_slide(
+                onepage_brief,
+                output_path=onepage_output_path,
+                export_review=True,
+                model=args.llm_model or None,
+                require_ai_strategy=True,
+            )
+        except OpenAIConfigurationError as exc:
+            parser.exit(
+                status=1,
+                message=(
+                    "AI is mandatory for 'onepage' content/layout planning. "
+                    f"Configure a reachable AI endpoint first. Details: {exc}\n"
+                ),
+            )
+        except OpenAIResponsesError as exc:
+            parser.exit(status=1, message=f"AI strategy selection failed for 'onepage': {exc}\n")
         print(str(brief_output_path))
         print(str(review_path))
         print(str(score_path))
@@ -581,19 +713,31 @@ def main():
                 else template_output_dir / f"{output_stem}.deck_spec.json"
             )
             write_deck_spec(deck_spec, deck_spec_path)
+            render_deck_spec = deck_spec
         elif uses_topic_generation:
-            structure_result = generate_structure_with_ai(
-                StructureGenerationRequest(
-                    topic=args.topic.strip(),
-                    brief=brief_text,
-                    audience=args.audience,
-                    language=args.language,
-                    sections=args.chapters,
-                    min_sections=args.min_slides,
-                    max_sections=args.max_slides,
-                ),
-                model=args.llm_model or None,
-            )
+            try:
+                structure_result = generate_structure_with_ai(
+                    StructureGenerationRequest(
+                        topic=args.topic.strip(),
+                        brief=brief_text,
+                        audience=args.audience,
+                        language=args.language,
+                        sections=args.chapters,
+                        min_sections=args.min_slides,
+                        max_sections=args.max_slides,
+                    ),
+                    model=args.llm_model or None,
+                )
+            except OpenAIConfigurationError as exc:
+                parser.exit(
+                    status=1,
+                    message=(
+                        "AI is mandatory for 'sie-render' content/layout planning. "
+                        f"Configure a reachable AI endpoint first. Details: {exc}\n"
+                    ),
+                )
+            except OpenAIResponsesError as exc:
+                parser.exit(status=1, message=f"AI planning failed for 'sie-render': {exc}\n")
             deck_spec = build_deck_spec_from_structure(
                 structure_result.structure,
                 topic=args.topic.strip(),
@@ -605,8 +749,47 @@ def main():
                 else template_output_dir / f"{output_stem}.deck_spec.json"
             )
             write_deck_spec(deck_spec, deck_spec_path)
+            render_deck_spec = deck_spec
         else:
             deck_spec_path = Path(deck_spec_json)
+            render_deck_spec = load_deck_spec(deck_spec_path)
+
+        if len(render_deck_spec.body_pages) == 1:
+            parser.exit(
+                status=1,
+                message=(
+                    "Single-page SIE output must use the 'onepage' command to avoid cover/catalog/ending slides.\n"
+                ),
+            )
+
+        try:
+            ai_refined_deck_spec, ai_trace = apply_ai_content_layout_to_deck_spec(
+                render_deck_spec,
+                model=args.llm_model.strip() or None,
+            )
+        except OpenAIConfigurationError as exc:
+            parser.exit(
+                status=1,
+                message=(
+                    "AI is mandatory for 'sie-render' content/layout planning. "
+                    f"Configure a reachable AI endpoint first. Details: {exc}\n"
+                ),
+            )
+        except OpenAIResponsesError as exc:
+            parser.exit(
+                status=1,
+                message=f"AI content/layout refinement failed for 'sie-render': {exc}\n",
+            )
+
+        deck_spec_path = (
+            Path(args.deck_spec_output)
+            if args.deck_spec_output
+            else template_output_dir / f"{output_stem}.deck_spec.ai.json"
+        )
+        write_deck_spec(ai_refined_deck_spec, deck_spec_path)
+        render_deck_spec = ai_refined_deck_spec
+        ai_trace_path = template_output_dir / f"{output_stem}.ai_layout_trace.json"
+        write_json_artifact(ai_trace_path, {"pages": ai_trace})
 
         render_result = generate_ppt_artifacts_from_deck_spec(
             template_path=template_path,
@@ -632,6 +815,30 @@ def main():
         print(str(deck_spec_path))
         print(str(render_trace_path))
         print(str(final_ppt_path))
+        return
+
+    if effective_command == "visual-draft":
+        if not args.deck_spec_json.strip():
+            parser.error("--deck-spec-json is required when command is 'visual-draft'.")
+        try:
+            artifacts = generate_visual_draft_artifacts(
+                deck_spec=load_deck_spec(Path(args.deck_spec_json)),
+                output_dir=output_dir,
+                output_name=build_template_output_stem(args.output_name),
+                browser_path=args.browser.strip(),
+                model=args.llm_model.strip(),
+                page_index=max(0, int(args.page_index)),
+                layout_hint=args.layout_hint.strip() or "auto",
+                with_ai_review=bool(args.with_ai_review),
+                visual_rules_path=args.visual_rules_path.strip(),
+            )
+        except Exception as exc:  # pragma: no cover - normalized user-facing error handling
+            parser.exit(status=1, message=f"visual-draft failed: {exc}\n")
+        print(str(artifacts.visual_spec_path))
+        print(str(artifacts.preview_html_path))
+        print(str(artifacts.preview_png_path))
+        print(str(artifacts.visual_score_path))
+        print(str(artifacts.ai_review_path))
         return
 
     if effective_command == "v2-outline":

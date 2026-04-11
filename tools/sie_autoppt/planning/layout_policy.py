@@ -16,13 +16,6 @@ class LayoutDecision:
 DEFAULT_ITEM_COUNTS = (3, 5, 9)
 
 
-_LAYOUT_VARIANT_PATTERNS = {
-    "general_business",
-    "process_flow",
-    "org_governance",
-}
-
-
 def choose_capacity(content_profile: ContentProfile, preferred_item_counts: tuple[int, ...] = DEFAULT_ITEM_COUNTS) -> int:
     counts = tuple(sorted(preferred_item_counts or DEFAULT_ITEM_COUNTS))
     if content_profile.item_count <= counts[0]:
@@ -40,10 +33,17 @@ def choose_capacity(content_profile: ContentProfile, preferred_item_counts: tupl
     return capacity
 
 
-def decide_layout_variant(pattern_id: str, capacity: int) -> str | None:
-    if pattern_id not in _LAYOUT_VARIANT_PATTERNS:
+def decide_layout_variant(
+    pattern_id: str,
+    capacity: int,
+    pattern_variants: dict[str, tuple[dict[str, object], ...]] | None = None,
+) -> str | None:
+    if not pattern_variants:
         return None
-    return f"{pattern_id}_{capacity}"
+    for variant in pattern_variants.get(pattern_id, ()):
+        if int(variant.get("capacity", 0)) == int(capacity):
+            return str(variant["id"])
+    return None
 
 
 def resolve_layout_decision(
@@ -53,10 +53,11 @@ def resolve_layout_decision(
     content_profile: ContentProfile,
     preferred_item_counts: tuple[int, ...] = DEFAULT_ITEM_COUNTS,
     available_layout_variants: set[str] | None = None,
+    pattern_variants: dict[str, tuple[dict[str, object], ...]] | None = None,
 ) -> LayoutDecision:
     pattern_id = requested_pattern_id or fallback_pattern_id
     capacity = choose_capacity(content_profile, preferred_item_counts=preferred_item_counts)
-    desired_layout_variant = decide_layout_variant(pattern_id, capacity)
+    desired_layout_variant = decide_layout_variant(pattern_id, capacity, pattern_variants=pattern_variants)
     resolved_layout_variant = desired_layout_variant
     if desired_layout_variant and available_layout_variants is not None and desired_layout_variant not in available_layout_variants:
         resolved_layout_variant = None
@@ -69,6 +70,7 @@ def resolve_layout_decision(
             "item_count": content_profile.item_count,
             "avg_chars": content_profile.avg_chars,
             "max_chars": content_profile.max_chars,
+            "desired_capacity": capacity,
             "desired_layout_variant": desired_layout_variant or "",
         },
     )

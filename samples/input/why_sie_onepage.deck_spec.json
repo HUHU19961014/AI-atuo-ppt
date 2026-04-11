@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "cover_title": "Why 赛意",
+  "body_pages": [
+    {
+      "page_key": "why_sie_choice_onepage",
+      "title": "为什么选择 SiE 赛意",
+      "subtitle": "追溯与供应链合规项目的一页说明",
+      "bullets": [
+        "赛意追溯产品已助力客户通过 TUV、SGS、Sedex、EcoVadis 等国际机构认证评级",
+        "具备同行业案例经验、成熟产品能力和复杂场景沉淀，实施风险最小",
+        "成功案例覆盖晶澳、天合、正泰、横店东磁、博达新能源、道新源",
+        "客户保有率达 96.5%，可提供稳定交付团队与行业经验资源"
+      ],
+      "pattern_id": "claim_breakdown",
+      "nav_title": "Why SiE",
+      "reference_style_id": null,
+      "payload": {
+        "headline": "赛意追溯产品帮助客户快速进入追溯能力第一梯队",
+        "summary": "以成熟产品 + 行业实践 + 高质量交付，降低试错并加快项目落地",
+        "claims": [
+          {
+            "label": "认证经验",
+            "value": "TUV / SGS / Sedex / EcoVadis",
+            "detail": "熟悉第三方审核关注点与供应链合规评价框架"
+          },
+          {
+            "label": "成功案例",
+            "value": "晶澳 / 天合 / 正泰 / 横店东磁 / 博达新能源 / 道新源",
+            "detail": "多项目落地，覆盖新能源与复杂供应链追溯场景"
+          },
+          {
+            "label": "成熟产品",
+            "value": "多轮迭代 + 软著能力沉淀",
+            "detail": "覆盖集团化、多业态、复杂业务流程，支持快速复制推广"
+          },
+          {
+            "label": "实施保障",
+            "value": "4阶9步方法论 + 7000+员工支撑",
+            "detail": "关键人员稳定，承诺行业经验资源，客户保有率 96.5%"
+          }
+        ],
+        "footer": "少走弯路、降低试错、加快审核准备，确保项目高质量落地"
+      }
+    }
+  ]
+}

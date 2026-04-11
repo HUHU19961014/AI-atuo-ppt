@@ -579,17 +579,17 @@
     const templates = {
       tech: {
         name: "Tech Blue",
-        path: "assets/templates/sie_template.pptx",
+        theme: "tech_blue",
         tone: "科技现代 / 结构化 / 架构与流程表达强",
       },
       gold: {
         name: "Business Gold",
-        path: "assets/templates/business_gold/template.pptx",
+        theme: "consulting_navy",
         tone: "商务专业 / 结果导向 / 更适合经营与管理层沟通",
       },
       gray: {
         name: "Minimal Gray",
-        path: "assets/templates/minimal_gray/template.pptx",
+        theme: "google_brand_light",
         tone: "简约克制 / 清晰理性 / 更适合内部评审和方法论表达",
       },
     };
@@ -740,11 +740,12 @@
         result.core && `核心内容：${result.core}`,
       ].filter(Boolean).join("；");
       const command = [
-        "python -m sie_autoppt ai-make \\",
-        `  --template "${selectedTemplate.path}" \\`,
+        "python -m sie_autoppt make \\",
         `  --topic "${topicArg}" \\`,
         result.audience ? `  --audience "${result.audience}" \\` : "",
         briefParts ? `  --brief "${briefParts}" \\` : "",
+        `  --theme "${selectedTemplate.theme}" \\`,
+        "  --generation-mode deep \\",
         result.slides ? `  --chapters ${result.slides} \\` : "  --min-slides 6 \\",
         "  --output-name Demo_Deck",
       ].filter(Boolean).join("\n");

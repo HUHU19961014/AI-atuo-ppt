@@ -14,9 +14,9 @@ class UpgradeTemplatePoolTests(unittest.TestCase):
     def test_validate_template_pool_accepts_default_template(self):
         summary = validate_template_pool(DEFAULT_TEMPLATE)
 
-        self.assertEqual(summary["slides"], 47)
+        self.assertEqual(summary["slides"], 43)
         self.assertEqual(summary["required_pairs"], 20)
-        self.assertEqual(summary["ending_slide_no"], 47)
+        self.assertEqual(summary["ending_slide_no"], 43)
         self.assertEqual(summary["directory_asset_targets"], 19)
         self.assertEqual(summary["validation_mode"], "python-openxml")
 
@@ -25,7 +25,7 @@ class UpgradeTemplatePoolTests(unittest.TestCase):
         rendered = format_validation_summary(summary)
 
         self.assertIn("mode=python-openxml", rendered)
-        self.assertIn("slides=47", rendered)
+        self.assertIn("slides=43", rendered)
 
     def test_validate_template_pool_rejects_missing_ending_slide(self):
         with tempfile.TemporaryDirectory() as temp_dir:

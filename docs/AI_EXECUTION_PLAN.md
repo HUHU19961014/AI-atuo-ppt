@@ -14,8 +14,8 @@
 
 3. `template ingestion tooling`
    - 已吸收外部模板导入与目录扫描能力：
-   - [import_external_pptx_template.py](/c:/Users/CHENHU/Documents/cursor/project/AI-atuo-ppt/tools/template_utils/import_external_pptx_template.py)
-   - [catalog_external_templates.py](/c:/Users/CHENHU/Documents/cursor/project/AI-atuo-ppt/tools/template_utils/catalog_external_templates.py)
+   - [import_external_pptx_template.py](../tools/template_utils/import_external_pptx_template.py)
+   - [catalog_external_templates.py](../tools/template_utils/catalog_external_templates.py)
    - 对应能力：批量扫描 `D:\template`，识别资产、页型候选、融合优先级
 
 ## 吸收原则
@@ -55,7 +55,7 @@
 ### P2 然后推进
 
 6. `legacy workflow` 降级
-   - 目标：`ai-plan / ai-make / structure-*` 只保留兼容，不再作为默认主脑回路
+   - 状态：legacy 模板式 CLI 入口已移除；默认主路径为 `make / review / iterate`，`v2-*` 作为显式高级命令保留
 
 7. 第二批模板沉淀
    - 目标：继续从 `重庆市区域报告`、`南欧江水电站战略评估`、`甘孜州经济财政分析` 提炼页型

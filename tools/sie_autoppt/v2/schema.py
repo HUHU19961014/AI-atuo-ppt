@@ -5,20 +5,10 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from .layout_ids import SUPPORTED_LAYOUTS
 from .theme_loader import available_theme_names
 
 SUPPORTED_THEMES = tuple(available_theme_names())
-SUPPORTED_LAYOUTS = (
-    "section_break",
-    "title_only",
-    "title_content",
-    "two_columns",
-    "title_image",
-    "timeline",
-    "stats_dashboard",
-    "matrix_grid",
-    "cards_grid",
-)
 
 
 def _strip_text(value: Any) -> str:
@@ -35,6 +25,24 @@ def _normalize_string_list(value: Any) -> list[str]:
         text = _strip_text(item)
         if text:
             normalized.append(text)
+    return normalized
+
+
+def _normalize_data_sources(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        claim = _strip_text(item.get("claim"))
+        source = _strip_text(item.get("source"))
+        confidence = _strip_text(item.get("confidence")).lower() or "medium"
+        if not claim or not source:
+            continue
+        if confidence not in {"high", "medium", "low"}:
+            confidence = "medium"
+        normalized.append({"claim": claim, "source": source, "confidence": confidence})
     return normalized
 
 
@@ -164,7 +172,29 @@ class MatrixCell(BaseModel):
         return text or None
 
 
-class SectionBreakSlide(BaseModel):
+class DataSourceNote(BaseModel):
+    claim: str = Field(min_length=1, max_length=60)
+    source: str = Field(min_length=1, max_length=80)
+    confidence: Literal["high", "medium", "low"] = "medium"
+
+    @field_validator("claim", "source", mode="before")
+    @classmethod
+    def _strip_text_fields(cls, value: Any) -> str:
+        return _strip_text(value)
+
+
+class SlideAnnotations(BaseModel):
+    anti_argument: str | None = Field(default=None, max_length=120)
+    data_sources: list[DataSourceNote] = Field(default_factory=list, max_length=4)
+
+    @field_validator("anti_argument", mode="before")
+    @classmethod
+    def _strip_optional_text(cls, value: Any) -> str | None:
+        text = _strip_text(value)
+        return text or None
+
+
+class SectionBreakSlide(SlideAnnotations):
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["section_break"]
     title: str = Field(min_length=2, max_length=60)
@@ -177,7 +207,7 @@ class SectionBreakSlide(BaseModel):
         return text or None
 
 
-class TitleOnlySlide(BaseModel):
+class TitleOnlySlide(SlideAnnotations):
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["title_only"]
     title: str = Field(min_length=2, max_length=60)
@@ -188,7 +218,7 @@ class TitleOnlySlide(BaseModel):
         return _strip_text(value)
 
 
-class TitleContentSlide(BaseModel):
+class TitleContentSlide(SlideAnnotations):
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["title_content"]
     title: str = Field(min_length=2, max_length=60)
@@ -208,7 +238,7 @@ class TitleContentSlide(BaseModel):
         return items
 
 
-class TwoColumnsSlide(BaseModel):
+class TwoColumnsSlide(SlideAnnotations):
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["two_columns"]
     title: str = Field(min_length=2, max_length=60)
@@ -221,7 +251,7 @@ class TwoColumnsSlide(BaseModel):
         return _strip_text(value)
 
 
-class TitleImageSlide(BaseModel):
+class TitleImageSlide(SlideAnnotations):
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["title_image"]
     title: str = Field(min_length=2, max_length=60)
@@ -242,7 +272,7 @@ class TitleImageSlide(BaseModel):
         return items
 
 
-class TimelineSlide(BaseModel):
+class TimelineSlide(SlideAnnotations):
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["timeline"]
     title: str = Field(min_length=2, max_length=60)
@@ -256,7 +286,7 @@ class TimelineSlide(BaseModel):
         return text or None
 
 
-class StatsDashboardSlide(BaseModel):
+class StatsDashboardSlide(SlideAnnotations):
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["stats_dashboard"]
     title: str = Field(min_length=2, max_length=60)
@@ -276,7 +306,7 @@ class StatsDashboardSlide(BaseModel):
         return _normalize_string_list(value)
 
 
-class MatrixGridSlide(BaseModel):
+class MatrixGridSlide(SlideAnnotations):
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["matrix_grid"]
     title: str = Field(min_length=2, max_length=60)
@@ -292,7 +322,7 @@ class MatrixGridSlide(BaseModel):
         return text or None
 
 
-class CardsGridSlide(BaseModel):
+class CardsGridSlide(SlideAnnotations):
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["cards_grid"]
     title: str = Field(min_length=2, max_length=60)
@@ -379,6 +409,12 @@ def normalize_deck_payload(
             slide["title"] = _strip_text(slide["title"])
         if "layout" in slide:
             slide["layout"] = _strip_text(slide["layout"])
+        anti_argument = _strip_text(slide.get("anti_argument"))
+        if anti_argument:
+            slide["anti_argument"] = anti_argument
+        data_sources = _normalize_data_sources(slide.get("data_sources"))
+        if data_sources:
+            slide["data_sources"] = data_sources
         normalized_slides.append(slide)
 
     return {"meta": normalized_meta, "slides": normalized_slides}

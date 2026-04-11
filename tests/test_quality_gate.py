@@ -248,6 +248,27 @@ class TestQualityGate:
         assert gate_result.summary["high_count"] == 1
         assert gate_result.summary["error_count"] == 0
 
+    def test_quality_gate_exposes_blocking_and_soft_issue_statistics(self):
+        gate_result = quality_gate(
+            {
+                "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "title_content",
+                        "title": "娴" * 26,
+                        "content": ["test"],
+                    }
+                ],
+            }
+        )
+
+        assert gate_result.blocking is False
+        assert gate_result.soft_issue_count >= 1
+        payload = gate_result.to_dict()
+        assert payload["blocking"] is False
+        assert payload["statistics"]["soft_issue_count"] == gate_result.soft_issue_count
+
     def test_quality_gate_blocks_schema_errors(self):
         gate_result = quality_gate(
             {

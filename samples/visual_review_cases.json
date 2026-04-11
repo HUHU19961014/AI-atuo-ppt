@@ -1,62 +1,57 @@
 [
   {
-    "name": "uat_plan_sample",
-    "label": "General business deck",
-    "html": "samples/input/uat_plan_sample.html",
+    "name": "management_report",
+    "label": "Management report regression deck",
+    "deck_json": "regression/01_management_report/deck.json",
+    "baseline_review": "regression/01_management_report/review.md",
     "focus": [
-      "Check cover, directory, body, and ending slide order.",
-      "Check active directory highlight changes by chapter.",
-      "Check body title and subtitle placement."
+      "Check the opening page is conclusion-led rather than directory-like.",
+      "Check the storyline from status to action remains readable in slide order.",
+      "Check the final page still closes with a concrete recommendation or next step."
     ]
   },
   {
-    "name": "architecture_program_sample",
-    "label": "Architecture and governance test deck",
-    "html": "samples/input/architecture_program_sample.html",
+    "name": "project_solution",
+    "label": "Project solution regression deck",
+    "deck_json": "regression/02_project_solution/deck.json",
+    "baseline_review": "regression/02_project_solution/review.md",
     "focus": [
-      "Check architecture-heavy content still maps to the right layouts.",
-      "Check directory image assets remain intact after generation.",
-      "Check architecture, process, and governance pages stay readable."
+      "Check comparison, roadmap, and execution pages keep balanced density.",
+      "Check section transitions feel intentional rather than repetitive.",
+      "Check diagrams and supporting bullets remain readable after rendering."
     ]
   },
   {
-    "name": "default_erp_blueprint",
-    "label": "ERP architecture, process, and governance",
-    "html": "samples/input/default_erp_blueprint.html",
+    "name": "training_deck",
+    "label": "Training deck regression deck",
+    "deck_json": "regression/03_training_deck/deck.json",
+    "baseline_review": "regression/03_training_deck/review.md",
     "focus": [
-      "Check solution_architecture, process_flow, and org_governance layouts.",
-      "Check shapes, color blocks, and text for overlap.",
-      "Check governance footer text remains readable."
+      "Check higher page counts do not accumulate obvious overflow risks.",
+      "Check repeated teaching-style slides still vary enough in title and rhythm.",
+      "Check dense explanatory pages remain presentation-readable."
     ]
   },
   {
-    "name": "pcb_erp_general_solution",
-    "label": "PCB industry ERP general solution",
-    "html": "samples/input/pcb_erp_general_solution.html",
+    "name": "industry_analysis",
+    "label": "Industry analysis regression deck",
+    "deck_json": "regression/04_industry_analysis/deck.json",
+    "baseline_review": "regression/04_industry_analysis/review.md",
     "focus": [
-      "Check PCB-specific terminology such as CAM, MI, APS, MES, and WMS remains readable.",
-      "Check solution_architecture, process_flow, and org_governance pages fit denser industry content.",
-      "Check directory labels still read naturally for a more domain-specific deck."
+      "Check quantified claims and evidence notes remain legible.",
+      "Check analytical pages do not collapse into generic background content.",
+      "Check charts, matrices, and conclusion pages keep visual hierarchy."
     ]
   },
   {
-    "name": "ai_pythonpptx_strategy",
-    "label": "Reference-style import deck",
-    "html": "samples/input/ai_pythonpptx_strategy.html",
+    "name": "monthly_business_review",
+    "label": "Monthly business review regression deck",
+    "deck_json": "regression/05_monthly_business_review/deck.json",
+    "baseline_review": "regression/05_monthly_business_review/review.md",
     "focus": [
-      "Check comparison_upgrade, capability_ring, and five_phase_path style import.",
-      "Check imported shapes, icons, and decorative assets are preserved.",
-      "Check imported pages use the current sample content."
-    ]
-  },
-  {
-    "name": "vendor_launch_sample",
-    "label": "Long-text and process deck",
-    "html": "samples/input/vendor_launch_sample.html",
-    "focus": [
-      "Check long text for visible overflow or truncation.",
-      "Check process step boxes are evenly distributed.",
-      "Check shortened directory labels remain readable."
+      "Check KPI-style pages remain readable under denser business content.",
+      "Check summary and action pages stay distinct from status pages.",
+      "Check no slide appears visually broken before manual review."
     ]
   }
 ]

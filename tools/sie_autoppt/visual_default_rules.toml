@@ -1,0 +1,26 @@
+[scoring]
+pass_threshold = 85
+pass_with_notes_threshold = 75
+auto_revise_threshold = 75
+
+[limits]
+max_cards = 8
+max_detail_chars = 90
+min_font_px = 12
+max_colors = 8
+
+[penalties]
+missing_headline = 20
+missing_claim = 15
+too_many_cards = 20
+detail_too_long = 8
+unsupported_component = 20
+missing_slide_root = 25
+missing_overflow_hidden = 12
+external_assets = 20
+unknown_layout = 20
+missing_screenshot = 8
+too_small_font = 10
+too_many_colors = 8
+safe_area_violation = 12
+safe_area_uncheckable = 6

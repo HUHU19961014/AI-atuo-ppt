@@ -15,8 +15,9 @@ VISUAL_REVIEW_CASES_FILE = SAMPLES_DIR / "visual_review_cases.json"
 class VisualReviewCaseConfig:
     name: str
     label: str
-    html: Path
+    deck_json: Path
     focus: tuple[str, ...]
+    baseline_review: Path | None = None
 
 
 def load_visual_review_cases() -> list[VisualReviewCaseConfig]:
@@ -25,8 +26,9 @@ def load_visual_review_cases() -> list[VisualReviewCaseConfig]:
         VisualReviewCaseConfig(
             name=str(item["name"]),
             label=str(item["label"]),
-            html=(PROJECT_ROOT / str(item["html"])).resolve(),
+            deck_json=(PROJECT_ROOT / str(item["deck_json"])).resolve(),
             focus=tuple(str(entry) for entry in item.get("focus", [])),
+            baseline_review=((PROJECT_ROOT / str(item["baseline_review"])).resolve() if item.get("baseline_review") else None),
         )
         for item in payload
     ]

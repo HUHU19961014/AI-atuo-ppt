@@ -4,21 +4,19 @@ import re
 
 from .models import DeckSpec, StructureArgument, StructureSection, StructureSpec
 from .planning.deck_planner import (
-    build_claim_items,
     build_body_page_spec,
+    resolve_page_layout,
+)
+from .planning.payload_builders import (
+    build_claim_items,
     build_dashboard_insights,
     build_kpi_metrics,
     build_process_steps,
     build_risk_items,
     build_roadmap_stages,
-    compact_text,
-    concise_text,
-    resolve_page_layout,
-    shorten_for_nav,
 )
+from .planning.text_utils import compact_text, concise_text, shorten_for_nav
 
-
-SLIDE_SCHEMAS = ("conclusion", "comparison", "process", "roadmap", "dashboard", "risk", "claim", "cards")
 
 _COMPARISON_KEYWORDS = ("对比", "比较", "差异", "升级", "替代", "现状 vs", "before", "after", "vs")
 _PROCESS_KEYWORDS = ("路径", "阶段", "步骤", "推进", "路线", "roadmap", "phase", "实施")

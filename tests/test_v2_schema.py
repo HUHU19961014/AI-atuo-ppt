@@ -1,9 +1,14 @@
 import unittest
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
+from tools.sie_autoppt.v2 import theme_loader
+from tools.sie_autoppt.v2.layout_ids import SUPPORTED_LAYOUTS as LAYOUT_ID_SOURCE
+from tools.sie_autoppt.v2.layout_router import LAYOUT_RENDERERS
 from tools.sie_autoppt.v2.schema import (
     OutlineDocument,
+    SUPPORTED_LAYOUTS,
     SUPPORTED_THEMES,
     collect_deck_warnings,
     validate_deck_payload,
@@ -23,6 +28,17 @@ class V2SchemaTests(unittest.TestCase):
             "consulting_navy",
         ):
             self.assertIn(theme_name, SUPPORTED_THEMES)
+
+    def test_available_theme_names_raises_for_missing_theme_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_dir = Path(temp_dir) / "missing-themes"
+            with patch.object(theme_loader, "THEMES_DIR", missing_dir):
+                with self.assertRaises(FileNotFoundError):
+                    theme_loader.available_theme_names()
+
+    def test_supported_layouts_are_renderable(self):
+        self.assertIs(SUPPORTED_LAYOUTS, LAYOUT_ID_SOURCE)
+        self.assertEqual(set(SUPPORTED_LAYOUTS), set(LAYOUT_RENDERERS))
 
     def test_outline_document_requires_contiguous_page_numbers(self):
         with self.assertRaises(ValueError):

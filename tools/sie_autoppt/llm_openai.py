@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
 from urllib.parse import urlparse
+from functools import lru_cache
 
 from .config import (
     DEFAULT_AI_MODEL,
@@ -40,12 +41,62 @@ def _allows_empty_api_key(base_url: str) -> bool:
     return hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
+def _local_probe_paths(base_url: str) -> tuple[str, ...]:
+    trimmed = base_url.rstrip("/")
+    if trimmed.endswith("/v1"):
+        return (trimmed + "/models",)
+    return (trimmed + "/models", trimmed + "/v1/models")
+
+
+def _probe_local_openai_compat(url: str, timeout_sec: float = 0.35) -> bool:
+    req = request.Request(url, method="GET")
+    try:
+        with request.urlopen(req, timeout=timeout_sec) as resp:
+            return 200 <= int(resp.status) < 500
+    except error.HTTPError as exc:
+        return 200 <= int(exc.code) < 500
+    except Exception:
+        return False
+
+
+@lru_cache(maxsize=1)
+def _discover_local_base_url() -> str:
+    if os.environ.get("SIE_AUTOPPT_DISABLE_LOCAL_AI_DISCOVERY", "").strip().lower() in {"1", "true", "yes"}:
+        return ""
+
+    candidates = (
+        "http://127.0.0.1:11434/v1",
+        "http://127.0.0.1:3000/v1",
+        "http://127.0.0.1:8000/v1",
+        "http://127.0.0.1:8080/v1",
+        "http://127.0.0.1:1234/v1",
+        "http://localhost:11434/v1",
+        "http://localhost:3000/v1",
+    )
+    for base_url in candidates:
+        for probe_url in _local_probe_paths(base_url):
+            if _probe_local_openai_compat(probe_url):
+                return base_url.rstrip("/")
+    return ""
+
+
 def load_openai_responses_config(model: str | None = None) -> OpenAIResponsesConfig:
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not api_key and not _allows_empty_api_key(os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")):
-        raise OpenAIConfigurationError("OPENAI_API_KEY is required for AI planning.")
+    configured_base_url = os.environ.get("OPENAI_BASE_URL", "").strip().rstrip("/")
+    if configured_base_url:
+        base_url = configured_base_url
+    elif api_key:
+        base_url = "https://api.openai.com/v1"
+    else:
+        base_url = _discover_local_base_url() or "https://api.openai.com/v1"
 
-    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+    if not api_key and not _allows_empty_api_key(base_url):
+        raise OpenAIConfigurationError(
+            "OPENAI_API_KEY is required for AI planning. "
+            "Set OPENAI_API_KEY, or set OPENAI_BASE_URL to your local AI gateway "
+            "(localhost/127.0.0.1), or enable SIE_AUTOPPT_ALLOW_EMPTY_API_KEY=1."
+        )
+
     if not base_url:
         raise OpenAIConfigurationError("OPENAI_BASE_URL must not be empty.")
     api_style = infer_llm_api_style(base_url, configured_style=os.environ.get("SIE_AUTOPPT_LLM_API_STYLE"))

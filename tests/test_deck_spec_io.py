@@ -36,3 +36,28 @@ class DeckSpecIoTests(unittest.TestCase):
             self.assertEqual(json_plan.pattern_ids, plan.pattern_ids)
             self.assertEqual(json_plan.chapter_lines, plan.chapter_lines)
 
+    def test_load_deck_spec_accepts_utf8_bom(self):
+        payload = {
+            "schema_version": DECK_SPEC_SCHEMA_VERSION,
+            "cover_title": "BOM deck",
+            "body_pages": [
+                {
+                    "page_key": "page_01",
+                    "title": "监管要求",
+                    "subtitle": "BOM compatible",
+                    "bullets": ["建立供应链地图"],
+                    "pattern_id": "general_business",
+                    "nav_title": "监管要求",
+                    "reference_style_id": None,
+                    "payload": {},
+                }
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "deck_spec_bom.json"
+            output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8-sig")
+
+            loaded = load_deck_spec(output_path)
+            self.assertEqual(loaded.cover_title, "BOM deck")
+            self.assertEqual(loaded.body_pages[0].title, "监管要求")

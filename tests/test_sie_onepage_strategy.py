@@ -98,6 +98,36 @@ class SieOnepageStrategyTests(unittest.TestCase):
         self.assertEqual(selection.layout_variant, "asymmetric_focus")
         self.assertEqual(resolved_brief.variant, "asymmetric_focus")
 
+    def test_explicit_layout_strategy_id_skips_ai_and_heuristic(self):
+        brief = _make_brief(
+            title="Sales proof layout",
+            row_title="Proof points",
+            process_steps=("Identify", "Evaluate"),
+        )
+        brief = OnePageBrief(**{**brief.__dict__, "layout_strategy": "evidence_dense_brief"})
+
+        resolved_brief, selection = resolve_onepage_strategy(brief)
+
+        self.assertEqual(selection.source, "manual")
+        self.assertEqual(selection.strategy_id, "evidence_dense_brief")
+        self.assertEqual(selection.layout_variant, "balanced_dual_panel")
+        self.assertEqual(resolved_brief.variant, "balanced_dual_panel")
+
+    def test_explicit_layout_variant_in_layout_strategy_is_respected(self):
+        brief = _make_brief(
+            title="Sales proof layout",
+            row_title="Proof points",
+            process_steps=("Identify", "Evaluate"),
+        )
+        brief = OnePageBrief(**{**brief.__dict__, "layout_strategy": "comparison_split"})
+
+        resolved_brief, selection = resolve_onepage_strategy(brief)
+
+        self.assertEqual(selection.source, "manual")
+        self.assertEqual(selection.strategy_id, "manual_variant")
+        self.assertEqual(selection.layout_variant, "comparison_split")
+        self.assertEqual(resolved_brief.variant, "comparison_split")
+
     def test_auto_strategy_can_pick_timeline_layout_for_roadmap_content(self):
         brief = _make_brief(
             title="年度推进路线图",

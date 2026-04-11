@@ -77,7 +77,12 @@ THEMES_DIR = Path(__file__).resolve().parent / "themes"
 
 
 def available_theme_names() -> list[str]:
-    return sorted(path.stem for path in THEMES_DIR.glob("*.json"))
+    if not THEMES_DIR.exists():
+        raise FileNotFoundError(f"Theme directory does not exist: {THEMES_DIR}")
+    theme_names = sorted(path.stem for path in THEMES_DIR.glob("*.json"))
+    if not theme_names:
+        raise FileNotFoundError(f"No theme JSON files found in {THEMES_DIR}")
+    return theme_names
 
 
 def load_theme(theme_name: str) -> ThemeSpec:

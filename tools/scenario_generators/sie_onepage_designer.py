@@ -331,6 +331,7 @@ def select_onepage_strategy_with_ai(brief: OnePageBrief, model: str | None = Non
     user_prompt = (
         "Select the best one-page strategy for this content.\n\n"
         f"Title: {brief.title}\n"
+        f"Layout strategy hint: {brief.layout_strategy or 'auto'}\n"
         f"Right title: {brief.right_title}\n"
         f"Section count: {len(brief.law_rows)}\n"
         f"Process step count: {len(tuple(step for step in brief.process_steps if step.strip()))}\n"
@@ -355,7 +356,34 @@ def select_onepage_strategy_with_ai(brief: OnePageBrief, model: str | None = Non
     )
 
 
-def resolve_onepage_strategy(brief: OnePageBrief, model: str | None = None) -> tuple[OnePageBrief, StrategySelectionResult]:
+def resolve_onepage_strategy(
+    brief: OnePageBrief,
+    model: str | None = None,
+    require_ai: bool = False,
+) -> tuple[OnePageBrief, StrategySelectionResult]:
+    if require_ai:
+        selection = select_onepage_strategy_with_ai(brief, model=model)
+        return replace(brief, variant=selection.layout_variant), selection
+
+    layout_strategy = brief.layout_strategy.strip().lower()
+    if layout_strategy and layout_strategy != AUTO_LAYOUT_STRATEGY:
+        manual_strategy = STRATEGY_BY_ID.get(layout_strategy)
+        if manual_strategy is not None:
+            selection = StrategySelectionResult(
+                strategy_id=manual_strategy.strategy_id,
+                layout_variant=manual_strategy.layout_variant,
+                rationale="Layout strategy was explicitly set by the caller.",
+                source="manual",
+            )
+            return replace(brief, variant=manual_strategy.layout_variant), selection
+        if layout_strategy in SUPPORTED_VARIANTS:
+            return replace(brief, variant=layout_strategy), StrategySelectionResult(
+                strategy_id="manual_variant",
+                layout_variant=layout_strategy,
+                rationale="Layout variant was explicitly set by the caller.",
+                source="manual",
+            )
+
     if brief.variant in SUPPORTED_VARIANTS and brief.layout_strategy.strip().lower() != AUTO_LAYOUT_STRATEGY:
         return brief, StrategySelectionResult(
             strategy_id="manual_variant",
@@ -1150,8 +1178,9 @@ def build_onepage_slide(
     export_review: bool = True,
     template_path: Path = DEFAULT_TEMPLATE,
     model: str | None = None,
+    require_ai_strategy: bool = False,
 ) -> tuple[Path, Path | None, Path, ScoreResult]:
-    resolved_brief, selection = resolve_onepage_strategy(brief, model=model)
+    resolved_brief, selection = resolve_onepage_strategy(brief, model=model, require_ai=require_ai_strategy)
     prs = Presentation(str(template_path))
     keep_only_body_template(prs)
     manifest = load_template_manifest(template_path=template_path)

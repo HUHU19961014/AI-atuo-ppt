@@ -236,7 +236,8 @@ class DeckPlannerTests(unittest.TestCase):
         self.assertEqual(deck.body_pages[1].layout_variant, "process_flow_5")
         self.assertIsNone(deck.body_pages[2].layout_variant)
         self.assertEqual(deck.body_pages[1].layout_hints["desired_layout_variant"], "process_flow_5")
-        self.assertEqual(deck.body_pages[2].layout_hints["desired_layout_variant"], "org_governance_5")
+        self.assertEqual(deck.body_pages[2].layout_hints["desired_capacity"], 5)
+        self.assertEqual(deck.body_pages[2].layout_hints["desired_layout_variant"], "")
         self.assertEqual(len(deck.body_pages[0].payload.get("layers", [])), 4)
         self.assertEqual(len(deck.body_pages[1].payload.get("steps", [])), 4)
         self.assertEqual(deck.body_pages[2].payload.get("label_prefix"), "重点")
@@ -358,5 +359,6 @@ class DeckPlannerTests(unittest.TestCase):
 
         self.assertEqual(pattern_id, "process_flow")
         self.assertIsNone(layout_variant)
-        self.assertEqual(layout_hints["desired_layout_variant"], "process_flow_5")
+        self.assertEqual(layout_hints["desired_capacity"], 5)
+        self.assertEqual(layout_hints["desired_layout_variant"], "")
         self.assertEqual(max_items, 5)

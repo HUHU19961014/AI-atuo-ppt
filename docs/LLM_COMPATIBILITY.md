@@ -122,9 +122,7 @@ export SIE_AUTOPPT_LLM_TIMEOUT_SEC="180"
 ### 运行 AI 健康检查
 
 ```bash
-python -m tools.sie_autoppt_cli ai-check \
-  --topic "测试主题" \
-  --chapters 3
+python .\main.py ai-check --topic "测试主题"
 ```
 
 **成功输出示例：**
@@ -140,6 +138,26 @@ python -m tools.sie_autoppt_cli ai-check \
   "first_page_title": "现状与挑战"
 }
 ```
+
+### 运行真实 AI smoke test
+
+日常 `pytest` 默认不会调用真实模型；如需做一次小样本端到端验证，可执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_real_ai_smoke.ps1
+```
+
+如需更接近正式交付链路：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_real_ai_smoke.ps1 -GenerationMode deep -WithRender
+```
+
+建议：
+
+- 默认先跑 `quick`，它已经能覆盖真实模型的 outline/deck 生成。
+- 只有在排查渲染或本机依赖问题时，再加 `-WithRender`。
+- 真实 smoke test 应只作为补充质量门，不替代常规单元测试和 V2 deck 回归。
 
 ### 常见错误诊断
 
@@ -183,9 +201,9 @@ python -m tools.sie_autoppt_cli ai-check \
 ### 降级策略
 
 如果 AI 规划失败，可以：
-1. 回退到 HTML 输入模式
-2. 使用预定义的 deck spec JSON
-3. 使用外部规划器命令（`SIE_AUTOPPT_EXTERNAL_PLANNER_CMD`）
+1. 回退到现成的 deck JSON 或 outline JSON
+2. 使用仓库内置 `demo` 命令先验证渲染链路
+3. 必要时再定位 legacy HTML 兼容路径是否单独失效
 
 ## 测试覆盖
 
@@ -193,12 +211,12 @@ python -m tools.sie_autoppt_cli ai-check \
 - ✅ OpenAI Responses API mock 测试
 - ✅ Chat Completions API mock 测试
 - ✅ JSON 解析和归一化
-- ✅ 外部规划器集成
-- ⚠️ 真实模型端到端测试需要手动执行
+- ✅ OpenAI / Chat Completions 兼容接入
+- ✅ 真实模型 smoke test 可通过 `tools/run_real_ai_smoke.ps1` 手动执行
 
 运行测试：
 ```bash
-python -m pytest tests/test_ai_planner.py -v
+python -m pytest tests/test_v2_services.py -v
 python -m pytest tests/test_llm_openai.py -v
 ```
 

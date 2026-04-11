@@ -1,6 +1,9 @@
 import unittest
 
-from tools.sie_autoppt.patterns import infer_pattern, infer_pattern_details
+from tools.sie_autoppt.patterns import (
+    infer_pattern,
+    infer_pattern_details,
+)
 
 
 class PatternInferenceTests(unittest.TestCase):

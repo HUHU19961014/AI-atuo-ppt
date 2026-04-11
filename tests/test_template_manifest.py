@@ -28,12 +28,20 @@ class TemplateManifestTests(unittest.TestCase):
         self.assertEqual(manifest.style_guide.title_max_chars, 32)
         self.assertEqual(manifest.style_guide.preferred_item_counts, (3, 5, 9))
         self.assertEqual(manifest.style_guide.overflow_policy, "paginate")
+        self.assertEqual(
+            [variant["id"] for variant in manifest.pattern_variants["general_business"]],
+            ["general_business_3", "general_business_5", "general_business_9"],
+        )
+        self.assertEqual(
+            [variant["capacity"] for variant in manifest.pattern_variants["process_flow"]],
+            [3, 5, 9],
+        )
         self.assertEqual(len(manifest.slide_pools.directory), 20)
         self.assertEqual(manifest.slide_pools.directory[:3], (2, 4, 6))
         self.assertEqual(manifest.slide_pools.directory[-1], 40)
         self.assertEqual(manifest.slide_pools.body[:3], (3, 5, 7))
         self.assertEqual(manifest.slide_pools.body[-1], 41)
-        self.assertEqual(manifest.slide_pools.ending, 46)
+        self.assertEqual(manifest.slide_pools.ending, 42)
         self.assertIn("general_business", manifest.render_layouts)
         self.assertIn("general_business_3", manifest.render_layouts)
         self.assertIn("process_flow_9", manifest.render_layouts)
@@ -62,7 +70,7 @@ class TemplateManifestTests(unittest.TestCase):
         invalid_manifest = replace(manifest, slide_pools=invalid_pool)
 
         with self.assertRaises(ValueError):
-            validate_slide_pool_configuration(invalid_manifest, body_page_count=3, slide_count=47)
+            validate_slide_pool_configuration(invalid_manifest, body_page_count=3, slide_count=43)
 
     def test_manifest_supports_cm_units_for_geometry(self):
         data = json.loads(DEFAULT_TEMPLATE_MANIFEST.read_text(encoding="utf-8"))
@@ -84,6 +92,24 @@ class TemplateManifestTests(unittest.TestCase):
         self.assertEqual(manifest.render_layouts["general_business"]["gap_x"], int(0.5 * EMU_PER_CM))
         self.assertEqual(manifest.style_guide.body_max_chars, 140)
 
+    def test_manifest_rejects_pattern_variant_without_render_layout(self):
+        data = json.loads(DEFAULT_TEMPLATE_MANIFEST.read_text(encoding="utf-8"))
+        data["pattern_variants"] = {
+            "general_business": [
+                {"id": "missing_general_business_variant", "capacity": 3},
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manifest_path = Path(temp_dir) / "temp.manifest.json"
+            manifest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            with self.assertRaises(ValueError) as ctx:
+                load_template_manifest(manifest_path=manifest_path)
+
+        self.assertIn("missing_general_business_variant", str(ctx.exception))
+        self.assertIn("render_layouts.missing_general_business_variant", str(ctx.exception))
+
     def test_variant_template_manifest_loads_style_guide_markdown(self):
         manifest = load_template_manifest(template_path=Path("assets/templates/business_gold/template.pptx"))
 
@@ -92,3 +118,7 @@ class TemplateManifestTests(unittest.TestCase):
         self.assertEqual(manifest.style_guide.accent_rgb, (168, 126, 33))
         self.assertIn("premium", manifest.style_guide.tone_keywords)
         self.assertIn("outcome first", manifest.style_guide.narrative_preferences)
+        self.assertEqual(
+            [variant["id"] for variant in manifest.pattern_variants["general_business"]],
+            ["general_business_3", "general_business_5", "general_business_9"],
+        )
