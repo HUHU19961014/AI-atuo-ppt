@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
+import sys
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 from typing import Any
 
 from ..clarifier import DEFAULT_AUDIENCE_HINT
-from ..config import DEFAULT_OUTPUT_DIR
+from ..config import DEFAULT_OUTPUT_DIR, PROJECT_ROOT
 from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
 from ..prompting import render_prompt_template
+from .content_rewriter import rewrite_deck, write_rewrite_log
 from .deck_director import build_semantic_deck_schema, compile_semantic_deck_payload
 from .io import (
     build_deck_output_path,
@@ -22,10 +27,11 @@ from .io import (
     default_ppt_output_path,
     default_semantic_output_path,
     load_outline_document,
+    write_deck_document,
     write_semantic_document,
     write_outline_document,
 )
-from .ppt_engine import generate_ppt
+from .quality_checks import quality_gate, write_quality_gate_result
 from .schema import (
     DeckDocument,
     OutlineDocument,
@@ -35,8 +41,22 @@ from .schema import (
     collect_deck_warnings,
     validate_deck_payload,
 )
+from .theme_loader import load_theme
 
 SUPPORTED_GENERATION_MODES = ("quick", "deep")
+DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES = (
+    PROJECT_ROOT / "projects" / "ppt-master" / "skills" / "ppt-master" / "scripts" / "svg_to_pptx.py",
+    PROJECT_ROOT / "skills" / "ppt-master" / "scripts" / "svg_to_pptx.py",
+)
+DEFAULT_TOTAL_MD_SPLIT_SCRIPT_CANDIDATES = (
+    PROJECT_ROOT / "projects" / "ppt-master" / "skills" / "ppt-master" / "scripts" / "total_md_split.py",
+    PROJECT_ROOT / "skills" / "ppt-master" / "scripts" / "total_md_split.py",
+)
+DEFAULT_FINALIZE_SVG_SCRIPT_CANDIDATES = (
+    PROJECT_ROOT / "projects" / "ppt-master" / "skills" / "ppt-master" / "scripts" / "finalize_svg.py",
+    PROJECT_ROOT / "skills" / "ppt-master" / "scripts" / "finalize_svg.py",
+)
+DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC = 120
 
 
 @dataclass(frozen=True)
@@ -45,7 +65,7 @@ class OutlineGenerationRequest:
     brief: str = ""
     audience: str = DEFAULT_AUDIENCE_HINT
     language: str = "zh-CN"
-    theme: str = "business_red"
+    theme: str = "sie_consulting_fixed"
     exact_slides: int | None = None
     min_slides: int = 6
     max_slides: int = 10
@@ -61,7 +81,7 @@ class DeckGenerationRequest:
     brief: str = ""
     audience: str = DEFAULT_AUDIENCE_HINT
     language: str = "zh-CN"
-    theme: str = "business_red"
+    theme: str = "sie_consulting_fixed"
     author: str = "Enterprise AI PPT"
     generation_mode: str = "deep"
     structured_context: dict[str, Any] | None = None
@@ -79,6 +99,8 @@ class V2MakeArtifacts:
     pptx_path: Path
     deck: DeckDocument
     warnings: tuple[str, ...] = ()
+    svg_project_path: Path | None = None
+    svg_final_dir: Path | None = None
 
 
 def _clamp_slide_count(value: int) -> int:
@@ -107,6 +129,166 @@ def _json_block(payload: dict[str, Any] | None, fallback: str = "none") -> str:
     if not payload:
         return fallback
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _safe_stem(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", value.strip()).strip("_") or "slide"
+
+
+def _escape_svg_text(value: str) -> str:
+    return escape(str(value), quote=True)
+
+
+def _resolve_script_path(candidate_paths: tuple[Path, ...], script_name: str) -> Path:
+    for candidate in candidate_paths:
+        if candidate.exists():
+            return candidate
+    checked = "\n".join(f"- {item}" for item in candidate_paths)
+    raise FileNotFoundError(f"Unable to locate {script_name}. Checked:\n{checked}")
+
+
+def _run_command(command: list[str], *, step_name: str) -> None:
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"{step_name} timed out after {DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC}s") from exc
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"{step_name} failed: {details or 'unknown error'}")
+
+
+def _collect_slide_text_lines(slide: Any) -> list[str]:
+    lines: list[str] = []
+    layout = str(getattr(slide, "layout", ""))
+    if layout == "title_content":
+        lines.extend(getattr(slide, "content", []))
+    elif layout == "two_columns":
+        left = getattr(slide, "left", None)
+        right = getattr(slide, "right", None)
+        if left is not None:
+            if getattr(left, "heading", ""):
+                lines.append(str(left.heading))
+            lines.extend(getattr(left, "items", []))
+        if right is not None:
+            if getattr(right, "heading", ""):
+                lines.append(str(right.heading))
+            lines.extend(getattr(right, "items", []))
+    elif layout == "title_image":
+        lines.extend(getattr(slide, "content", []))
+        image = getattr(slide, "image", None)
+        if image is not None and getattr(image, "caption", ""):
+            lines.append(str(image.caption))
+    elif layout == "timeline":
+        if getattr(slide, "heading", ""):
+            lines.append(str(slide.heading))
+        for stage in getattr(slide, "stages", []):
+            title = getattr(stage, "title", "")
+            detail = getattr(stage, "detail", "")
+            if title:
+                lines.append(str(title))
+            if detail:
+                lines.append(str(detail))
+    elif layout == "stats_dashboard":
+        if getattr(slide, "heading", ""):
+            lines.append(str(slide.heading))
+        for metric in getattr(slide, "metrics", []):
+            label = getattr(metric, "label", "")
+            value = getattr(metric, "value", "")
+            note = getattr(metric, "note", "")
+            if label or value:
+                lines.append(f"{label}: {value}".strip(": "))
+            if note:
+                lines.append(str(note))
+        lines.extend(getattr(slide, "insights", []))
+    elif layout == "matrix_grid":
+        if getattr(slide, "heading", ""):
+            lines.append(str(slide.heading))
+        for cell in getattr(slide, "cells", []):
+            title = getattr(cell, "title", "")
+            body = getattr(cell, "body", "")
+            if title:
+                lines.append(str(title))
+            if body:
+                lines.append(str(body))
+    elif layout == "cards_grid":
+        if getattr(slide, "heading", ""):
+            lines.append(str(slide.heading))
+        for card in getattr(slide, "cards", []):
+            title = getattr(card, "title", "")
+            body = getattr(card, "body", "")
+            if title:
+                lines.append(str(title))
+            if body:
+                lines.append(str(body))
+    return [line.strip() for line in lines if str(line).strip()]
+
+
+def _write_svg_project(deck: DeckDocument, *, project_path: Path) -> Path:
+    theme = load_theme(deck.meta.theme)
+    width = int(round(theme.page.width * 120))
+    height = int(round(theme.page.height * 120))
+    title_font = theme.fonts.title
+    body_font = theme.fonts.body
+
+    svg_output_dir = project_path / "svg_output"
+    notes_dir = project_path / "notes"
+    svg_output_dir.mkdir(parents=True, exist_ok=True)
+    notes_dir.mkdir(parents=True, exist_ok=True)
+
+    note_sections: list[str] = []
+    for index, slide in enumerate(deck.slides, start=1):
+        slide_slug = _safe_stem(f"{slide.slide_id}_{index:02d}")
+        slide_stem = f"slide_{index:02d}_{slide_slug}"
+        svg_path = svg_output_dir / f"{slide_stem}.svg"
+        lines = _collect_slide_text_lines(slide)
+        title = _escape_svg_text(getattr(slide, "title", f"Slide {index}"))
+
+        text_elements = [
+            f'<text x="84" y="96" fill="{theme.colors.primary}" font-family="{_escape_svg_text(title_font)}" font-size="42" font-weight="700">{title}</text>'
+        ]
+        y = 160
+        for item in lines[:10]:
+            safe_item = _escape_svg_text(item)
+            text_elements.append(
+                f'<text x="116" y="{y}" fill="{theme.colors.text_main}" font-family="{_escape_svg_text(body_font)}" font-size="26">{safe_item}</text>'
+            )
+            y += 58
+
+        svg_payload = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">\n'
+            f'  <rect width="{width}" height="{height}" fill="{theme.colors.bg}"/>\n'
+            f'  <rect x="72" y="56" width="{width - 144}" height="{height - 112}" rx="18" fill="{theme.colors.card_bg}" stroke="{theme.colors.line}" stroke-width="2"/>\n'
+            f"  {' '.join(text_elements)}\n"
+            "</svg>\n"
+        )
+        svg_path.write_text(svg_payload, encoding="utf-8")
+
+        notes_body = "\n".join(f"- {line}" for line in lines[:8]) or "- N/A"
+        note_sections.append(f"# {slide_stem}\n{notes_body}")
+
+    (notes_dir / "total.md").write_text("\n\n".join(note_sections).strip() + "\n", encoding="utf-8")
+    return project_path
+
+
+def _run_svg_pipeline(*, project_path: Path, final_ppt_output: Path) -> None:
+    split_script = _resolve_script_path(DEFAULT_TOTAL_MD_SPLIT_SCRIPT_CANDIDATES, "total_md_split.py")
+    finalize_script = _resolve_script_path(DEFAULT_FINALIZE_SVG_SCRIPT_CANDIDATES, "finalize_svg.py")
+    export_script = _resolve_script_path(DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES, "svg_to_pptx.py")
+    final_ppt_output.parent.mkdir(parents=True, exist_ok=True)
+
+    _run_command([sys.executable, str(split_script), str(project_path)], step_name="svg split notes")
+    _run_command([sys.executable, str(finalize_script), str(project_path)], step_name="svg finalize")
+    _run_command(
+        [sys.executable, str(export_script), str(project_path), "-s", "final", "-o", str(final_ppt_output)],
+        step_name="svg export",
+    )
 
 
 def build_context_schema() -> dict[str, Any]:
@@ -573,7 +755,7 @@ def make_v2_ppt(
     brief: str = "",
     audience: str = DEFAULT_AUDIENCE_HINT,
     language: str = "zh-CN",
-    theme: str = "business_red",
+    theme: str = "sie_consulting_fixed",
     author: str = "Enterprise AI PPT",
     exact_slides: int | None = None,
     min_slides: int = 6,
@@ -649,24 +831,56 @@ def make_v2_ppt(
         default_author=author,
     )
     final_deck_output = deck_output or default_deck_output_path(final_output_dir)
-
     final_log_output = log_output or default_log_output_path(final_output_dir)
     final_ppt_output = ppt_output or default_ppt_output_path(final_output_dir)
-    render_result = generate_ppt(
-        validated_deck,
-        output_path=final_ppt_output,
-        theme_name=theme,
-        log_path=final_log_output,
-        deck_output_path=final_deck_output,
+    rewrite_log_path = final_log_output.parent / "rewrite_log.json"
+    warnings_path = final_log_output.parent / "warnings.json"
+
+    initial_quality = quality_gate(validated_deck)
+    rewrite_result = rewrite_deck(validated_deck, initial_quality)
+    write_rewrite_log(rewrite_result, rewrite_log_path)
+    write_quality_gate_result(rewrite_result.final_quality_gate, warnings_path)
+
+    rewritten_validated = rewrite_result.validated_deck or validated_deck
+    if rewritten_validated is None:
+        raise ValueError("Schema validation failed; SVG pipeline was skipped.")
+    if not rewrite_result.final_quality_gate.passed:
+        raise ValueError(
+            f"Quality gate failed: {rewrite_result.final_quality_gate.summary['error_count']} error(s) found. SVG pipeline was skipped."
+        )
+
+    final_deck = rewritten_validated.deck
+    write_deck_document(final_deck, final_deck_output)
+
+    safe_prefix = _safe_stem(output_prefix)
+    svg_project_path = final_output_dir / "svg_projects" / f"{safe_prefix}_ppt169"
+    _write_svg_project(final_deck, project_path=svg_project_path)
+    _run_svg_pipeline(project_path=svg_project_path, final_ppt_output=final_ppt_output)
+
+    final_log_output.parent.mkdir(parents=True, exist_ok=True)
+    final_log_output.write_text(
+        "\n".join(
+            (
+                "INFO: make_v2_ppt routes through SVG primary pipeline.",
+                f"INFO: svg_project={svg_project_path}",
+                "INFO: svg_stage=final",
+                f"INFO: output_pptx={final_ppt_output}",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
     )
     return V2MakeArtifacts(
         outline_path=final_outline_output,
         semantic_path=final_semantic_output,
-        deck_path=render_result.deck_path or final_deck_output,
+        deck_path=final_deck_output,
         log_path=final_log_output,
-        rewrite_log_path=render_result.rewrite_log_path or (final_log_output.parent / "rewrite_log.json"),
-        warnings_path=render_result.warnings_path or (final_log_output.parent / "warnings.json"),
-        pptx_path=render_result.output_path,
-        deck=render_result.final_deck,
-        warnings=tuple(collect_deck_warnings(render_result.final_deck)),
+        rewrite_log_path=rewrite_log_path,
+        warnings_path=warnings_path,
+        pptx_path=final_ppt_output,
+        deck=final_deck,
+        warnings=tuple(collect_deck_warnings(final_deck)),
+        svg_project_path=svg_project_path,
+        svg_final_dir=svg_project_path / "svg_final",
     )
+

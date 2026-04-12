@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, replace
@@ -98,6 +98,7 @@ COMMAND_ALIASES = {
     "review": "v2-review",
     "iterate": "v2-iterate",
 }
+DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC = 120
 RECOMMENDED_WORKFLOW_HELP = (
     "Recommended workflows:\n"
     "  demo                  no-AI sample render using the bundled deck\n"
@@ -194,7 +195,7 @@ def emit_command_notice(explicit: bool, parsed_command: str, effective_command: 
 
 
 def option_was_explicit(argv: list[str], option_name: str) -> bool:
-    return option_name in argv
+    return any(token == option_name or token.startswith(f"{option_name}=") for token in argv)
 
 
 def is_v2_command(command_name: str) -> bool:
@@ -212,6 +213,17 @@ def validate_v2_option_compatibility(
     if option_was_explicit(argv, "--template"):
         parser.error(
             "--template is no longer supported. Use --theme with the V2 semantic workflow."
+        )
+    explicit_theme_values: list[str] = []
+    for index, token in enumerate(argv):
+        if token == "--theme" and index + 1 < len(argv):
+            explicit_theme_values.append(str(argv[index + 1]).strip())
+            continue
+        if token.startswith("--theme="):
+            explicit_theme_values.append(token.split("=", 1)[1].strip())
+    if any(value and value != "sie_consulting_fixed" for value in explicit_theme_values):
+        parser.error(
+            "--theme is fixed to 'sie_consulting_fixed' for SIE consulting workflow."
         )
 
 

@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from run_regression import (
     RegressionCaseResult,
@@ -61,13 +62,31 @@ class RunRegressionTests(unittest.TestCase):
                     case="01_management_report",
                     score=22,
                     level="优秀",
-                    conclusion="可直接进入交付或仅需极少量润色。",
+                    conclusion="可直接进入交付或仅需极少润色。",
                     review_path="regression/01_management_report/review.md",
                 )
             ]
             report_path = write_report(results, Path(temp_dir), review_results, [])
             content = report_path.read_text(encoding="utf-8")
             self.assertEqual(report_path.name, "regression_report.md")
-            self.assertIn("总 case 数", content)
-            self.assertIn("人工评分汇总", content)
+            self.assertIn("Regression Report", content)
             self.assertIn("01_management_report", content)
+
+    def test_run_case_keeps_validation_error_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            case_dir = Path(temp_dir) / "case_a"
+            case_dir.mkdir(parents=True, exist_ok=True)
+            (case_dir / "deck.json").write_text("{}", encoding="utf-8")
+
+            with (
+                patch("run_regression.validate_deck_payload", side_effect=ValueError("schema mismatch")),
+                patch("run_regression.generate_ppt", side_effect=RuntimeError("render failed")),
+            ):
+                result = run_case(case_dir, Path(temp_dir) / "out")
+
+        self.assertFalse(result.success)
+        self.assertIn("schema mismatch", result.error)
+
+
+if __name__ == "__main__":
+    unittest.main()

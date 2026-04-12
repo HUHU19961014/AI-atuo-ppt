@@ -1,8 +1,11 @@
-import tempfile
 import unittest
+import shutil
+from contextlib import contextmanager
 from pathlib import Path
+from uuid import uuid4
 from unittest.mock import patch
 
+import tools.sie_autoppt.v2.services as services_module
 from tools.sie_autoppt.v2.schema import OutlineDocument, validate_deck_payload
 from tools.sie_autoppt.v2.services import (
     DeckGenerationRequest,
@@ -15,8 +18,25 @@ from tools.sie_autoppt.v2.services import (
     resolve_slide_bounds,
 )
 
+@contextmanager
+def _workspace_tmpdir():
+    root = Path(__file__).resolve().parents[1] / ".tmp_test_workspace"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"tmp_{uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=False)
+    try:
+        yield str(path)
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 class V2ServiceTests(unittest.TestCase):
+    def test_run_command_passes_timeout(self):
+        completed = type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        with patch("tools.sie_autoppt.v2.services.subprocess.run", return_value=completed) as run_mock:
+            services_module._run_command(["echo", "ok"], step_name="unit-test")
+
+        self.assertIn("timeout", run_mock.call_args.kwargs)
+
     def test_resolve_slide_bounds_supports_exact_and_range(self):
         self.assertEqual(
             resolve_slide_bounds(OutlineGenerationRequest(topic="AI", exact_slides=8)),
@@ -84,7 +104,7 @@ class V2ServiceTests(unittest.TestCase):
         )
         validated = validate_deck_payload(
             {
-                "meta": {"title": "Test Deck", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "meta": {"title": "Test Deck", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
                 "slides": [
                     {
                         "slide_id": "s1",
@@ -104,7 +124,7 @@ class V2ServiceTests(unittest.TestCase):
             }
         )
         semantic_payload = {
-            "meta": {"title": "Test Deck", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "meta": {"title": "Test Deck", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
             "slides": [
                 {
                     "slide_id": "s1",
@@ -139,8 +159,10 @@ class V2ServiceTests(unittest.TestCase):
             "tools.sie_autoppt.v2.services.generate_outline_with_ai", return_value=outline
         ), patch(
             "tools.sie_autoppt.v2.services.generate_semantic_deck_with_ai", return_value=semantic_payload
+        ), patch(
+            "tools.sie_autoppt.v2.services._run_svg_pipeline"
         ):
-            with tempfile.TemporaryDirectory() as temp_dir:
+            with _workspace_tmpdir() as temp_dir:
                 artifacts = make_v2_ppt(
                     topic="AI strategy",
                     output_dir=Path(temp_dir),
@@ -156,9 +178,9 @@ class V2ServiceTests(unittest.TestCase):
                 self.assertTrue(artifacts.rewrite_log_path.exists())
                 self.assertTrue(artifacts.warnings_path.exists())
                 payload = artifacts.deck.model_dump(mode="json")
-                self.assertEqual(payload["slides"][0]["layout"], "two_columns")
-                self.assertLessEqual(len(payload["slides"][0]["left"]["items"]), 6)
-                self.assertLessEqual(len(payload["slides"][0]["right"]["items"]), 6)
+                self.assertGreaterEqual(len(payload["slides"]), 2)
+                self.assertTrue(all(slide["layout"] == "title_content" for slide in payload["slides"]))
+                self.assertTrue(all(1 <= len(slide["content"]) <= 6 for slide in payload["slides"]))
                 self.assertEqual(payload["slides"][0]["anti_argument"], "前期投入和组织协同成本不可忽视。")
                 self.assertEqual(payload["slides"][0]["data_sources"][0]["source"], "内部试点测算")
 
@@ -173,7 +195,7 @@ class V2ServiceTests(unittest.TestCase):
             }
         )
         semantic_payload = {
-            "meta": {"title": "AI strategy", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "meta": {"title": "AI strategy", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
             "slides": [
                 {
                     "slide_id": "s1",
@@ -190,8 +212,10 @@ class V2ServiceTests(unittest.TestCase):
             "tools.sie_autoppt.v2.services.generate_outline_with_ai", return_value=outline
         ) as generate_outline, patch(
             "tools.sie_autoppt.v2.services.generate_semantic_deck_with_ai", return_value=semantic_payload
-        ) as generate_semantic:
-            with tempfile.TemporaryDirectory() as temp_dir:
+        ) as generate_semantic, patch(
+            "tools.sie_autoppt.v2.services._run_svg_pipeline"
+        ):
+            with _workspace_tmpdir() as temp_dir:
                 make_v2_ppt(topic="AI strategy", output_dir=Path(temp_dir))
 
         outline_request = generate_outline.call_args.args[0]
@@ -211,7 +235,7 @@ class V2ServiceTests(unittest.TestCase):
             }
         )
         semantic_payload = {
-            "meta": {"title": "AI strategy", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "meta": {"title": "AI strategy", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
             "slides": [
                 {
                     "slide_id": "s1",
@@ -262,3 +286,6 @@ class V2ServiceTests(unittest.TestCase):
         self.assertEqual(strategy, {})
         extract_context.assert_not_called()
         generate_strategy.assert_not_called()
+
+
+

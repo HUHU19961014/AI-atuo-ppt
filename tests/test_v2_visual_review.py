@@ -1,4 +1,4 @@
-import tempfile
+﻿import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -224,6 +224,23 @@ class V2VisualReviewTests(unittest.TestCase):
                 previews = export_slide_previews(pptx_path, Path(temp_dir) / "previews")
 
         self.assertEqual(previews, [])
+
+    def test_export_slide_previews_passes_timeout_to_subprocess(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pptx_path = Path(temp_dir) / "deck.pptx"
+            pptx_path.write_bytes(b"fake-pptx")
+            output_dir = Path(temp_dir) / "previews"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "slide1.png").write_bytes(b"png")
+            completed = type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+            with (
+                patch("tools.sie_autoppt.v2.visual_review.platform.system", return_value="Linux"),
+                patch("tools.sie_autoppt.v2.visual_review.shutil.which", return_value="soffice"),
+                patch("tools.sie_autoppt.v2.visual_review.subprocess.run", return_value=completed) as run_mock,
+            ):
+                export_slide_previews(pptx_path, output_dir)
+
+        self.assertIn("timeout", run_mock.call_args.kwargs)
 
     def test_apply_patch_set_updates_nested_fields(self):
         deck = _sample_deck()

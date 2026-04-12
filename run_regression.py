@@ -33,7 +33,7 @@ class RegressionCaseResult:
     log_path: str = ""
     warnings_path: str = ""
     auto_score: int = 100
-    auto_level: str = "优秀"
+    auto_level: str = "excellent"
     score: int | None = None
     score_level: str = ""
     error: str = ""
@@ -51,11 +51,7 @@ class RegressionReviewResult:
 def discover_regression_cases(regression_dir: Path) -> list[Path]:
     if not regression_dir.exists():
         raise FileNotFoundError(f"Regression directory not found: {regression_dir}")
-    return sorted(
-        path
-        for path in regression_dir.iterdir()
-        if path.is_dir() and (path / "deck.json").exists()
-    )
+    return sorted(path for path in regression_dir.iterdir() if path.is_dir() and (path / "deck.json").exists())
 
 
 def _case_output_dir(output_root: Path, case_name: str) -> Path:
@@ -69,7 +65,7 @@ def _read_quality_gate_payload(warnings_path: Path) -> dict[str, Any]:
             "review_required": False,
             "summary": {"warning_count": 0, "high_count": 0, "error_count": 0},
             "auto_score": 0,
-            "auto_level": "不可用",
+            "auto_level": "unavailable",
         }
     return json.loads(warnings_path.read_text(encoding="utf-8"))
 
@@ -87,19 +83,17 @@ def run_case(case_dir: Path, output_root: Path) -> RegressionCaseResult:
 
     payload = json.loads(deck_path.read_text(encoding="utf-8"))
     slides = 0
+    validation_error = ""
 
     try:
         validated = validate_deck_payload(payload)
         slides = len(validated.deck.slides)
-    except Exception:
+    except Exception as exc:
         slides = 0
+        validation_error = str(exc).strip()
 
     try:
-        render_result = generate_ppt(
-            payload,
-            output_path=pptx_path,
-            log_path=log_path,
-        )
+        render_result = generate_ppt(payload, output_path=pptx_path, log_path=log_path)
         duration = round(time.perf_counter() - started_at, 2)
         return RegressionCaseResult(
             case=case_name,
@@ -121,6 +115,11 @@ def run_case(case_dir: Path, output_root: Path) -> RegressionCaseResult:
         duration = round(time.perf_counter() - started_at, 2)
         gate_payload = _read_quality_gate_payload(warnings_path)
         summary = gate_payload.get("summary", {})
+        combined_error = (
+            f"schema_validation_error={validation_error}; render_error={exc}"
+            if validation_error
+            else str(exc)
+        )
         return RegressionCaseResult(
             case=case_name,
             success=False,
@@ -135,8 +134,8 @@ def run_case(case_dir: Path, output_root: Path) -> RegressionCaseResult:
             log_path=str(log_path),
             warnings_path=str(warnings_path),
             auto_score=int(gate_payload.get("auto_score", 0)),
-            auto_level=str(gate_payload.get("auto_level", "不可用")),
-            error=str(exc),
+            auto_level=str(gate_payload.get("auto_level", "unavailable")),
+            error=combined_error,
         )
 
 
@@ -168,10 +167,7 @@ def collect_review_scores(case_dirs: list[Path]) -> tuple[list[RegressionReviewR
     return review_results, review_scores_by_case, review_errors
 
 
-def merge_review_scores(
-    results: list[RegressionCaseResult],
-    review_scores_by_case: dict[str, ReviewScore],
-) -> list[RegressionCaseResult]:
+def merge_review_scores(results: list[RegressionCaseResult], review_scores_by_case: dict[str, ReviewScore]) -> list[RegressionCaseResult]:
     merged: list[RegressionCaseResult] = []
     for result in results:
         review_score = review_scores_by_case.get(result.case)
@@ -218,21 +214,21 @@ def _build_worst_cases(results: list[RegressionCaseResult], limit: int = 3) -> l
     for item in ranked[:limit]:
         reasons: list[str] = []
         if not item.ppt_generated:
-            reasons.append("PPT 未生成")
+            reasons.append("PPT not generated")
         if item.error_count > 0:
-            reasons.append(f"{item.error_count} 个 error")
+            reasons.append(f"{item.error_count} error")
         if item.high_count > 0:
-            reasons.append(f"{item.high_count} 个 high")
+            reasons.append(f"{item.high_count} high")
         if item.review_required:
-            reasons.append("需要人工复核")
+            reasons.append("manual review required")
         if not reasons:
-            reasons.append("自动评分相对较低")
+            reasons.append("lower auto score")
         worst_cases.append(
             {
                 "case": item.case,
                 "auto_score": item.auto_score,
                 "score_level": item.score_level,
-                "reason": "，".join(reasons),
+                "reason": "; ".join(reasons),
             }
         )
     return worst_cases
@@ -314,33 +310,29 @@ def write_report(
     lines = [
         "# Regression Report",
         "",
-        "## 概览",
+        "## Overview",
         "",
-        f"- 总 case 数：{total_cases}",
-        f"- 成功率：{success_count}/{total_cases} ({(success_count / total_cases * 100):.1f}%)" if total_cases else "- 成功率：0/0 (0.0%)",
-        f"- 平均 warning 数：{average_warning_count}",
-        f"- 需要人工复核比例：{review_required_count}/{total_cases} ({(review_required_count / total_cases * 100):.1f}%)" if total_cases else "- 需要人工复核比例：0/0 (0.0%)",
+        f"- Total cases: {total_cases}",
+        f"- Success rate: {success_count}/{total_cases} ({(success_count / total_cases * 100):.1f}%)" if total_cases else "- Success rate: 0/0 (0.0%)",
+        f"- Average warnings: {average_warning_count}",
+        f"- Manual review ratio: {review_required_count}/{total_cases} ({(review_required_count / total_cases * 100):.1f}%)"
+        if total_cases
+        else "- Manual review ratio: 0/0 (0.0%)",
         "",
-        "## 最差 Case",
+        "## Worst Cases",
         "",
     ]
 
     if worst_cases:
         for item in worst_cases:
-            lines.append(f"- {item['case']}：{item['reason']}（auto_score={item['auto_score']}）")
+            lines.append(f"- {item['case']}: {item['reason']} (auto_score={item['auto_score']})")
     else:
-        lines.append("- 无")
+        lines.append("- None")
 
-    lines.extend(
-        [
-            "",
-            "## Case 明细",
-            "",
-        ]
-    )
+    lines.extend(["", "## Case Details", ""])
     for item in results:
         detail = (
-            f"- {item.case}：success={item.success}, ppt_generated={item.ppt_generated}, "
+            f"- {item.case}: success={item.success}, ppt_generated={item.ppt_generated}, "
             f"warnings={item.warning_count}, high={item.high_count}, errors={item.error_count}, "
             f"review_required={item.review_required}, slides={item.slides}, auto_score={item.auto_score}"
         )
@@ -350,42 +342,32 @@ def write_report(
             detail += f", error={item.error}"
         lines.append(detail)
 
-    lines.extend(
-        [
-            "",
-            "## 人工评分汇总",
-            "",
-        ]
-    )
+    lines.extend(["", "## Human Review Summary", ""])
 
     if review_summary is None:
-        lines.append("- 暂无人工评分")
+        lines.append("- No human review scores")
     else:
-        lines.append(f"- 平均分：{review_summary.average_score}")
-        lines.append(f"- 优秀比例：{review_summary.excellent_ratio * 100:.1f}%")
-        lines.append(f"- 合格比例：{review_summary.qualified_ratio * 100:.1f}%")
-        lines.append(f"- 不合格比例：{review_summary.unqualified_ratio * 100:.1f}%")
-        lines.append(f"- 最低分 case：{review_summary.lowest_score_case} ({review_summary.lowest_score})")
+        lines.append(f"- Average score: {review_summary.average_score}")
+        lines.append(f"- Excellent ratio: {review_summary.excellent_ratio * 100:.1f}%")
+        lines.append(f"- Qualified ratio: {review_summary.qualified_ratio * 100:.1f}%")
+        lines.append(f"- Unqualified ratio: {review_summary.unqualified_ratio * 100:.1f}%")
+        lines.append(f"- Lowest-score case: {review_summary.lowest_score_case} ({review_summary.lowest_score})")
 
     if review_results:
-        lines.extend(["", "### 评分明细", ""])
+        lines.extend(["", "### Review Details", ""])
         for item in review_results:
-            lines.append(f"- {item.case}：score={item.score}, level={item.level}")
+            lines.append(f"- {item.case}: score={item.score}, level={item.level}")
 
     if review_errors:
-        lines.extend(["", "## 评分解析异常", ""])
-        for error in review_errors:
-            lines.append(f"- {error}")
+        lines.extend(["", "## Review Parsing Errors", ""])
+        for item in review_errors:
+            lines.append(f"- {item}")
 
     report_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return report_path
 
 
-def print_results(
-    results: list[RegressionCaseResult],
-    summary_path: Path,
-    report_path: Path,
-) -> None:
+def print_results(results: list[RegressionCaseResult], summary_path: Path, report_path: Path) -> None:
     for result in results:
         print(f"[{result.case}]")
         print(f"success: {result.success}")
@@ -413,22 +395,9 @@ def print_results(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run V2 PPT regression cases from regression/*/deck.json.")
-    parser.add_argument(
-        "--regression-dir",
-        default=str(DEFAULT_REGRESSION_DIR),
-        help="Directory containing regression case folders.",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default=str(DEFAULT_OUTPUT_DIR),
-        help="Directory used for V2 regression outputs.",
-    )
-    parser.add_argument(
-        "--case",
-        action="append",
-        default=[],
-        help="Optional case folder name filter. Can be passed multiple times.",
-    )
+    parser.add_argument("--regression-dir", default=str(DEFAULT_REGRESSION_DIR), help="Directory containing regression case folders.")
+    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory used for V2 regression outputs.")
+    parser.add_argument("--case", action="append", default=[], help="Optional case folder name filter. Can be passed multiple times.")
     return parser.parse_args()
 
 

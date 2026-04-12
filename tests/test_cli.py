@@ -680,6 +680,33 @@ class CliTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
         self.assertIn("--template is no longer supported", stderr.getvalue())
 
+    def test_option_was_explicit_supports_equals_syntax(self):
+        self.assertTrue(cli.option_was_explicit(["--template=custom.pptx"], "--template"))
+        self.assertTrue(cli.option_was_explicit(["--theme=business_red"], "--theme"))
+        self.assertFalse(cli.option_was_explicit(["--topic", "test"], "--template"))
+
+    def test_v2_option_compatibility_rejects_template_equals_syntax(self):
+        parser = cli.argparse.ArgumentParser(add_help=False)
+        with self.assertRaises(SystemExit) as ctx:
+            cli.validate_v2_option_compatibility(
+                ["--template=custom.pptx"],
+                effective_command="v2-make",
+                parser=parser,
+            )
+
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_v2_option_compatibility_rejects_non_fixed_theme_equals_syntax(self):
+        parser = cli.argparse.ArgumentParser(add_help=False)
+        with self.assertRaises(SystemExit) as ctx:
+            cli.validate_v2_option_compatibility(
+                ["--theme=business_red"],
+                effective_command="v2-make",
+                parser=parser,
+            )
+
+        self.assertEqual(ctx.exception.code, 2)
+
     def test_explicit_make_with_topic_routes_to_v2_make(self):
         stdout = io.StringIO()
         stderr = io.StringIO()

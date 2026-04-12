@@ -33,8 +33,9 @@ class VisualScreenshotTests(unittest.TestCase):
             browser_path.write_bytes(b"fake")
             captured = {}
 
-            def fake_run(command, capture_output=True, check=False):
+            def fake_run(command, capture_output=True, check=False, **kwargs):
                 captured["command"] = command
+                captured["kwargs"] = kwargs
                 png_path.write_bytes(b"png")
                 return type("Result", (), {"returncode": 0, "stderr": b"", "stdout": b""})()
 
@@ -53,6 +54,7 @@ class VisualScreenshotTests(unittest.TestCase):
             self.assertIn("--hide-scrollbars", command)
             self.assertIn("--window-size=1280,720", command)
             self.assertTrue(any(str(item).startswith("--screenshot=") for item in command))
+            self.assertIn("timeout", captured["kwargs"])
 
 
 if __name__ == "__main__":

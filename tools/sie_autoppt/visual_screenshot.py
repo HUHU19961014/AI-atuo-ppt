@@ -4,6 +4,8 @@ import subprocess
 from pathlib import Path
 from urllib.parse import quote
 
+DEFAULT_SCREENSHOT_TIMEOUT_SEC = 120
+
 
 def resolve_browser_path(explicit_path: str = "") -> Path:
     candidates = [Path(explicit_path)] if explicit_path else []
@@ -47,7 +49,15 @@ def capture_html_screenshot(
         "--disable-gpu",
         html_file_to_url(resolved_html),
     ]
-    result = subprocess.run(command, capture_output=True, check=False)
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            check=False,
+            timeout=DEFAULT_SCREENSHOT_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"Failed to capture HTML screenshot: timed out after {DEFAULT_SCREENSHOT_TIMEOUT_SEC}s.") from exc
     if result.returncode != 0 or not resolved_screenshot.exists():
         raw_output = result.stderr or result.stdout or b""
         detail = raw_output.decode("utf-8", errors="replace").strip()

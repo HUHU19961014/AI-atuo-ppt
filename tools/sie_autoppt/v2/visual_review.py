@@ -40,6 +40,7 @@ EXTENDED_REVIEW_DIMENSIONS = BASELINE_REVIEW_DIMENSIONS + (
     ReviewDimensionDefinition("audience_fit", "受众适配", "内容深度、措辞和节奏是否适合目标受众", "符合目标受众阅读习惯和决策场景", "受众错配，体验差"),
 )
 VISUAL_REVIEW_DIMENSIONS = EXTENDED_REVIEW_DIMENSIONS
+DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC = 120
 
 
 class StructuredJsonProvider(Protocol):
@@ -248,23 +249,31 @@ def export_slide_previews(pptx_path: Path, output_dir: Path) -> list[Path]:
             "$pres.Close();"
             "$ppt.Quit();"
         )
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", script, str(pptx_path), str(output_dir)],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", script, str(pptx_path), str(output_dir)],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Failed to export slide previews: timed out after {DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC}s") from exc
         if result.returncode != 0:
             raise RuntimeError(f"Failed to export slide previews: {(result.stderr or result.stdout).strip()}")
     else:
         if shutil.which("soffice") is None:
             return []
-        result = subprocess.run(
-            ["soffice", "--headless", "--convert-to", "png", "--outdir", str(output_dir), str(pptx_path)],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["soffice", "--headless", "--convert-to", "png", "--outdir", str(output_dir), str(pptx_path)],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Failed to export slide previews: timed out after {DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC}s") from exc
         if result.returncode != 0:
             raise RuntimeError(f"Failed to export slide previews: {(result.stderr or result.stdout).strip()}")
 
