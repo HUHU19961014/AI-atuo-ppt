@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, replace
@@ -8,18 +8,22 @@ import sys
 from pathlib import Path
 
 from .clarifier import DEFAULT_AUDIENCE_HINT, clarify_user_input, derive_planning_context, load_clarifier_session
+from .cli_parser import build_main_parser
 from .clarify_web import serve_clarifier_web
 from .config import (
     DEFAULT_REFERENCE_BODY,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_OUTPUT_PREFIX,
     DEFAULT_TEMPLATE,
-    MAX_BODY_CHAPTERS,
     PROJECT_ROOT,
 )
+from .cli_v2_commands import handle_v2_and_health_command
 from .content_service import build_deck_spec_from_structure
 from .deck_spec_io import load_deck_spec, write_deck_spec
-from .exceptions import AiHealthcheckBlockedError, AiHealthcheckFailedError
+from .exceptions import (
+    CliExecutionError,
+    CliUserInputError,
+)
 from .generator import generate_ppt_artifacts_from_deck_spec
 from .healthcheck import run_ai_healthcheck
 from .inputs.source_text import extract_source_text
@@ -27,19 +31,16 @@ from .llm_openai import OpenAIConfigurationError, OpenAIResponsesClient, OpenAIR
 from .models import BodyPageSpec, DeckSpec, StructureSpec
 from .patterns import supported_pattern_ids
 from .structure_service import StructureGenerationRequest, generate_structure_with_ai
+from .types import JSONDict
 from .v2 import (
-    build_deck_output_path,
     build_log_output_path,
-    build_outline_output_path,
     build_ppt_output_path,
-    build_semantic_output_path,
     compile_semantic_deck_payload,
     default_deck_output_path,
     default_log_output_path,
     default_outline_output_path,
     default_ppt_output_path,
     default_semantic_output_path,
-    generate_deck_with_ai,
     generate_outline_with_ai,
     generate_semantic_deck_with_ai,
     generate_ppt as generate_v2_ppt,
@@ -50,9 +51,8 @@ from .v2 import (
     write_deck_document,
     write_outline_document,
 )
-from .v2.services import DeckGenerationRequest, OutlineGenerationRequest
 from .v2.services import ensure_generation_context
-from .v2.visual_review import iterate_visual_review, review_deck_once
+from .v2.visual_review import apply_patch_set, iterate_visual_review, review_deck_once
 from .v2.io import DEFAULT_V2_OUTPUT_DIR
 from .visual_service import generate_visual_draft_artifacts
 from tools.scenario_generators.sie_onepage_designer import build_onepage_brief_from_structure, build_onepage_slide
@@ -69,6 +69,7 @@ WORKFLOW_COMMANDS = (
     "v2-outline",
     "v2-plan",
     "v2-compile",
+    "v2-patch",
     "v2-render",
     "v2-make",
     "v2-review",
@@ -85,6 +86,7 @@ ADVANCED_COMMANDS = (
     "v2-plan",
     "v2-render",
     "v2-compile",
+    "v2-patch",
     "v2-outline",
     "v2-make",
     "v2-review",
@@ -99,20 +101,6 @@ COMMAND_ALIASES = {
     "iterate": "v2-iterate",
 }
 DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC = 120
-RECOMMENDED_WORKFLOW_HELP = (
-    "Recommended workflows:\n"
-    "  demo                  no-AI sample render using the bundled deck\n"
-    "  onepage --topic ...   single SIE body page with adaptive business layout\n"
-    "  sie-render --topic ... or --structure-json ...  actual SIE template render with optional AI planning\n"
-    "  make --topic ...     semantic V2 full generation\n"
-    "  review --deck-json   one-pass visual review alias for v2-review\n"
-    "  iterate --deck-json  multi-round review alias for v2-iterate\n"
-    "  visual-draft --deck-spec-json ...  HTML visual draft + scoring before PPTX\n"
-    "Advanced commands:\n"
-    f"  {', '.join(ADVANCED_COMMANDS)}\n"
-    "Legacy HTML/template generation commands remain retired; use sie-render for actual SIE template delivery."
-)
-
 DEMO_SAMPLE_DECK = PROJECT_ROOT / "samples" / "sample_deck_v2.json"
 
 
@@ -313,10 +301,17 @@ def build_template_output_stem(output_name: str) -> str:
     return safe_name.strip("._") or DEFAULT_OUTPUT_PREFIX
 
 
-def write_json_artifact(path: Path, payload: dict[str, object]) -> Path:
+def write_json_artifact(path: Path, payload: JSONDict) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
+
+
+def emit_progress(enabled: bool, stage: str, detail: str) -> None:
+    """Print a normalized stage marker for long-running command flows."""
+    if not enabled:
+        return
+    print(f"[progress] {stage}: {detail}", file=sys.stderr)
 
 
 def _build_ai_page_schema(candidate_pattern_ids: tuple[str, ...]) -> dict[str, object]:
@@ -346,7 +341,7 @@ def apply_ai_content_layout_to_deck_spec(
 ) -> tuple[DeckSpec, list[dict[str, object]]]:
     candidate_pattern_ids = supported_pattern_ids()
     if not candidate_pattern_ids:
-        raise ValueError("no supported pattern ids available for AI layout routing.")
+        raise CliUserInputError("no supported pattern ids available for AI layout routing.")
 
     client = OpenAIResponsesClient(load_openai_responses_config(model=model or None))
     schema = _build_ai_page_schema(candidate_pattern_ids)
@@ -409,139 +404,45 @@ def apply_ai_content_layout_to_deck_spec(
 
 
 def build_fallback_structure_spec(topic: str, brief_text: str) -> StructureSpec:
-    brief_lines = [line.strip(" -•\t") for line in brief_text.splitlines() if line.strip()]
+    brief_lines = [line.strip(" -?\t") for line in brief_text.splitlines() if line.strip()]
     while len(brief_lines) < 3:
         brief_lines.append("")
 
     return StructureSpec.from_dict(
         {
-            "core_message": (brief_lines[0] or topic or "单页汇报内容").strip(),
+            "core_message": (brief_lines[0] or topic or "one-page briefing").strip(),
             "structure_type": "general",
             "sections": [
                 {
-                    "title": "核心结论",
-                    "key_message": (brief_lines[0] or f"{topic}需要先明确核心判断。").strip(),
+                    "title": "Core Conclusion",
+                    "key_message": (brief_lines[0] or f"{topic}: clarify the key judgement first.").strip(),
                     "arguments": [
-                        {"point": "主题聚焦", "evidence": topic.strip() or "单页汇报"},
-                        {"point": "业务背景", "evidence": brief_lines[1] or "补充业务上下文后可细化"},
+                        {"point": "Theme focus", "evidence": topic.strip() or "one-page briefing"},
+                        {"point": "Business background", "evidence": brief_lines[1] or "add business context to refine"},
                     ],
                 },
                 {
-                    "title": "关键支撑",
-                    "key_message": (brief_lines[1] or "围绕事实、动作和约束组织支撑信息。").strip(),
+                    "title": "Key Support",
+                    "key_message": (brief_lines[1] or "organize support around facts, actions, and constraints.").strip(),
                     "arguments": [
-                        {"point": "事实依据", "evidence": brief_lines[0] or "结合现有输入整理"},
-                        {"point": "执行重点", "evidence": brief_lines[2] or "提炼 2-3 个重点动作"},
+                        {"point": "Facts", "evidence": brief_lines[0] or "summarize current inputs"},
+                        {"point": "Execution", "evidence": brief_lines[2] or "extract 2-3 priority actions"},
                     ],
                 },
                 {
-                    "title": "行动建议",
-                    "key_message": (brief_lines[2] or "给出下一步动作和落地节奏。").strip(),
+                    "title": "Action Plan",
+                    "key_message": (brief_lines[2] or "define next actions and rollout cadence.").strip(),
                     "arguments": [
-                        {"point": "下一步动作", "evidence": "压缩成适合单页表达的行动项"},
-                        {"point": "汇报用途", "evidence": "适合管理汇报或商务沟通场景"},
+                        {"point": "Next step", "evidence": "compress into one-page action items"},
+                        {"point": "Usage", "evidence": "fit management review and business communication"},
                     ],
                 },
             ],
         }
     )
 
-
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate enterprise PPTs with V2 semantics or the actual SIE template delivery path.",
-        epilog=RECOMMENDED_WORKFLOW_HELP,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "command",
-        nargs="?",
-        metavar="command",
-        default="make",
-        help="Primary commands: make, review, iterate. Use onepage for a single SIE body slide, or sie-render for the actual SIE PPTX template path.",
-    )
-    parser.add_argument("--template", default="", help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--deck-json",
-        default="",
-        help="Path to a compiled deck JSON or V2 semantic deck JSON, depending on the command.",
-    )
-    parser.add_argument("--structure-json", default="", help="Path to a StructureSpec JSON file for actual SIE template rendering.")
-    parser.add_argument("--deck-spec-json", default="", help="Path to a DeckSpec JSON file for actual SIE template rendering.")
-    parser.add_argument("--deck-spec-output", default="", help="Optional output path for the generated DeckSpec JSON.")
-    parser.add_argument("--topic", default="", help="Topic or natural-language request used by the AI planner.")
-    parser.add_argument("--outline-json", default="", help="Path to a V2 outline JSON file.")
-    parser.add_argument("--outline-output", default="", help="Optional output path for the generated V2 outline JSON.")
-    parser.add_argument("--semantic-output", default="", help="Optional output path for the generated V2 semantic deck JSON.")
-    parser.add_argument("--brief", default="", help="Optional extra business context passed to the AI planner.")
-    parser.add_argument("--brief-file", default="", help="Optional path to a text/markdown file with extra source material.")
-    parser.add_argument("--audience", default=DEFAULT_AUDIENCE_HINT, help="Target audience hint for the AI planner.")
-    parser.add_argument("--llm-model", default="", help="Optional model override for the AI planner or clarifier.")
-    parser.add_argument("--theme", default="", help="Optional V2 theme name.")
-    parser.add_argument("--language", default="zh-CN", help="Language used by V2 outline/deck generation.")
-    parser.add_argument(
-        "--generation-mode",
-        default="deep",
-        choices=("quick", "deep"),
-        help="V2 generation mode: 'quick' skips strategic analysis, 'deep' adds structured context and strategy analysis.",
-    )
-    parser.add_argument("--author", default="AI Auto PPT", help="Author metadata used by V2 deck generation.")
-    parser.add_argument("--plan-output", default="", help="Optional output path for the generated compiled deck JSON.")
-    parser.add_argument("--log-output", default="", help="Optional output path for the generated V2 render log.")
-    parser.add_argument("--ppt-output", default="", help="Optional output path for the generated V2 PPTX.")
-    parser.add_argument("--render-trace-output", default="", help="Optional output path for the actual-template render trace JSON.")
-    parser.add_argument("--review-output-dir", default="", help="Optional output directory for visual review artifacts.")
-    parser.add_argument("--browser", default="", help="Optional Edge/Chrome executable path for visual-draft screenshot.")
-    parser.add_argument("--page-index", type=int, default=0, help="Zero-based page index for visual-draft.")
-    parser.add_argument(
-        "--layout-hint",
-        default="auto",
-        choices=("auto", "sales_proof", "risk_to_value", "executive_summary"),
-        help="Layout hint for visual-draft.",
-    )
-    parser.add_argument(
-        "--with-ai-review",
-        action="store_true",
-        help="For visual-draft: enable model-based visual review and one auto-revision round when score is below configured auto_revise_threshold.",
-    )
-    parser.add_argument(
-        "--visual-rules-path",
-        default="",
-        help="Optional TOML path overriding visual-draft scoring rules.",
-    )
-    parser.add_argument("--max-rounds", type=int, default=2, help="Maximum auto-fix review rounds for v2-iterate.")
-    parser.add_argument(
-        "--clarifier-state-file",
-        default="",
-        help="Optional JSON file used to resume or persist clarifier session state.",
-    )
-    parser.add_argument("--min-slides", type=int, default=None, help=f"Optional AI planner lower bound for body pages (1-{MAX_BODY_CHAPTERS}).")
-    parser.add_argument("--max-slides", type=int, default=None, help=f"Optional AI planner upper bound for body pages (1-{MAX_BODY_CHAPTERS}).")
-    parser.add_argument("--output-name", default=DEFAULT_OUTPUT_PREFIX, help="Output filename prefix.")
-    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory used for generated artifacts.")
-    parser.add_argument(
-        "--full-pipeline",
-        action="store_true",
-        help="Run the V2 full pipeline (outline -> deck -> quality gate -> PPT render) with standardized output filenames.",
-    )
-    parser.add_argument(
-        "--chapters",
-        type=int,
-        default=None,
-        help=f"Optional exact number of body chapters to generate (1-{MAX_BODY_CHAPTERS}).",
-    )
-    parser.add_argument("--host", default="127.0.0.1", help="Host used by local web services such as clarify-web.")
-    parser.add_argument("--port", type=int, default=8765, help="Port used by local web services such as clarify-web.")
-    parser.add_argument(
-        "--with-render",
-        action="store_true",
-        help="For ai-check only: run the healthcheck through the PPT render step and emit render quality summary fields.",
-    )
-    parser.add_argument("--cover-title", default="", help="Optional cover title override for sie-render.")
-    parser.add_argument("--template-path", default="", help="Optional PPTX template override for sie-render.")
-    parser.add_argument("--reference-body-path", default="", help="Optional reference body PPTX override for sie-render.")
-    parser.add_argument("--active-start", type=int, default=0, help="Actual-template directory highlight offset used by sie-render.")
-    parser.add_argument("--onepage-strategy", default="auto", help="Optional one-page strategy override. Default is auto.")
+    parser = build_main_parser()
     raw_argv = sys.argv[1:]
     args = parser.parse_args()
     validate_command_name(args.command, parser)
@@ -623,11 +524,13 @@ def main():
         output_stem = build_template_output_stem(args.output_name)
         template_output_dir = output_dir
         if structure_json:
+            emit_progress(args.progress, "onepage", "loading structure json")
             structure_path = Path(structure_json)
             payload = json.loads(structure_path.read_text(encoding="utf-8-sig"))
             structure = StructureSpec.from_dict(payload)
         else:
             try:
+                emit_progress(args.progress, "onepage", "calling AI structure planner")
                 structure_result = generate_structure_with_ai(
                     StructureGenerationRequest(
                         topic=args.topic.strip(),
@@ -667,6 +570,7 @@ def main():
             else template_output_dir / f"{output_stem}.onepage.pptx"
         )
         try:
+            emit_progress(args.progress, "onepage", "rendering onepage PPT")
             built_path, review_path, score_path, _ = build_onepage_slide(
                 onepage_brief,
                 output_path=onepage_output_path,
@@ -711,6 +615,7 @@ def main():
         output_stem = build_template_output_stem(args.output_name)
 
         if structure_json:
+            emit_progress(args.progress, "sie-render", "loading structure json")
             structure_path = Path(structure_json)
             payload = json.loads(structure_path.read_text(encoding="utf-8-sig"))
             structure = StructureSpec.from_dict(payload)
@@ -728,6 +633,7 @@ def main():
             render_deck_spec = deck_spec
         elif uses_topic_generation:
             try:
+                emit_progress(args.progress, "sie-render", "calling AI structure planner")
                 structure_result = generate_structure_with_ai(
                     StructureGenerationRequest(
                         topic=args.topic.strip(),
@@ -763,6 +669,7 @@ def main():
             write_deck_spec(deck_spec, deck_spec_path)
             render_deck_spec = deck_spec
         else:
+            emit_progress(args.progress, "sie-render", "loading deck spec json")
             deck_spec_path = Path(deck_spec_json)
             render_deck_spec = load_deck_spec(deck_spec_path)
 
@@ -775,10 +682,13 @@ def main():
             )
 
         try:
+            emit_progress(args.progress, "sie-render", "calling AI content/layout refinement")
             ai_refined_deck_spec, ai_trace = apply_ai_content_layout_to_deck_spec(
                 render_deck_spec,
                 model=args.llm_model.strip() or None,
             )
+        except CliUserInputError as exc:
+            parser.exit(status=2, message=f"invalid sie-render input: {exc}\n")
         except OpenAIConfigurationError as exc:
             parser.exit(
                 status=1,
@@ -844,6 +754,8 @@ def main():
                 with_ai_review=bool(args.with_ai_review),
                 visual_rules_path=args.visual_rules_path.strip(),
             )
+        except CliExecutionError as exc:
+            parser.exit(status=exc.exit_code, message=f"visual-draft failed: {exc}\n")
         except Exception as exc:  # pragma: no cover - normalized user-facing error handling
             parser.exit(status=1, message=f"visual-draft failed: {exc}\n")
         print(str(artifacts.visual_spec_path))
@@ -853,234 +765,45 @@ def main():
         print(str(artifacts.ai_review_path))
         return
 
-    if effective_command == "v2-outline":
-        if not resolved_topic:
-            parser.error("--topic is required when command is 'v2-outline'.")
-        outline = generate_outline_with_ai(
-            OutlineGenerationRequest(
-                topic=resolved_topic,
-                brief=resolved_brief,
-                audience=resolved_audience,
-                language=args.language,
-                theme=v2_theme,
-                exact_slides=resolved_chapters or None,
-                min_slides=resolved_min_slides or 6,
-                max_slides=resolved_max_slides or 10,
-                generation_mode=args.generation_mode,
-            ),
-            model=args.llm_model or None,
-        )
-        outline_output = Path(args.outline_output) if args.outline_output else default_outline_output_path(v2_output_dir)
-        write_outline_document(outline, outline_output)
-        print(str(outline_output))
-        return
-
-    if effective_command == "v2-plan":
-        if not resolved_topic and not args.outline_json:
-            parser.error("--topic or --outline-json is required when command is 'v2-plan'.")
-        shared_context = None
-        shared_strategy = None
-        if args.outline_json:
-            outline = load_outline_document(Path(args.outline_json))
-            outline_output = None
-        else:
-            shared_context, shared_strategy = ensure_generation_context(
-                topic=resolved_topic,
-                brief=resolved_brief,
-                audience=resolved_audience,
-                language=args.language,
-                generation_mode=args.generation_mode,
-                structured_context=None,
-                strategic_analysis=None,
-                model=args.llm_model or None,
-            )
-            outline = generate_outline_with_ai(
-                OutlineGenerationRequest(
-                    topic=resolved_topic,
-                    brief=resolved_brief,
-                    audience=resolved_audience,
-                    language=args.language,
-                    theme=v2_theme,
-                    exact_slides=resolved_chapters or None,
-                    min_slides=resolved_min_slides or 6,
-                    max_slides=resolved_max_slides or 10,
-                    generation_mode=args.generation_mode,
-                    structured_context=shared_context,
-                    strategic_analysis=shared_strategy,
-                ),
-                model=args.llm_model or None,
-            )
-            outline_output = Path(args.outline_output) if args.outline_output else default_outline_output_path(v2_output_dir)
-            write_outline_document(outline, outline_output)
-        semantic_payload = generate_semantic_deck_with_ai(
-            DeckGenerationRequest(
-                topic=resolved_topic or "AI Auto PPT",
-                outline=outline,
-                brief=resolved_brief,
-                audience=resolved_audience,
-                language=args.language,
-                theme=v2_theme,
-                author=args.author,
-                generation_mode=args.generation_mode,
-                structured_context=shared_context,
-                strategic_analysis=shared_strategy,
-            ),
-            model=args.llm_model or None,
-        )
-        validated_deck = compile_semantic_deck_payload(
-            semantic_payload,
-            default_title=resolved_topic or "AI Auto PPT",
-            default_theme=v2_theme,
-            default_language=args.language,
-            default_author=args.author,
-        )
-        semantic_output = Path(args.semantic_output) if args.semantic_output else default_semantic_output_path(v2_output_dir)
-        write_semantic_document(semantic_payload, semantic_output)
-        deck_output = Path(args.plan_output) if args.plan_output else default_deck_output_path(v2_output_dir)
-        write_deck_document(validated_deck.deck, deck_output)
-        if outline_output is not None:
-            print(str(outline_output))
-        print(str(semantic_output))
-        print(str(deck_output))
-        return
-
-    if effective_command == "v2-compile":
-        if not args.deck_json:
-            parser.error("--deck-json is required when command is 'v2-compile'.")
-        deck = load_deck_document(Path(args.deck_json))
-        deck_output = Path(args.plan_output) if args.plan_output else default_deck_output_path(v2_output_dir)
-        write_deck_document(deck, deck_output)
-        print(str(deck_output))
-        return
-
-    if effective_command == "v2-render":
-        if not args.deck_json:
-            parser.error("--deck-json is required when command is 'v2-render'.")
-        log_output = Path(args.log_output) if args.log_output else default_log_output_path(v2_output_dir)
-        ppt_output = Path(args.ppt_output) if args.ppt_output else default_ppt_output_path(v2_output_dir)
-        deck = load_deck_document(Path(args.deck_json))
-        render_result = generate_v2_ppt(
-            deck,
-            output_path=ppt_output,
-            theme_name=args.theme.strip() or None,
-            log_path=log_output,
-        )
-        print(str(render_result.rewrite_log_path))
-        print(str(render_result.warnings_path))
-        print(str(log_output))
-        print(str(render_result.output_path))
-        return
-
-    if effective_command == "v2-make":
-        if not resolved_topic and not args.outline_json:
-            parser.error("--topic or --outline-json is required when command is 'v2-make'.")
-        result = make_v2_ppt(
-            topic=resolved_topic or "AI Auto PPT",
-            brief=resolved_brief,
-            audience=resolved_audience,
-            language=args.language,
-            theme=v2_theme,
-            author=args.author,
-            exact_slides=resolved_chapters or None,
-            min_slides=resolved_min_slides or 6,
-            max_slides=resolved_max_slides or 10,
-            output_dir=v2_output_dir,
-            output_prefix=args.output_name,
-            model=args.llm_model or None,
-            generation_mode=args.generation_mode,
-            outline_output=(
-                Path(args.outline_output)
-                if args.outline_output
-                else (default_outline_output_path(v2_output_dir) if args.full_pipeline else None)
-            ),
-            semantic_output=(
-                Path(args.semantic_output)
-                if args.semantic_output
-                else (default_semantic_output_path(v2_output_dir) if args.full_pipeline else None)
-            ),
-            deck_output=(
-                Path(args.plan_output)
-                if args.plan_output
-                else (default_deck_output_path(v2_output_dir) if args.full_pipeline else None)
-            ),
-            log_output=(
-                Path(args.log_output)
-                if args.log_output
-                else (default_log_output_path(v2_output_dir) if args.full_pipeline else None)
-            ),
-            ppt_output=(
-                Path(args.ppt_output)
-                if args.ppt_output
-                else (default_ppt_output_path(v2_output_dir) if args.full_pipeline else None)
-            ),
-            outline_path=Path(args.outline_json) if args.outline_json else None,
-        )
-        print(str(result.outline_path))
-        print(str(result.semantic_path))
-        print(str(result.deck_path))
-        print(str(result.rewrite_log_path))
-        print(str(result.warnings_path))
-        print(str(result.log_path))
-        print(str(result.pptx_path))
-        return
-
-    if effective_command == "v2-review":
-        if not args.deck_json:
-            parser.error("--deck-json is required when command is 'v2-review'.")
-        review_output_dir = Path(args.review_output_dir) if args.review_output_dir else v2_output_dir / "visual_review"
-        result = review_deck_once(
-            deck_path=Path(args.deck_json),
-            output_dir=review_output_dir,
-            model=args.llm_model or None,
-            theme_name=args.theme.strip() or None,
-        )
-        print(str(result.review_path))
-        print(str(result.patch_path))
-        print(str(result.deck_path))
-        print(str(result.pptx_path))
-        print(str(result.preview_dir))
-        return
-
-    if effective_command == "v2-iterate":
-        if not args.deck_json:
-            parser.error("--deck-json is required when command is 'v2-iterate'.")
-        review_output_dir = Path(args.review_output_dir) if args.review_output_dir else v2_output_dir / "visual_review_loop"
-        result = iterate_visual_review(
-            deck_path=Path(args.deck_json),
-            output_dir=review_output_dir,
-            model=args.llm_model or None,
-            max_rounds=max(1, args.max_rounds),
-            theme_name=args.theme.strip() or None,
-        )
-        print(str(result.final_review_path))
-        print(str(result.final_patch_path))
-        print(str(result.deck_path))
-        print(str(result.pptx_path))
-        print(str(result.preview_dir))
-        return
-
-    if effective_command == "ai-check":
-        check_topic = args.topic.strip() or "AI AutoPPT 健康检查"
-        try:
-            summary = run_ai_healthcheck(
-                topic=check_topic,
-                brief=brief_text,
-                audience=args.audience,
-                language=args.language,
-                theme=v2_theme,
-                generation_mode=args.generation_mode,
-                model=args.llm_model or None,
-                with_render=args.with_render,
-                output_dir=v2_output_dir if args.with_render else None,
-            )
-        except AiHealthcheckBlockedError as exc:
-            parser.exit(status=1, message=f"AI healthcheck blocked: {exc}\n")
-        except AiHealthcheckFailedError as exc:
-            parser.exit(status=1, message=f"AI healthcheck failed: {exc}\n")
-        print(summary.to_json())
+    if handle_v2_and_health_command(
+        effective_command=effective_command,
+        args=args,
+        parser=parser,
+        resolved_topic=resolved_topic,
+        resolved_brief=resolved_brief,
+        resolved_audience=resolved_audience,
+        resolved_chapters=resolved_chapters,
+        resolved_min_slides=resolved_min_slides,
+        resolved_max_slides=resolved_max_slides,
+        v2_theme=v2_theme,
+        v2_output_dir=v2_output_dir,
+        brief_text=brief_text,
+        emit_progress=emit_progress,
+        default_outline_output_path=default_outline_output_path,
+        default_semantic_output_path=default_semantic_output_path,
+        default_deck_output_path=default_deck_output_path,
+        default_log_output_path=default_log_output_path,
+        default_ppt_output_path=default_ppt_output_path,
+        load_outline_document=load_outline_document,
+        write_outline_document=write_outline_document,
+        write_semantic_document=write_semantic_document,
+        write_deck_document=write_deck_document,
+        load_deck_document=load_deck_document,
+        compile_semantic_deck_payload=compile_semantic_deck_payload,
+        generate_outline_with_ai=generate_outline_with_ai,
+        generate_semantic_deck_with_ai=generate_semantic_deck_with_ai,
+        ensure_generation_context=ensure_generation_context,
+        make_v2_ppt=make_v2_ppt,
+        generate_v2_ppt=generate_v2_ppt,
+        apply_patch_set=apply_patch_set,
+        review_deck_once=review_deck_once,
+        iterate_visual_review=iterate_visual_review,
+        run_ai_healthcheck=run_ai_healthcheck,
+    ):
         return
     parser.error(f"unsupported command '{effective_command}'.")
 
 
 if __name__ == "__main__":
     main()
+

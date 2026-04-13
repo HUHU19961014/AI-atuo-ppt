@@ -30,4 +30,4 @@ The `tools/` directory now separates day-to-day entrypoints from archived one-of
 
 ## Archive
 
-- Legacy one-off helpers live in [`tools/archive/legacy_helpers`](./archive/legacy_helpers/README.md)
+- `tools/archive/` is kept only as an empty placeholder for historical snapshots.

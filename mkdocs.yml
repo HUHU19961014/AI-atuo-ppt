@@ -1,0 +1,22 @@
+site_name: Enterprise-AI-PPT Docs
+site_description: API and operations docs for Enterprise-AI-PPT
+repo_url: https://github.com/HUHU19961014/AI-atuo-ppt
+theme:
+  name: material
+nav:
+  - Home: README.md
+  - CLI Reference: docs/CLI_REFERENCE.md
+  - API Reference: docs/API_REFERENCE.md
+  - Plugin Extensions: docs/PLUGIN_EXTENSIONS.md
+  - Compatibility Matrix: docs/COMPATIBILITY_MATRIX.md
+  - Release Process: docs/RELEASE_PROCESS.md
+  - Backup And Recovery: docs/BACKUP_AND_RECOVERY.md
+  - On-Call Runbook: docs/ONCALL_RUNBOOK.md
+  - Troubleshooting: docs/TROUBLESHOOTING.md
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - tools

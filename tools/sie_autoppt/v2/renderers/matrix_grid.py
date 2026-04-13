@@ -74,7 +74,8 @@ def render_matrix_grid(prs, slide_data: MatrixGridSlide, theme: ThemeSpec, log, 
     for index, cell in enumerate(slide_data.cells[:4]):
         left, top = MATRIX_GRID.cell_positions[index]
         shape = add_card(slide, left, top, MATRIX_GRID.cell_width, MATRIX_GRID.cell_height, theme)
-        shape.fill.fore_color.rgb = rgb(MATRIX_GRID.palette[index % len(MATRIX_GRID.palette)])
+        role = MATRIX_GRID.palette_roles[index % len(MATRIX_GRID.palette_roles)]
+        shape.fill.fore_color.rgb = rgb(getattr(theme.colors, role))
         add_textbox(
             slide,
             left=left + MATRIX_GRID.card_title_left_padding,

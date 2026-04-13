@@ -5,6 +5,7 @@ from dataclasses import replace
 from .clarifier_models import (
     CLARIFIER_PROMPT_PATH,
     DEFAULT_AUDIENCE_HINT,
+    DEFAULT_V2_THEME,
     DIMENSION_ORDER,
     MAX_BODY_CHAPTERS,
     ClarifierRequirements,
@@ -114,6 +115,7 @@ def _combine_requirements(
     combined = base.merge(extracted)
     if llm_extracted is not None:
         combined = combined.merge(llm_extracted)
+    combined = replace(combined, theme=DEFAULT_V2_THEME)
     return combined
 
 
@@ -322,7 +324,7 @@ def derive_planning_context(
     explicit_requirements = ClarifierRequirements(
         audience="" if audience.strip() == DEFAULT_AUDIENCE_HINT else audience.strip(),
         template=_normalize_template_name(template.strip()) if template.strip() else "",
-        theme=theme.strip(),
+        theme=DEFAULT_V2_THEME,
         core_content=brief.strip(),
         chapters=chapters,
         min_slides=min_slides,

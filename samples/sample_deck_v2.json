@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "AI Auto PPT V2 重构方案",
-    "theme": "business_red",
+    "theme": "sie_consulting_fixed",
     "language": "zh-CN",
     "author": "AI Auto PPT",
     "version": "2.0"
@@ -66,3 +66,4 @@
     }
   ]
 }
+

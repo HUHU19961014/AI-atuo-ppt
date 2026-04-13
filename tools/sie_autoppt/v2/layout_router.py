@@ -4,6 +4,7 @@ from typing import Callable
 
 from pptx import Presentation
 
+from ..plugins import plugin_layout_renderers
 from .layout_ids import SUPPORTED_LAYOUTS
 from .renderers.cards_grid import render_cards_grid
 from .renderers.matrix_grid import render_matrix_grid
@@ -59,7 +60,8 @@ def render_slide(
     total_slides: int,
 ):
     layout = slide_data.layout
-    renderer = LAYOUT_RENDERERS.get(layout)
+    active_renderers = {**LAYOUT_RENDERERS, **plugin_layout_renderers()}
+    renderer = active_renderers.get(layout)
     if renderer is None:
         raise ValueError(f"Unsupported layout: {layout}")
     return renderer(prs, slide_data, theme, log, slide_number, total_slides)

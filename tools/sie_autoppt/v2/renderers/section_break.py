@@ -20,7 +20,7 @@ def render_section_break(prs, slide_data: SectionBreakSlide, theme: ThemeSpec, l
         text=slide_data.title,
         font_name=theme.fonts.title,
         font_size=theme.font_sizes.title + 6,
-        color_hex="#FFFFFF",
+        color_hex=theme.colors.card_bg,
         bold=True,
         align=PP_ALIGN.CENTER,
         vertical_anchor=MSO_ANCHOR.MIDDLE,
@@ -35,7 +35,7 @@ def render_section_break(prs, slide_data: SectionBreakSlide, theme: ThemeSpec, l
             text=slide_data.subtitle,
             font_name=theme.fonts.body,
             font_size=theme.font_sizes.subtitle + 1,
-            color_hex="#F7EDEF",
+            color_hex=theme.colors.card_bg,
             align=PP_ALIGN.CENTER,
             vertical_anchor=MSO_ANCHOR.MIDDLE,
         )

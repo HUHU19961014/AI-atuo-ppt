@@ -1,4 +1,4 @@
-"""
+﻿"""
 Legacy V1 body slide renderers.
 
 This module is still used by the classic generator path and scenario scripts.
@@ -85,7 +85,7 @@ def _wrap_manifest_value(value, context: str):
     return _ManifestValue(value, context)
 
 
-def normalize_text_for_box(text: str, max_chars: int = 44) -> str:
+def normalize_text_for_body_box(text: str, max_chars: int = 44) -> str:
     compact = re.sub(r"\s+", " ", text).strip()
     lines = textwrap.wrap(compact, width=max_chars)
     return "\n".join(lines[:4])
@@ -273,7 +273,7 @@ def _render_cards_2x2(slide, page: BodyPageSpec, manifest: TemplateManifest):
         card.fill.solid()
         card.fill.fore_color.rgb = RGBColor(*fill_rgb)
         card.line.color.rgb = RGBColor(*line_rgb)
-        safe_text = normalize_text_for_box(text, wrap_chars)
+        safe_text = normalize_text_for_body_box(text, wrap_chars)
         font_size = choose_font_size_by_length(safe_text, base_font_pt)
         add_textbox(
             slide,
@@ -346,7 +346,7 @@ def _render_process_flow(slide, page: BodyPageSpec, manifest: TemplateManifest):
             margin_top=0,
             margin_bottom=0,
         )
-        safe_text = normalize_text_for_box(str(step.get("detail", "")), int(detail_box["wrap_chars"]))
+        safe_text = normalize_text_for_body_box(str(step.get("detail", "")), int(detail_box["wrap_chars"]))
         add_textbox(
             slide,
             left + int(detail_box["left_offset"]),
@@ -418,7 +418,7 @@ def _render_architecture_layers(slide, page: BodyPageSpec, manifest: TemplateMan
             margin_bottom=0,
         )
 
-        safe_text = normalize_text_for_box(text, int(body_text["wrap_chars"]))
+        safe_text = normalize_text_for_body_box(text, int(body_text["wrap_chars"]))
         add_textbox(
             slide,
             left + int(body_text["left_offset"]),
@@ -532,7 +532,7 @@ def _render_governance_grid(slide, page: BodyPageSpec, manifest: TemplateManifes
             margin_bottom=0,
         )
 
-        safe_text = normalize_text_for_box(str(card_data.get("detail", "")), int(body_text["wrap_chars"]))
+        safe_text = normalize_text_for_body_box(str(card_data.get("detail", "")), int(body_text["wrap_chars"]))
         add_textbox(
             slide,
             left + int(body_text["left_offset"]),
@@ -621,7 +621,7 @@ def _render_comparison_upgrade(slide, page: BodyPageSpec, manifest: TemplateMani
                 top + int(card_spec["detail_top_offset"]),
                 int(panel["width"]) - int(card_spec["padding_x"]) * 2,
                 int(card_spec["detail_height"]),
-                normalize_text_for_box(str(card.get("detail", "")), int(card_spec["detail_wrap_chars"])),
+                normalize_text_for_body_box(str(card.get("detail", "")), int(card_spec["detail_wrap_chars"])),
                 size_pt=int(card_spec["detail_font_pt"]),
                 color=_rgb(panel["detail_rgb"]),
             )
@@ -744,7 +744,7 @@ def _render_capability_ring(slide, page: BodyPageSpec, manifest: TemplateManifes
             top + int(spec["card_detail"]["top_offset"]),
             int(grid["card_width"]) - int(spec["card_detail"]["width_padding"]),
             int(spec["card_detail"]["height"]),
-            normalize_text_for_box(str(item.get("detail", "")), int(spec["card_detail"]["wrap_chars"])),
+            normalize_text_for_body_box(str(item.get("detail", "")), int(spec["card_detail"]["wrap_chars"])),
             size_pt=int(spec["card_detail"]["font_pt"]),
             align=PP_ALIGN.CENTER,
         )
@@ -820,7 +820,7 @@ def _render_five_phase_path(slide, page: BodyPageSpec, manifest: TemplateManifes
                 top,
                 int(spec["stage_width"]) - int(spec["task_width_padding"]),
                 int(spec["task_height"]),
-                normalize_text_for_box(str(task), int(spec["task_wrap_chars"])),
+                normalize_text_for_body_box(str(task), int(spec["task_wrap_chars"])),
                 size_pt=int(spec["task_font_pt"]),
                 align=PP_ALIGN.CENTER,
             )
@@ -869,7 +869,7 @@ def _render_pain_cards(slide, page: BodyPageSpec, manifest: TemplateManifest):
             top + int(spec["detail_box"]["top_offset"]),
             int(grid["card_width"]) - int(spec["detail_box"]["width_padding"]),
             int(spec["detail_box"]["height"]),
-            normalize_text_for_box(str(card_data.get("detail", "")), int(spec["detail_box"]["wrap_chars"])),
+            normalize_text_for_body_box(str(card_data.get("detail", "")), int(spec["detail_box"]["wrap_chars"])),
             size_pt=int(spec["detail_box"]["font_pt"]),
         )
         points = list(card_data.get("points", []))[:3]
@@ -1004,7 +1004,7 @@ def _render_roadmap_timeline(slide, page: BodyPageSpec, manifest: TemplateManife
             card_top + int(spec["detail_box"]["top_offset"]),
             int(spec["grid"]["card_width"]) - int(spec["detail_box"]["width_padding"]),
             int(spec["detail_box"]["height"]),
-            normalize_text_for_box(str(stage.get("detail", "")), int(spec["detail_box"]["wrap_chars"])),
+            normalize_text_for_body_box(str(stage.get("detail", "")), int(spec["detail_box"]["wrap_chars"])),
             size_pt=int(spec["detail_box"]["font_pt"]),
             align=PP_ALIGN.CENTER,
         )
@@ -1087,7 +1087,7 @@ def _render_kpi_dashboard(slide, page: BodyPageSpec, manifest: TemplateManifest)
             top + int(spec["metric_detail_box"]["top_offset"]),
             int(spec["metrics_grid"]["card_width"]) - int(spec["metric_detail_box"]["width_padding"]),
             int(spec["metric_detail_box"]["height"]),
-            normalize_text_for_box(str(metric.get("detail", "")), int(spec["metric_detail_box"]["wrap_chars"])),
+            normalize_text_for_body_box(str(metric.get("detail", "")), int(spec["metric_detail_box"]["wrap_chars"])),
             size_pt=int(spec["metric_detail_box"]["font_pt"]),
             color=sub_rgb,
             align=PP_ALIGN.CENTER,
@@ -1138,7 +1138,7 @@ def _render_kpi_dashboard(slide, page: BodyPageSpec, manifest: TemplateManifest)
             top + int(spec["insight_text_box"]["top_offset"]),
             int(spec["insights_grid"]["card_width"]) - int(spec["insight_text_box"]["width_padding"]),
             int(spec["insight_text_box"]["height"]),
-            normalize_text_for_box(str(insight), int(spec["insight_text_box"]["wrap_chars"])),
+            normalize_text_for_body_box(str(insight), int(spec["insight_text_box"]["wrap_chars"])),
             size_pt=int(spec["insight_text_box"]["font_pt"]),
             align=PP_ALIGN.CENTER,
         )
@@ -1258,7 +1258,7 @@ def _render_risk_matrix(slide, page: BodyPageSpec, manifest: TemplateManifest):
             top + int(spec["risk_detail_box"]["top_offset"]),
             int(spec["risk_card"]["width"]) - int(spec["risk_detail_box"]["width_padding"]),
             int(spec["risk_detail_box"]["height"]),
-            normalize_text_for_box(str(item.get("detail", "")), int(spec["risk_detail_box"]["wrap_chars"])),
+            normalize_text_for_body_box(str(item.get("detail", "")), int(spec["risk_detail_box"]["wrap_chars"])),
             size_pt=int(spec["risk_detail_box"]["font_pt"]),
         )
 
@@ -1339,7 +1339,7 @@ def _render_claim_breakdown(slide, page: BodyPageSpec, manifest: TemplateManifes
             top + int(spec["claim_detail_box"]["top_offset"]),
             int(spec["claims_grid"]["card_width"]) - int(spec["claim_detail_box"]["width_padding"]),
             int(spec["claim_detail_box"]["height"]),
-            normalize_text_for_box(str(claim.get("detail", "")), int(spec["claim_detail_box"]["wrap_chars"])),
+            normalize_text_for_body_box(str(claim.get("detail", "")), int(spec["claim_detail_box"]["wrap_chars"])),
             size_pt=int(spec["claim_detail_box"]["font_pt"]),
             color=sub_rgb,
             align=PP_ALIGN.CENTER,
@@ -1373,7 +1373,7 @@ def _render_claim_breakdown(slide, page: BodyPageSpec, manifest: TemplateManifes
         int(spec["summary_box"]["top"]),
         int(spec["summary_box"]["width"]),
         int(spec["summary_box"]["height"]),
-        normalize_text_for_box(str(payload.get("summary", page.subtitle)), int(spec["summary_box"]["wrap_chars"])),
+        normalize_text_for_body_box(str(payload.get("summary", page.subtitle)), int(spec["summary_box"]["wrap_chars"])),
         size_pt=int(spec["summary_box"]["font_pt"]),
         align=PP_ALIGN.CENTER,
     )
@@ -1408,3 +1408,4 @@ PATTERN_RENDERERS = {
 
 def resolve_render_pattern(pattern_id: str) -> str:
     return pattern_id if pattern_id in PATTERN_RENDERERS else "general_business"
+

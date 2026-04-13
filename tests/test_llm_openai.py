@@ -1,9 +1,11 @@
 import unittest
 from io import BytesIO
+import threading
 from unittest.mock import patch
 from urllib import error
 
 from tools.sie_autoppt.llm_openai import (
+    OpenAIConfigurationError,
     OpenAIHTTPStatusError,
     OpenAIResponsesClient,
     OpenAIResponsesConfig,
@@ -135,6 +137,33 @@ class OpenAIResponsesTests(unittest.TestCase):
         self.assertEqual(config.api_style, "auto")
         self.assertEqual(config.api_key, "")
 
+    def test_load_openai_responses_config_allows_empty_key_for_remote_by_default(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENAI_API_KEY": "",
+                "OPENAI_BASE_URL": "https://api.openai.com/v1",
+            },
+            clear=False,
+        ):
+            config = load_openai_responses_config(model="gpt-4o-mini")
+
+        self.assertEqual(config.api_key, "")
+        self.assertEqual(config.base_url, "https://api.openai.com/v1")
+
+    def test_load_openai_responses_config_can_require_key_with_strict_flag(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENAI_API_KEY": "",
+                "OPENAI_BASE_URL": "https://api.openai.com/v1",
+                "SIE_AUTOPPT_REQUIRE_API_KEY": "1",
+            },
+            clear=False,
+        ):
+            with self.assertRaises(OpenAIConfigurationError):
+                load_openai_responses_config(model="gpt-4o-mini")
+
     def test_auto_mode_falls_back_to_chat_completions_when_responses_endpoint_is_unsupported(self):
         client = OpenAIResponsesClient(
             OpenAIResponsesConfig(
@@ -238,3 +267,46 @@ class OpenAIResponsesTests(unittest.TestCase):
 
         self.assertEqual(payload["output_text"], '{"ok":true}')
         sleep.assert_called_once_with(0.25)
+
+    def test_start_progress_heartbeat_disabled_by_default(self):
+        client = OpenAIResponsesClient(
+            OpenAIResponsesConfig(
+                api_key="sk-test",
+                base_url="https://api.openai.com/v1",
+                model="gpt-4o-mini",
+                timeout_sec=30,
+                reasoning_effort="low",
+                text_verbosity="low",
+                api_style="responses",
+            )
+        )
+        with patch.dict("os.environ", {}, clear=False):
+            thread = client._start_progress_heartbeat(route="/responses", stop_event=threading.Event())
+        self.assertIsNone(thread)
+
+    def test_start_progress_heartbeat_enabled(self):
+        client = OpenAIResponsesClient(
+            OpenAIResponsesConfig(
+                api_key="sk-test",
+                base_url="https://api.openai.com/v1",
+                model="gpt-4o-mini",
+                timeout_sec=30,
+                reasoning_effort="low",
+                text_verbosity="low",
+                api_style="responses",
+            )
+        )
+        stop_event = threading.Event()
+        with patch.dict(
+            "os.environ",
+            {
+                "SIE_AUTOPPT_STREAM_PROGRESS": "1",
+                "SIE_AUTOPPT_STREAM_PROGRESS_INTERVAL_SEC": "1",
+            },
+            clear=False,
+        ):
+            thread = client._start_progress_heartbeat(route="/responses", stop_event=stop_event)
+            self.assertIsNotNone(thread)
+            self.assertTrue(thread.is_alive())
+            stop_event.set()
+            thread.join(timeout=0.3)

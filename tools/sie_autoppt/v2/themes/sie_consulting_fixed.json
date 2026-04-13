@@ -1,0 +1,35 @@
+{
+  "theme_name": "sie_consulting_fixed",
+  "page": {
+    "width": 13.333,
+    "height": 7.5
+  },
+  "colors": {
+    "primary": "AD053D",
+    "secondary": "932341",
+    "text_main": "2C3E50",
+    "text_sub": "4A5558",
+    "bg": "F2F6F6",
+    "card_bg": "FFFFFF",
+    "line": "7C969D"
+  },
+  "fonts": {
+    "title": "微软雅黑",
+    "body": "微软雅黑",
+    "fallback": "微软雅黑"
+  },
+  "font_sizes": {
+    "title": 32,
+    "subtitle": 14,
+    "body": 12,
+    "small": 10
+  },
+  "spacing": {
+    "page_margin_left": 0.58,
+    "page_margin_right": 0.58,
+    "page_margin_top": 0.4,
+    "page_margin_bottom": 0.3,
+    "block_gap": 0.24
+  }
+}
+

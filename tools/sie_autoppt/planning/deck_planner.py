@@ -1,11 +1,12 @@
 from functools import lru_cache
+from importlib import import_module
 
 from ..config import MAX_BODY_CHAPTERS
 from ..inputs.html_parser import (
     parse_html_payload,
     validate_payload,
 )
-from ..models import BodyPagePayload, BodyPageSpec, DeckSpec, HtmlSlide, InputPayload
+from ..models import BodyPagePayload, BodyPageSpec, DeckSpec, InputPayload
 from ..patterns import infer_pattern
 from ..template_manifest import TemplateStyleGuide, load_template_manifest
 from .content_profiler import profile_bullets
@@ -23,15 +24,7 @@ from .payload_builders import (
     build_roadmap_stages as shared_build_roadmap_stages,
     derive_comparison_cards as shared_derive_comparison_cards,
 )
-from .legacy_html_support import (
-    build_focus_bullets as shared_build_focus_bullets,
-    build_note_detail_bullets as shared_build_note_detail_bullets,
-    build_overview_bullets as shared_build_overview_bullets,
-    build_phase_detail_bullets as shared_build_phase_detail_bullets,
-    build_scope_bullets as shared_build_scope_bullets,
-    choose_page_pattern as shared_choose_page_pattern,
-    format_phase_summary as shared_format_phase_summary,
-)
+from . import legacy_html_support as _legacy_html_support
 from .text_utils import (
     compact_text as shared_compact_text,
     concise_text as shared_concise_text,
@@ -39,6 +32,14 @@ from .text_utils import (
     shorten_for_nav as shared_shorten_for_nav,
     split_title_detail as shared_split_title_detail,
 )
+
+shared_build_focus_bullets = _legacy_html_support.build_focus_bullets
+shared_build_note_detail_bullets = _legacy_html_support.build_note_detail_bullets
+shared_build_overview_bullets = _legacy_html_support.build_overview_bullets
+shared_build_phase_detail_bullets = _legacy_html_support.build_phase_detail_bullets
+shared_build_scope_bullets = _legacy_html_support.build_scope_bullets
+shared_choose_page_pattern = _legacy_html_support.choose_page_pattern
+shared_format_phase_summary = _legacy_html_support.format_phase_summary
 
 
 DEFAULT_TITLE = "项目概览与阶段规划"
@@ -87,9 +88,8 @@ def clamp_requested_chapters(chapters: int | None, available_pages: int) -> int:
 
 
 def infer_legacy_requested_chapters(payload: InputPayload) -> int:
-    from .legacy_html_planner import infer_legacy_requested_chapters as legacy_infer_legacy_requested_chapters
-
-    return legacy_infer_legacy_requested_chapters(payload)
+    legacy_planner = import_module("tools.sie_autoppt.planning.legacy_html_planner")
+    return legacy_planner.infer_legacy_requested_chapters(payload)
 
 
 def build_phase_detail_bullets(payload: InputPayload) -> list[str]:
@@ -251,9 +251,8 @@ def choose_page_pattern(page_key: str, title: str, subtitle: str, bullets: list[
 
 
 def build_card_analysis_page_specs(html: str, chapters: int | None) -> DeckSpec | None:
-    from .legacy_card_analysis import build_card_analysis_page_specs as legacy_build_card_analysis_page_specs
-
-    return legacy_build_card_analysis_page_specs(html, chapters)
+    legacy_card = import_module("tools.sie_autoppt.planning.legacy_card_analysis")
+    return legacy_card.build_card_analysis_page_specs(html, chapters)
 
 
 
@@ -280,9 +279,8 @@ def build_slide_tag_page_specs(payload: InputPayload, chapters: int | None) -> D
 
 
 def build_legacy_page_specs(payload: InputPayload, chapters: int | None) -> DeckSpec:
-    from .legacy_html_planner import build_legacy_page_specs as legacy_build_legacy_page_specs
-
-    return legacy_build_legacy_page_specs(payload, chapters)
+    legacy_planner = import_module("tools.sie_autoppt.planning.legacy_html_planner")
+    return legacy_planner.build_legacy_page_specs(payload, chapters)
 
 
 def build_deck_spec_from_html(html: str, chapters: int | None) -> DeckSpec:

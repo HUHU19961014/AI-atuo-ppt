@@ -1,0 +1,31 @@
+name: Release Readiness
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Lint (targeted)
+        run: |
+          python -m ruff check tools/sie_autoppt/cli.py tools/sie_autoppt/clarify_web.py tools/sie_autoppt/exceptions.py tools/sie_autoppt/cli_parser.py --select F
+          python -m ruff check tools/sie_autoppt/v2 tools/sie_autoppt/planning tools/sie_autoppt/qa --select F
+
+      - name: Tests (release subset)
+        run: |
+          python -m pytest tests/test_cli.py tests/test_clarify_web.py tests/test_clarifier.py tests/test_v2_services.py tests/test_v2_quality_checks.py tests/test_plugins.py tests/test_language_policy.py -q

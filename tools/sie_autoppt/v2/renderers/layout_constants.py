@@ -121,7 +121,7 @@ class MatrixGridLayout:
     y_axis_top: float = 3.35
     y_axis_width: float = 0.9
     y_axis_height: float = 0.35
-    palette: tuple[str, ...] = ("#FFF4F4", "#FFF8EE", "#F5F9FF", "#EEF8F2")
+    palette_roles: tuple[str, ...] = ("card_bg", "bg", "card_bg", "bg")
 
 
 @dataclass(frozen=True)

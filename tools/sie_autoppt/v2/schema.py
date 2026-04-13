@@ -5,7 +5,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
-from .layout_ids import SUPPORTED_LAYOUTS
 from .theme_loader import available_theme_names
 
 SUPPORTED_THEMES = tuple(available_theme_names())
@@ -48,7 +47,7 @@ def _normalize_data_sources(value: Any) -> list[dict[str, str]]:
 
 class ThemeMeta(BaseModel):
     title: str = Field(min_length=1, max_length=80)
-    theme: str = Field(default="business_red")
+    theme: str = Field(default="sie_consulting_fixed")
     language: str = Field(default="zh-CN", min_length=2, max_length=16)
     author: str = Field(default="AI Auto PPT", min_length=1, max_length=40)
     version: str = Field(default="2.0", min_length=1, max_length=10)
@@ -377,7 +376,7 @@ def normalize_deck_payload(
     payload: dict[str, Any],
     *,
     default_title: str = "AI Auto PPT",
-    default_theme: str = "business_red",
+    default_theme: str = "sie_consulting_fixed",
     default_language: str = "zh-CN",
     default_author: str = "AI Auto PPT",
 ) -> dict[str, Any]:
@@ -456,7 +455,7 @@ def validate_deck_payload(
     payload: dict[str, Any],
     *,
     default_title: str = "AI Auto PPT",
-    default_theme: str = "business_red",
+    default_theme: str = "sie_consulting_fixed",
     default_language: str = "zh-CN",
     default_author: str = "AI Auto PPT",
 ) -> ValidatedDeck:

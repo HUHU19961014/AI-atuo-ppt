@@ -2,7 +2,7 @@ import re
 
 from ..models import BodyPagePayload, BodyPageSpec, InputPayload
 from ..patterns import infer_pattern
-from .legacy_html_support import build_phase_detail_bullets
+from . import legacy_html_support as _legacy_html_support
 from .text_utils import compact_text, concise_text, split_title_detail
 
 
@@ -158,7 +158,7 @@ def build_generic_page_payload(page: BodyPageSpec, pattern_id: str, payload: Inp
     if pattern_id == "process_flow":
         return {"steps": build_process_steps(page_items or payload.scenarios or page.bullets)}
     if pattern_id == "roadmap_timeline":
-        source_items = page_items or build_phase_detail_bullets(payload) or page.bullets
+        source_items = page_items or _legacy_html_support.build_phase_detail_bullets(payload) or page.bullets
         return {
             "headline": concise_text(page.subtitle or "按阶段推进关键任务与里程碑", 34),
             "footer": concise_text(payload.footer or page.subtitle or "路线图用于统一预期与执行节奏。", 34),

@@ -1,6 +1,7 @@
 import json
 import mimetypes
 import os
+import threading
 import time
 from base64 import b64encode
 from pathlib import Path
@@ -33,12 +34,21 @@ class OpenAIResponsesConfig:
     project: str | None = None
 
 
-def _allows_empty_api_key(base_url: str) -> bool:
-    if os.environ.get("SIE_AUTOPPT_ALLOW_EMPTY_API_KEY", "").strip().lower() in {"1", "true", "yes"}:
-        return True
+@dataclass(frozen=True)
+class AnthropicVisionConfig:
+    api_key: str
+    base_url: str
+    model: str
+    timeout_sec: float
 
-    hostname = (urlparse(base_url).hostname or "").lower()
-    return hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+
+def _allows_empty_api_key(base_url: str) -> bool:
+    # Default is permissive: in hosted agent environments (Codex/Claude Code/etc.),
+    # auth may be injected upstream and no local OPENAI_API_KEY is required.
+    if os.environ.get("SIE_AUTOPPT_REQUIRE_API_KEY", "").strip().lower() in {"1", "true", "yes"}:
+        hostname = (urlparse(base_url).hostname or "").lower()
+        return hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+    return True
 
 
 def _local_probe_paths(base_url: str) -> tuple[str, ...]:
@@ -92,9 +102,8 @@ def load_openai_responses_config(model: str | None = None) -> OpenAIResponsesCon
 
     if not api_key and not _allows_empty_api_key(base_url):
         raise OpenAIConfigurationError(
-            "OPENAI_API_KEY is required for AI planning. "
-            "Set OPENAI_API_KEY, or set OPENAI_BASE_URL to your local AI gateway "
-            "(localhost/127.0.0.1), or enable SIE_AUTOPPT_ALLOW_EMPTY_API_KEY=1."
+            "OPENAI_API_KEY is required because SIE_AUTOPPT_REQUIRE_API_KEY=1 is enabled. "
+            "Set OPENAI_API_KEY, or disable SIE_AUTOPPT_REQUIRE_API_KEY, or use a localhost gateway."
         )
 
     if not base_url:
@@ -112,6 +121,37 @@ def load_openai_responses_config(model: str | None = None) -> OpenAIResponsesCon
         organization=os.environ.get("OPENAI_ORG_ID", "").strip() or None,
         project=os.environ.get("OPENAI_PROJECT_ID", "").strip() or None,
     )
+
+
+def load_anthropic_vision_config(model: str | None = None) -> AnthropicVisionConfig:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1").strip().rstrip("/")
+    resolved_model = (model or os.environ.get("SIE_AUTOPPT_CLAUDE_MODEL", "claude-3-7-sonnet-latest")).strip()
+    if not api_key:
+        raise OpenAIConfigurationError(
+            "ANTHROPIC_API_KEY is required for Claude vision review. "
+            "Set ANTHROPIC_API_KEY or switch provider to OpenAI."
+        )
+    if not base_url:
+        raise OpenAIConfigurationError("ANTHROPIC_BASE_URL must not be empty.")
+    return AnthropicVisionConfig(
+        api_key=api_key,
+        base_url=base_url,
+        model=resolved_model,
+        timeout_sec=DEFAULT_AI_TIMEOUT_SEC,
+    )
+
+
+def infer_visual_review_provider(model: str | None, provider: str | None = None) -> str:
+    explicit = str(provider or "").strip().lower()
+    if explicit in {"openai", "claude"}:
+        return explicit
+    if explicit and explicit != "auto":
+        raise ValueError("vision provider must be one of: auto, openai, claude")
+    normalized_model = str(model or "").strip().lower()
+    if normalized_model.startswith("claude"):
+        return "claude"
+    return "openai"
 
 
 def extract_text_from_responses_payload(payload: dict[str, Any]) -> str:
@@ -362,6 +402,8 @@ class OpenAIResponsesClient:
         max_retries = 3
 
         for attempt in range(max_retries):
+            heartbeat_stop = threading.Event()
+            heartbeat_thread = self._start_progress_heartbeat(route=route, stop_event=heartbeat_stop)
             try:
                 with request.urlopen(req, timeout=self._config.timeout_sec) as resp:
                     response_body = resp.read().decode("utf-8")
@@ -385,6 +427,10 @@ class OpenAIResponsesClient:
                     time.sleep(self._retry_delay_seconds(attempt=attempt))
                     continue
                 raise OpenAIResponsesError(f"Responses API request failed: {exc.reason}") from exc
+            finally:
+                heartbeat_stop.set()
+                if heartbeat_thread is not None:
+                    heartbeat_thread.join(timeout=0.2)
 
         raise OpenAIResponsesError(f"Responses API request failed after {max_retries} retries")
 
@@ -407,6 +453,31 @@ class OpenAIResponsesClient:
         if self._config.project:
             headers["OpenAI-Project"] = self._config.project
         return headers
+
+    def _start_progress_heartbeat(self, *, route: str, stop_event: threading.Event) -> threading.Thread | None:
+        enabled = os.environ.get("SIE_AUTOPPT_STREAM_PROGRESS", "").strip().lower() in {"1", "true", "yes"}
+        if not enabled:
+            return None
+        interval_raw = os.environ.get("SIE_AUTOPPT_STREAM_PROGRESS_INTERVAL_SEC", "").strip()
+        try:
+            interval = float(interval_raw) if interval_raw else 3.0
+        except ValueError:
+            interval = 3.0
+        interval = min(10.0, max(1.0, interval))
+
+        started = time.time()
+
+        def _worker() -> None:
+            while not stop_event.wait(interval):
+                elapsed = time.time() - started
+                print(
+                    f"progress: waiting for AI response {route} ({elapsed:.1f}s elapsed)",
+                    flush=True,
+                )
+
+        thread = threading.Thread(target=_worker, name="sie-autoppt-llm-heartbeat", daemon=True)
+        thread.start()
+        return thread
 
 
 def _image_path_to_data_url(path: Path) -> str:

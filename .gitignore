@@ -3,9 +3,13 @@ __pycache__/
 *.pyo
 .venv/
 .pytest_cache/
+.ruff_cache/
 projects/generated/
 projects/visual_review/
 projects/*_preview/
 output/
 *_QA.txt
 *_QA.json
+.env
+.env.*
+!.env.example

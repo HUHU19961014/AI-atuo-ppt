@@ -1,106 +1,57 @@
 # CLI Reference
 
-## Recommended Entry Points
+## Recommended Commands
 
 | Command | Use case | Needs AI | Main output |
 |---|---|---|---|
-| `demo` | Render the bundled sample deck and verify the environment fast | No | `.pptx` + render logs |
-| `make` | Recommended one-shot semantic V2 generation | Yes | outline + semantic deck + compiled deck + `.pptx` |
-| `review` | One-pass visual review for an existing deck JSON | No | review JSON + patched deck + `.pptx` |
-| `iterate` | Multi-round review and auto-fix loop | No | final review + patched deck + `.pptx` |
-| `visual-draft` | HTML visual draft and scoring from DeckSpec | No (AI optional) | `.visual_spec.json` + `.preview.html` + `.preview.png` + scoring JSON |
+| `make` | Default one-shot generation (`AI -> SVG -> PPTX`) | Yes | outline + semantic deck + compiled deck + `.pptx` |
+| `review` | One-pass visual review for a deck JSON | No | review JSON + patch JSON + `.pptx` |
+| `iterate` | Multi-round visual review and auto-fix loop | No | final review JSON + patch JSON + `.pptx` |
+| `svg-pipeline` | Run `total_md_split -> finalize_svg -> svg_to_pptx` | No | `svg_final` + exported `.pptx` |
+| `svg-export` | Export existing SVG project directly | No | native `.pptx` + `_svg.pptx` |
 
-## Advanced Commands
+## Compatibility / Advanced
 
-| Command | Use case | Needs AI | Notes |
-|---|---|---|---|
-| `clarify` | Clarify vague requests before generation | Optional | Outputs clarifier session JSON |
-| `clarify-web` | Local browser UI for the clarifier | Optional | Starts `http://127.0.0.1:8765` by default |
-| `sie-render` | Render PPTX with the actual SIE PPTX template | No | Preferred for branded SIE delivery from `StructureSpec` or `DeckSpec` JSON |
-| `v2-outline` | Generate outline JSON only | Yes | Best when you want to inspect storyline first |
-| `v2-plan` | Generate outline + semantic deck + compiled deck | Yes | Good for step-by-step review |
-| `v2-compile` | Compile semantic deck JSON into renderable deck JSON | No | Accepts semantic deck JSON |
-| `v2-render` | Render PPTX from compiled or semantic deck JSON | No | Generic / dev render path, not the actual SIE template delivery path |
-| `v2-make` | Same full pipeline as `make` | Yes | Kept as the explicit V2 name |
-| `v2-review` | Same as `review` | No | Explicit V2 command |
-| `v2-iterate` | Same as `iterate` | No | Explicit V2 command |
-| `ai-check` | Connectivity and pipeline healthcheck | Yes | Verifies the AI route; add `--with-render` to include PPT render |
+| Command | Description |
+|---|---|
+| `sie-render` | Legacy compatibility path (not default) |
+| `v2-outline` | Outline generation only |
+| `v2-plan` | Outline + semantic + compiled deck |
+| `v2-compile` | Compile semantic deck JSON to renderable deck JSON |
+| `v2-patch` | Apply incremental JSON patch set to an existing compiled deck |
+| `v2-render` | Generic renderer command (non-primary path) |
+| `v2-make` | Explicit name of the same make pipeline |
+| `v2-review` | Explicit name of `review` |
+| `v2-iterate` | Explicit name of `iterate` |
+| `ai-check` | AI connectivity and pipeline healthcheck |
+| `clarify`, `clarify-web` | Requirement clarification flows |
 
-## Common Examples
-
-### No-AI smoke test
+## Examples
 
 ```powershell
-python .\main.py demo
-```
-
-### Recommended AI generation
-
-```powershell
-python .\main.py make `
-  --topic "企业 AI 战略汇报" `
-  --brief "面向管理层，先给出核心判断，再展开优先级和落地路径" `
-  --generation-mode deep `
-  --min-slides 6 `
-  --max-slides 8
-```
-
-### Step-by-step generation
-
-```powershell
-python .\main.py v2-plan `
-  --topic "供应链追溯体系建设方案" `
-  --generation-mode deep
+python .\main.py make --topic "企业 AI 战略汇报"
 ```
 
 ```powershell
-python .\main.py v2-render `
-  --deck-json .\output\generated_deck.json
+python .\main.py svg-pipeline --svg-project-path .\projects\ppt-master\examples\demo_project_intro_ppt169_20251211
 ```
 
-### Clarify before generate
-
 ```powershell
-python .\main.py clarify --topic "帮我做PPT"
-python .\main.py clarify-web
+python .\main.py review --deck-json .\output\generated_deck.json --vision-provider claude --llm-model claude-3-7-sonnet-latest
 ```
 
-### Healthcheck with render
-
 ```powershell
-python .\main.py ai-check `
-  --topic "企业 AI 汇报健康检查" `
-  --with-render
-```
-
-### Actual SIE template render
-
-```powershell
-python .\main.py sie-render `
-  --structure-json .\projects\generated\traceability.structure.json `
-  --topic "供应链追溯体系建设方案"
-```
-
-### Visual draft before PPTX
-
-```powershell
-python .\main.py visual-draft `
-  --deck-spec-json .\samples\visual_draft\why_sie_choice.deck_spec.json `
-  --output-dir .\output\visual_draft `
-  --output-name why_sie_choice `
-  --page-index 0 `
-  --layout-hint auto `
-  --visual-rules-path .\tools\sie_autoppt\visual_default_rules.toml `
-  --with-ai-review
+python .\main.py v2-patch --deck-json .\output\generated_deck.json --patch-json .\output\patches_round_1.json --plan-output .\output\generated_deck.patched.json
 ```
 
 ## Notes
 
-- Current CLI is `make` + `sie-render` dual-path: use `make` for semantic AI generation and `sie-render` for actual SIE template delivery.
-- `v2-render` stays available as the generic renderer used for development and regression, but it should not be described as the actual SIE template path.
-- Legacy `ai-plan`, `ai-make`, `plan`, and `render` commands are not part of the active user path.
-- `visual-draft` always runs rule scoring. AI visual review is optional via `--with-ai-review`.
-- `--generation-mode quick` skips structured context extraction and strategy analysis.
-- `--generation-mode deep` adds structured context extraction and strategy analysis before outline/deck generation.
-- `ai-check --with-render` runs through PPT generation and returns render quality summary fields in addition to connectivity status.
-- The current V2 CLI does not expose a `--planner-command` hook. If that extension point is reintroduced later, it should land with protocol docs and tests in the same change.
+- Default `make` is SVG-primary and should produce PPTX exported from `svg_final`.
+- `sie-render` is kept for compatibility and should not be used as the default production entry.
+- `review/iterate` support `--vision-provider auto|openai|claude`.
+- Add `--progress` to long-running commands (`make`, `v2-plan`, `v2-render`, `sie-render`, `ai-check`) to print stage markers to stderr.
+- `OPENAI_API_KEY` is optional by default; set it when your provider requires direct API-key auth.
+- To enforce strict local key requirement, set `SIE_AUTOPPT_REQUIRE_API_KEY=1`.
+- Use root `.env.example` as baseline for environment configuration.
+- Language alias normalization is enabled for generation (`en` -> `en-US`, `zh` -> `zh-CN`).
+- Plugin-based extension is supported through `SIE_AUTOPPT_PLUGIN_MODULES` and optional `SIE_AUTOPPT_MODEL_ADAPTER`.

@@ -1,3 +1,28 @@
+﻿# LLM 兼容性说明（增补）
+
+## Visual Review Provider Switching
+
+`review` / `iterate` 支持：
+
+- `--vision-provider auto`（默认，按模型自动判断）
+- `--vision-provider openai`
+- `--vision-provider claude`
+
+示例：
+
+```powershell
+python .\main.py review --deck-json .\output\generated_deck.json --vision-provider claude --llm-model claude-3-7-sonnet-latest
+```
+
+### Claude Vision 必需环境变量
+
+```powershell
+$env:ANTHROPIC_API_KEY="your-anthropic-key"
+# 可选
+$env:ANTHROPIC_BASE_URL="https://api.anthropic.com/v1"
+```
+
+---
 # LLM 兼容性指南
 
 ## 概述
@@ -16,6 +41,11 @@ export OPENAI_API_KEY="sk-..."
 export OPENAI_BASE_URL="https://api.openai.com/v1"
 export SIE_AUTOPPT_LLM_MODEL="gpt-4o-mini"
 ```
+
+说明：
+- 默认不强制本地 `OPENAI_API_KEY`（便于 Codex/Claude Code/网关注入鉴权场景）。
+- 若你的上游端点要求显式 key，请自行设置 `OPENAI_API_KEY`。
+- 若你要恢复“必须有 key”策略，可设置 `SIE_AUTOPPT_REQUIRE_API_KEY=1`。
 
 **特点：**
 - 支持 JSON Schema strict mode
@@ -162,8 +192,13 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_real_ai_smoke.ps1 -Generati
 ### 常见错误诊断
 
 **错误：`OPENAI_API_KEY is required`**
-- 检查环境变量是否设置
-- 本地测试可设置 `SIE_AUTOPPT_ALLOW_EMPTY_API_KEY=1`
+- 仅在你显式启用 `SIE_AUTOPPT_REQUIRE_API_KEY=1` 时会出现。
+- 处理方式：设置 `OPENAI_API_KEY`，或关闭 `SIE_AUTOPPT_REQUIRE_API_KEY`，或改用 localhost 网关。
+
+**错误：`401 Unauthorized` / `invalid_api_key`**
+- 这通常表示上游服务需要鉴权，但当前请求没有有效凭据。
+- 若你不是走“平台自动注入鉴权”，请设置 `OPENAI_API_KEY`。
+- 若你在 Codex/Claude Code/代理网关环境，确认 `OPENAI_BASE_URL` 指向正确的可鉴权入口。
 
 **错误：`Responses API quota exceeded`**
 - API key 余额不足或配额用尽
@@ -227,3 +262,4 @@ python -m pytest tests/test_llm_openai.py -v
 - 添加网络连接错误重试
 - 完善 DeepSeek-V3 兼容性说明
 - 添加国内模型配置示例
+

@@ -106,7 +106,7 @@ CONTENT_PATTERNS = (
     r"(?:核心内容|主要内容|重点|关键内容|内容重点)\s*(?:是|为|包括|围绕)?\s*[:：]?\s*(.+)$",
     r"(?:内容|包括|围绕|聚焦|重点讲|主要讲)\s*[:：]?\s*(.+)$",
 )
-DEFAULT_V2_THEME = "business_red"
+DEFAULT_V2_THEME = "sie_consulting_fixed"
 V2_THEMES_DIR = Path(__file__).resolve().parent / "v2" / "themes"
 LEGACY_DIMENSION_ALIASES = {
     "template_theme": "theme",

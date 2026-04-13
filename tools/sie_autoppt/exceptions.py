@@ -60,3 +60,55 @@ class PromptTemplateError(FileNotFoundError):
 
 class PromptRenderError(ValueError):
     """Raised when a prompt template is missing required render values."""
+
+
+class ClarifierRequestError(ValueError):
+    """Raised when clarifier-web request payload is invalid for business rules."""
+
+
+class CliExecutionError(RuntimeError):
+    """Base class for normalized CLI-facing failures."""
+
+    exit_code = 1
+
+
+class CliUserInputError(CliExecutionError):
+    """Raised for invalid user input that should map to argparse-style exit code."""
+
+    exit_code = 2
+
+
+class CliConfigError(CliExecutionError):
+    """Raised for environment or configuration failures."""
+
+    exit_code = 1
+
+
+class CliExternalServiceError(CliExecutionError):
+    """Raised when external services fail (LLM API, network gateways, etc.)."""
+
+    exit_code = 1
+
+
+class CliInternalError(CliExecutionError):
+    """Raised for unexpected internal runtime failures."""
+
+    exit_code = 1
+
+
+__all__ = [
+    "AiWorkflowError",
+    "AiHealthcheckBlockedError",
+    "AiHealthcheckFailedError",
+    "OpenAIConfigurationError",
+    "OpenAIResponsesError",
+    "OpenAIHTTPStatusError",
+    "PromptTemplateError",
+    "PromptRenderError",
+    "ClarifierRequestError",
+    "CliExecutionError",
+    "CliUserInputError",
+    "CliConfigError",
+    "CliExternalServiceError",
+    "CliInternalError",
+]

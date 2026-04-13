@@ -1,5 +1,42 @@
 # Testing
 
+## Local Quality Gate (CI-aligned)
+
+Run the local CI-aligned gate:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\quality_gate.ps1
+```
+
+Execution order:
+
+1. Targeted `ruff --select F` checks (same scope as CI quality-gates).
+2. Targeted `mypy` checks (release target files only).
+3. Legacy boundary guard (`tools/check_legacy_boundary.py`).
+4. Release subset test suite.
+5. Coverage gate for CLI entry surfaces (`--fail-under=80`).
+
+## Performance And Concurrency Checks
+
+- Long-run stress batching (120-slide synthetic input):
+
+```powershell
+python .\tools\stress_test_v2.py
+```
+
+- Timeout graceful degradation check:
+
+```powershell
+python .\main.py v2-make --topic "timeout fallback check" --graceful-timeout-fallback
+```
+
+- Concurrent output collision isolation:
+
+```powershell
+python .\main.py v2-make --topic "run A" --isolate-output --run-id run-a
+python .\main.py v2-make --topic "run B" --isolate-output --run-id run-b
+```
+
 `SIE-autoppt` 当前建议分成 4 类主测试与 1 类条件性兼容测试：
 
 1. 单元测试
@@ -11,8 +48,15 @@
 ## 基线原则
 
 - 只要测试会落到实际渲染、视觉检查、发布验收，就优先使用仓库内的 SIE 模板基线：`assets/templates/sie_template.pptx`。
+- 生产链路主题固定为 `sie_consulting_fixed`；测试样例如果使用其他主题，仅可用于兼容/实验，不作为主回归签收依据。
 - 其他 theme、外部模板、参考样式更适合作为补充覆盖，不应替代 SIE 模板的主回归。
 - 如果某条测试没有直接显式传模板，也应确认它最终走的是当前默认的 SIE 模板链路。
+
+## 当前硬门禁（测试必须覆盖）
+
+- 主题必须为 `sie_consulting_fixed`
+- 目录式标题（例如“建设背景”“现状介绍”）按错误级别处理
+- `title_content` 要点数量必须在 `1-6` 之间
 
 ## 推荐安装
 

@@ -5,12 +5,35 @@ from tools.sie_autoppt.v2.schema import validate_deck_payload
 
 
 class V2QualityChecksTests(unittest.TestCase):
+    def test_language_consistency_warns_for_mixed_content(self):
+        validated = validate_deck_payload(
+            {
+                "meta": {
+                    "title": "Language Mix",
+                    "theme": "sie_consulting_fixed",
+                    "language": "zh-CN",
+                    "author": "AI Auto PPT",
+                    "version": "2.0",
+                },
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "title_content",
+                        "title": "执行路径",
+                        "content": ["Next step planning", "风险收敛"],
+                    }
+                ],
+            }
+        )
+        warnings = check_deck_content(validated.deck)
+        self.assertTrue(any("mixed-language content" in item.message for item in warnings))
+
     def test_directory_style_check_ignores_conclusion_titles(self):
         validated = validate_deck_payload(
             {
                 "meta": {
                     "title": "测试标题",
-                    "theme": "business_red",
+                    "theme": "sie_consulting_fixed",
                     "language": "zh-CN",
                     "author": "AI Auto PPT",
                     "version": "2.0",
@@ -37,8 +60,10 @@ class V2QualityChecksTests(unittest.TestCase):
 
         warnings = check_deck_content(validated.deck)
         directory_style_warnings = [item.message for item in warnings if "directory-style" in item.message]
+        directory_style_errors = [item for item in warnings if "directory-style" in item.message and item.warning_level == "error"]
 
         self.assertEqual(len(directory_style_warnings), 1)
+        self.assertEqual(len(directory_style_errors), 1)
         self.assertIn("建设背景", directory_style_warnings[0])
 
     def test_directory_style_check_covers_extended_suffixes(self):
@@ -46,7 +71,7 @@ class V2QualityChecksTests(unittest.TestCase):
             {
                 "meta": {
                     "title": "测试标题",
-                    "theme": "business_red",
+                    "theme": "sie_consulting_fixed",
                     "language": "zh-CN",
                     "author": "AI Auto PPT",
                     "version": "2.0",
@@ -68,8 +93,10 @@ class V2QualityChecksTests(unittest.TestCase):
 
         warnings = check_deck_content(validated.deck)
         directory_style_warnings = [item.message for item in warnings if "directory-style" in item.message]
+        directory_style_errors = [item for item in warnings if "directory-style" in item.message and item.warning_level == "error"]
 
         self.assertEqual(len(directory_style_warnings), 1)
+        self.assertEqual(len(directory_style_errors), 1)
         self.assertIn("治理现状", directory_style_warnings[0])
 
     def test_content_checks_emit_structured_warnings(self):
@@ -77,7 +104,7 @@ class V2QualityChecksTests(unittest.TestCase):
             {
                 "meta": {
                     "title": "测试告警",
-                    "theme": "business_red",
+                    "theme": "sie_consulting_fixed",
                     "language": "zh-CN",
                     "author": "AI Auto PPT",
                     "version": "2.0",
@@ -140,7 +167,7 @@ class V2QualityChecksTests(unittest.TestCase):
             {
                 "meta": {
                     "title": "Specialized",
-                    "theme": "business_red",
+                    "theme": "sie_consulting_fixed",
                     "language": "zh-CN",
                     "author": "AI Auto PPT",
                     "version": "2.0",
@@ -202,3 +229,26 @@ class V2QualityChecksTests(unittest.TestCase):
         self.assertTrue(any(item.slide_id == "s2" and "stats_dashboard has 5 metrics" in item.message for item in warnings))
         self.assertTrue(any(item.slide_id == "s3" and "matrix_grid has 2 cells" in item.message for item in warnings))
         self.assertTrue(any(item.slide_id == "s4" and "cards_grid has 4 cards" in item.message for item in warnings))
+
+    def test_theme_must_use_sie_consulting_fixed(self):
+        validated = validate_deck_payload(
+            {
+                "meta": {
+                    "title": "主题校验",
+                    "theme": "business_red",
+                    "language": "zh-CN",
+                    "author": "AI Auto PPT",
+                    "version": "2.0",
+                },
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "title_only",
+                        "title": "本页给出核心结论与下一步动作",
+                    }
+                ],
+            }
+        )
+
+        warnings = check_deck_content(validated.deck)
+        self.assertTrue(any(item.slide_id == "meta" and item.warning_level == "error" for item in warnings))

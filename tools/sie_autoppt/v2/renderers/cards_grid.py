@@ -39,7 +39,7 @@ def render_cards_grid(prs, slide_data: CardsGridSlide, theme: ThemeSpec, log, sl
         left, top, width, height = position
         shape = add_card(slide, left, top, width, height, theme)
         if index % 2 == 0:
-            shape.fill.fore_color.rgb = rgb("#FCF7F8")
+            shape.fill.fore_color.rgb = rgb(theme.colors.bg)
         add_textbox(
             slide,
             left=left + CARDS_GRID.card_title_left_padding,

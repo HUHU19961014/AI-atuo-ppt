@@ -77,7 +77,7 @@ def build_card_analysis_page_specs(html: str, chapters: int | None) -> DeckSpec 
 
     cover_title = extract_first_tag_text(html, "h1")
     subtitle = extract_tag_with_class(html, "p", "subtitle")
-    danger_title = clean_heading_text(extract_tag_inside_block(html, "card card-danger", "h2"))
+    _ = clean_heading_text(extract_tag_inside_block(html, "card card-danger", "h2"))
     danger_bullets = extract_list_items_from_block(html, "card card-danger")
     success_title = clean_heading_text(extract_tag_inside_block(html, "card card-success", "h2"))
     success_bullets = extract_list_items_from_block(html, "card card-success")

@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 
 from tools.sie_autoppt.v2.deck_director import compile_semantic_deck_payload, plan_semantic_slide_layout
 from tools.sie_autoppt.v2.semantic_schema_builder import BLOCK_KIND_SCHEMAS, SUPPORTED_BLOCK_KINDS, build_semantic_deck_schema
@@ -46,7 +46,6 @@ class V2DeckDirectorTests(unittest.TestCase):
                 ],
             }
         )
-
         slide = validated.deck.slides[0]
         self.assertEqual(slide.layout, "two_columns")
         self.assertEqual(slide.left.heading, "当前")
@@ -76,7 +75,7 @@ class V2DeckDirectorTests(unittest.TestCase):
         self.assertEqual(slide.image.mode, "placeholder")
         self.assertIn("四层能力共同支撑转型落地。", slide.content)
 
-    def test_compile_dense_analysis_to_two_columns(self):
+    def test_compile_dense_analysis_to_paginated_title_content(self):
         validated = compile_semantic_deck_payload(
             {
                 "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
@@ -96,11 +95,10 @@ class V2DeckDirectorTests(unittest.TestCase):
                 ],
             }
         )
-
-        slide = validated.deck.slides[0]
-        self.assertEqual(slide.layout, "two_columns")
-        self.assertEqual(slide.left.heading, "措施")
-        self.assertEqual(slide.right.heading, "进一步展开")
+        self.assertGreaterEqual(len(validated.deck.slides), 2)
+        for slide in validated.deck.slides:
+            self.assertEqual(slide.layout, "title_content")
+            self.assertLessEqual(len(slide.content), 6)
 
     def test_compile_conclusion_statement_to_title_only(self):
         validated = compile_semantic_deck_payload(
@@ -144,7 +142,6 @@ class V2DeckDirectorTests(unittest.TestCase):
                 ],
             }
         )
-
         slide = validated.deck.slides[0]
         self.assertEqual(slide.layout, "two_columns")
         self.assertEqual(slide.left.heading, "Plan")
@@ -172,7 +169,6 @@ class V2DeckDirectorTests(unittest.TestCase):
                 ],
             }
         )
-
         slide = validated.deck.slides[0]
         self.assertEqual(slide.layout, "two_columns")
         self.assertEqual(slide.left.heading, "OTD")
@@ -373,3 +369,4 @@ class V2DeckDirectorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -9,7 +9,7 @@ class PromptingTests(unittest.TestCase):
     def test_load_prompt_strips_metadata_and_exposes_version(self):
         prompt = load_prompt("prompts/system/v2_outline.md")
 
-        self.assertEqual(prompt.version, "1.1.0")
+        self.assertEqual(prompt.version, "1.2.0")
         self.assertTrue(prompt.body.startswith("You are an enterprise PPT outline planner."))
         self.assertIn("slide_rule", prompt.placeholders)
 

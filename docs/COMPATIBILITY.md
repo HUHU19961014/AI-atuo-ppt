@@ -19,7 +19,6 @@
   - `run_sie_autoppt.ps1`（已 retired，只保留明确的迁移提示）
   - `tools/legacy_html_regression_check.ps1`
   - `tools/regression_check.ps1`
-  - `tools/archive/legacy_helpers/*`
   - 旧的外部 `ppt-master` 工作区说明
 
 ## 兼容原则

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from .clarifier import clarify_user_input, load_clarifier_session
 from .config import PROJECT_ROOT
+from .exceptions import ClarifierRequestError
 
 
 CLARIFIER_WEB_PAGE = PROJECT_ROOT / "web" / "clarifier.html"
@@ -25,11 +24,14 @@ def run_clarifier_turn(
 ) -> dict[str, Any]:
     normalized_message = str(message or "").strip()
     if not normalized_message:
-        raise ValueError("message must not be empty.")
+        raise ClarifierRequestError("message must not be empty.")
 
     session = None
     if session_payload.strip():
-        session = load_clarifier_session(session_payload)
+        try:
+            session = load_clarifier_session(session_payload)
+        except Exception as exc:
+            raise ClarifierRequestError(f"invalid session payload: {exc}") from exc
 
     result = clarify_user_input(
         normalized_message,
@@ -68,9 +70,9 @@ class ClarifierHttpHandler(BaseHTTPRequestHandler):
         try:
             payload = json.loads(raw.decode("utf-8"))
         except json.JSONDecodeError as exc:
-            raise ValueError(f"invalid json body: {exc}") from exc
+            raise ClarifierRequestError(f"invalid json body: {exc}") from exc
         if not isinstance(payload, dict):
-            raise ValueError("json body must be an object.")
+            raise ClarifierRequestError("json body must be an object.")
         return payload
 
     def do_GET(self) -> None:  # noqa: N802
@@ -98,7 +100,7 @@ class ClarifierHttpHandler(BaseHTTPRequestHandler):
                 model=(str(payload.get("model", "")).strip() or None),
                 prefer_llm=bool(payload.get("prefer_llm", False)),
             )
-        except ValueError as exc:
+        except ClarifierRequestError as exc:
             self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         except Exception as exc:  # pragma: no cover - defensive server guard

@@ -1,5 +1,6 @@
 import unittest
 import shutil
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -102,7 +103,7 @@ class V2ServiceTests(unittest.TestCase):
                 ]
             }
         )
-        validated = validate_deck_payload(
+        validate_deck_payload(
             {
                 "meta": {"title": "Test Deck", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
                 "slides": [
@@ -286,6 +287,34 @@ class V2ServiceTests(unittest.TestCase):
         self.assertEqual(strategy, {})
         extract_context.assert_not_called()
         generate_strategy.assert_not_called()
+
+    def test_outline_prompt_uses_normalized_english_policy(self):
+        request = OutlineGenerationRequest(topic="AI strategy", language="en", min_slides=3, max_slides=3)
+        developer_prompt, _ = build_outline_prompts(request)
+        self.assertIn("Use en-US.", developer_prompt)
+        self.assertIn("All user-facing text must be in English.", developer_prompt)
+
+    def test_generate_semantic_deck_with_plugin_model_adapter(self):
+        outline = OutlineDocument.model_validate(
+            {"pages": [{"page_no": 1, "title": "Context", "goal": "Set context."}]}
+        )
+        semantic_payload = {
+            "meta": {"title": "AI strategy", "theme": "sie_consulting_fixed", "language": "en-US", "author": "AI", "version": "2.0"},
+            "slides": [{"slide_id": "s1", "title": "Decision", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "Decide now."}]}],
+        }
+        fake_client = type("FakeClient", (), {"create_structured_json": lambda self, **_: semantic_payload})()
+        with patch.dict(os.environ, {"SIE_AUTOPPT_MODEL_ADAPTER": "plugin_adapter"}), patch(
+            "tools.sie_autoppt.v2.services.resolve_model_adapter",
+            return_value=lambda _model=None: fake_client,
+        ), patch(
+            "tools.sie_autoppt.v2.services.ensure_generation_context",
+            return_value=({}, {}),
+        ):
+            result = generate_semantic_deck_with_ai(
+                DeckGenerationRequest(topic="AI strategy", outline=outline, language="en"),
+                model="test-model",
+            )
+        self.assertEqual(result["slides"][0]["title"], "Decision")
 
 
 

@@ -1,6 +1,8 @@
 import unittest
-import tempfile
+import shutil
+from contextlib import contextmanager
 from pathlib import Path
+from uuid import uuid4
 from unittest.mock import patch
 
 from tools.sie_autoppt.v2 import theme_loader
@@ -16,6 +18,18 @@ from tools.sie_autoppt.v2.schema import (
 from tools.sie_autoppt.v2.io import is_semantic_deck_document, load_deck_document, load_outline_document
 
 
+@contextmanager
+def _workspace_tmpdir():
+    root = Path(__file__).resolve().parents[1] / ".tmp_test_workspace"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"tmp_{uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=False)
+    try:
+        yield str(path)
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 class V2SchemaTests(unittest.TestCase):
     def test_supported_themes_are_discovered_from_theme_directory(self):
         for theme_name in (
@@ -26,11 +40,12 @@ class V2SchemaTests(unittest.TestCase):
             "anthropic_orange",
             "mckinsey_blue",
             "consulting_navy",
+            "sie_consulting_fixed",
         ):
             self.assertIn(theme_name, SUPPORTED_THEMES)
 
     def test_available_theme_names_raises_for_missing_theme_directory(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with _workspace_tmpdir() as temp_dir:
             missing_dir = Path(temp_dir) / "missing-themes"
             with patch.object(theme_loader, "THEMES_DIR", missing_dir):
                 with self.assertRaises(FileNotFoundError):
@@ -138,7 +153,7 @@ class V2SchemaTests(unittest.TestCase):
                 }
             ],
         }
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with _workspace_tmpdir() as temp_dir:
             deck_path = Path(temp_dir) / "semantic.json"
             deck_path.write_text(__import__("json").dumps(semantic_payload, ensure_ascii=False), encoding="utf-8")
             deck = load_deck_document(deck_path)
@@ -150,14 +165,14 @@ class V2SchemaTests(unittest.TestCase):
             "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
             "slides": [{"slide_id": "s1", "title": "Conclusion", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "Lead with the decision."}]}],
         }
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with _workspace_tmpdir() as temp_dir:
             deck_path = Path(temp_dir) / "semantic.json"
             deck_path.write_text(__import__("json").dumps(semantic_payload, ensure_ascii=False), encoding="utf-8")
 
             self.assertTrue(is_semantic_deck_document(deck_path))
 
     def test_v2_json_loaders_accept_utf8_bom_files(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with _workspace_tmpdir() as temp_dir:
             outline_path = Path(temp_dir) / "outline.json"
             outline_path.write_bytes(
                 b"\xef\xbb\xbf"

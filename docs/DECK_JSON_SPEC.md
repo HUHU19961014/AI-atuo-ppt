@@ -20,7 +20,7 @@ This is the AI-facing structure. It describes slide intent and content blocks, n
 {
   "meta": {
     "title": "Enterprise AI Strategy",
-    "theme": "business_red",
+    "theme": "sie_consulting_fixed",
     "language": "zh-CN",
     "author": "AI Auto PPT",
     "version": "2.0"
@@ -58,7 +58,7 @@ This is the renderer-facing structure. Layout has already been chosen and normal
 {
   "meta": {
     "title": "Enterprise AI Strategy",
-    "theme": "business_red",
+    "theme": "sie_consulting_fixed",
     "language": "zh-CN",
     "author": "AI Auto PPT",
     "version": "2.0"
@@ -122,7 +122,7 @@ python .\main.py demo
 
 - Semantic deck JSON is the preferred AI contract for V2.
 - Compiled deck JSON is the stable renderer contract.
-- `sie-render` is the preferred branded delivery path when you need the actual SIE PPTX template instead of the generic V2 renderer.
+- `sie-render` is a compatibility delivery path when you need the actual SIE PPTX template instead of the default SVG-primary V2 path.
 - Layout selection is performed locally by the deck director, not by the LLM choosing renderer coordinates.
 - The V2 compiler may diversify adjacent generic layouts, but it preserves strong semantic layouts such as timelines, matrices, stats dashboards, and explicit comparisons.
 - `anti_argument` and `data_sources` are first-class fields in the V2 path and should be preserved during compilation.

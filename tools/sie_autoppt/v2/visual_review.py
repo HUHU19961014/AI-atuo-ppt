@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
+from ..plugins import resolve_model_adapter
 from .io import is_semantic_deck_document, load_deck_document, load_semantic_document, write_deck_document, write_semantic_document
 from .ppt_engine import RenderArtifacts, generate_ppt
 from .quality_checks import QualityGateResult, quality_gate
@@ -50,7 +52,16 @@ class StructuredJsonProvider(Protocol):
 
 class OpenAIVisualReviewProvider:
     def __init__(self, model: str | None = None):
-        self.client = OpenAIResponsesClient(load_openai_responses_config(model=model))
+        adapter_name = str(
+            os.environ.get("SIE_AUTOPPT_VISION_MODEL_ADAPTER", "") or os.environ.get("SIE_AUTOPPT_MODEL_ADAPTER", "")
+        ).strip().lower()
+        if adapter_name:
+            adapter_factory = resolve_model_adapter(adapter_name)
+            if adapter_factory is None:
+                raise ValueError(f"Unknown model adapter for visual review: {adapter_name}")
+            self.client = adapter_factory(model)
+        else:
+            self.client = OpenAIResponsesClient(load_openai_responses_config(model=model))
 
     def create_structured_json_with_user_items(self, **kwargs) -> dict[str, Any]:
         return self.client.create_structured_json_with_user_items(**kwargs)

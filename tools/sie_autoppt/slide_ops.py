@@ -1,14 +1,9 @@
-from .legacy.openxml_slide_ops import (
-    copy_slide_xml_assets,
-    import_slides_from_presentation,
-    set_slide_metadata_names,
-    slide_assets_preserved,
-    slide_image_targets,
-)
-from .legacy.presentation_ops import clone_slide_after, ensure_last_slide, remove_slide
+from __future__ import annotations
 
+from importlib import import_module
+from typing import Any
 
-__all__ = [
+_EXPORTED = (
     "clone_slide_after",
     "copy_slide_xml_assets",
     "ensure_last_slide",
@@ -17,4 +12,17 @@ __all__ = [
     "set_slide_metadata_names",
     "slide_assets_preserved",
     "slide_image_targets",
-]
+)
+
+
+def __getattr__(name: str) -> Any:
+    if name not in _EXPORTED:
+        raise AttributeError(name)
+    if name in {"clone_slide_after", "ensure_last_slide", "remove_slide"}:
+        module = import_module("tools.sie_autoppt.legacy.presentation_ops")
+    else:
+        module = import_module("tools.sie_autoppt.legacy.openxml_slide_ops")
+    return getattr(module, name)
+
+
+__all__ = list(_EXPORTED)

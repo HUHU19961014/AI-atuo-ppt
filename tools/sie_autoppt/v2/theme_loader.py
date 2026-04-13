@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -28,9 +29,10 @@ class ThemeColors(BaseModel):
     @classmethod
     def _normalize_color(cls, value: object) -> str:
         text = _strip_text(value)
-        if not text.startswith("#") or len(text) != 7:
-            raise ValueError("theme color values must be in #RRGGBB format.")
-        return text.upper()
+        normalized = text[1:] if text.startswith("#") else text
+        if not re.fullmatch(r"[0-9A-Fa-f]{6}", normalized):
+            raise ValueError("theme color values must be in RRGGBB or #RRGGBB format.")
+        return f"#{normalized.upper()}"
 
 
 class ThemeFonts(BaseModel):

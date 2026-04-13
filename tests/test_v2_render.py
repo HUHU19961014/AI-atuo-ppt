@@ -1,4 +1,4 @@
-import json
+﻿import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,7 +12,7 @@ from tools.sie_autoppt.v2.schema import validate_deck_payload
 class V2RenderTests(unittest.TestCase):
     def test_generate_ppt_renders_staged_content_as_timeline(self):
         payload = {
-            "meta": {"title": "Timeline Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "meta": {"title": "Timeline Test", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
             "slides": [
                 {
                     "slide_id": "s1",
@@ -38,7 +38,7 @@ class V2RenderTests(unittest.TestCase):
 
     def test_generate_ppt_renders_placeholder_as_architecture_diagram(self):
         payload = {
-            "meta": {"title": "Architecture Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "meta": {"title": "Architecture Test", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
             "slides": [
                 {
                     "slide_id": "s1",
@@ -64,7 +64,7 @@ class V2RenderTests(unittest.TestCase):
 
     def test_generate_ppt_renders_balanced_two_columns_as_comparison_table(self):
         payload = {
-            "meta": {"title": "Comparison Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "meta": {"title": "Comparison Test", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
             "slides": [
                 {
                     "slide_id": "s1",
@@ -128,7 +128,7 @@ class V2RenderTests(unittest.TestCase):
 
     def test_generate_ppt_renders_semantic_specialized_layouts(self):
         payload = {
-            "meta": {"title": "Semantic Layouts", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "meta": {"title": "Semantic Layouts", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
             "slides": [
                 {
                     "slide_id": "s1",
@@ -193,7 +193,7 @@ class V2RenderTests(unittest.TestCase):
 
     def test_generate_ppt_applies_single_rewrite_pass(self):
         payload = {
-            "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "meta": {"title": "Test", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
             "slides": [
                 {
                     "slide_id": "s1",
@@ -230,3 +230,4 @@ class V2RenderTests(unittest.TestCase):
             self.assertTrue(rewrite_payload["attempted"])
             self.assertTrue(rewrite_payload["applied"])
             self.assertGreater(rewrite_payload["action_count"], 0)
+

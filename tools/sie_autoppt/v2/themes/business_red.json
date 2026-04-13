@@ -5,18 +5,18 @@
     "height": 7.5
   },
   "colors": {
-    "primary": "#800020",
-    "secondary": "#B03A5B",
-    "text_main": "#222222",
-    "text_sub": "#666666",
-    "bg": "#F8F8F8",
-    "card_bg": "#FFFFFF",
-    "line": "#DDDDDD"
+    "primary": "800020",
+    "secondary": "B03A5B",
+    "text_main": "222222",
+    "text_sub": "666666",
+    "bg": "F8F8F8",
+    "card_bg": "FFFFFF",
+    "line": "DDDDDD"
   },
   "fonts": {
-    "title": "Microsoft YaHei",
-    "body": "Microsoft YaHei",
-    "fallback": "Arial"
+    "title": "微软雅黑",
+    "body": "微软雅黑",
+    "fallback": "微软雅黑"
   },
   "font_sizes": {
     "title": 26,
@@ -32,3 +32,4 @@
     "block_gap": 0.25
   }
 }
+

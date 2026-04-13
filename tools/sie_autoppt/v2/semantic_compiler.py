@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -399,6 +399,14 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
 
     content_items = list(features.content_items)
     if plan.layout == "two_columns" and content_items:
+        if len(content_items) > 6:
+            return {
+                "slide_id": features.slide_id,
+                "layout": "title_content",
+                "title": features.title,
+                **slide_annotations(features),
+                "content": content_items,
+            }
         left_items, right_items = split_evenly(content_items)
         heading = features.bullet_blocks[0].get("heading") if features.bullet_blocks else ""
         return {
@@ -409,7 +417,6 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "left": {"heading": heading or "核心要点", "items": left_items[:6]},
             "right": {"heading": "进一步展开", "items": right_items[:6] or [features.subtitle or features.title]},
         }
-
     if not content_items:
         content_items = [features.subtitle or features.title]
 
@@ -418,15 +425,65 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
         "layout": "title_content",
         "title": features.title,
         **slide_annotations(features),
-        "content": content_items[:10],
+        "content": content_items,
     }
+
+
+def _chunk_dense_content(items: list[str]) -> list[list[str]]:
+    if len(items) <= 6:
+        return [items]
+
+    chunks: list[list[str]] = []
+    remaining = list(items)
+    while remaining:
+        remaining_count = len(remaining)
+        if remaining_count <= 6:
+            chunks.append(remaining)
+            break
+        chunk_count = (remaining_count + 5) // 6
+        chunk_size = remaining_count // chunk_count
+        if remaining_count % chunk_count:
+            chunk_size += 1
+        chunk_size = max(4, min(6, chunk_size))
+        chunks.append(remaining[:chunk_size])
+        remaining = remaining[chunk_size:]
+    return chunks
+
+
+def split_dense_title_content_slides(slides: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    expanded: list[dict[str, Any]] = []
+    for slide in slides:
+        if slide.get("layout") != "title_content":
+            expanded.append(slide)
+            continue
+
+        content = [str(item).strip() for item in slide.get("content", []) if str(item).strip()]
+        if len(content) <= 6:
+            expanded.append(slide)
+            continue
+
+        chunks = _chunk_dense_content(content)
+        if len(chunks) == 1:
+            expanded.append(slide)
+            continue
+
+        base_title = str(slide.get("title", "")).strip()
+        base_id = str(slide.get("slide_id", "")).strip() or "s"
+        for index, chunk in enumerate(chunks, start=1):
+            page = dict(slide)
+            page["content"] = chunk
+            page["slide_id"] = f"{base_id}_p{index}"
+            if index > 1:
+                page["title"] = f"{base_title}（续）"
+            expanded.append(page)
+    return expanded
 
 
 def compile_semantic_deck_payload(
     payload: dict[str, Any],
     *,
     default_title: str = "AI Auto PPT",
-    default_theme: str = "business_red",
+    default_theme: str = "sie_consulting_fixed",
     default_language: str = "zh-CN",
     default_author: str = "AI Auto PPT",
 ) -> ValidatedDeck:
@@ -451,6 +508,7 @@ def compile_semantic_deck_payload(
         compiled_slides.append(compiled_slide)
         previous_layout = str(compiled_slide.get("layout", ""))
 
+    compiled_slides = split_dense_title_content_slides(compiled_slides)
     compiled = {"meta": normalized["meta"], "slides": compiled_slides}
     return validate_deck_payload(
         compiled,
@@ -459,3 +517,4 @@ def compile_semantic_deck_payload(
         default_language=default_language,
         default_author=default_author,
     )
+

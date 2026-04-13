@@ -24,7 +24,7 @@
 
 ## 已完成的第一步融合
 
-本次先把外部模板里最稳定、最容易抽象的“全局视觉风格”接入到 V2 主题体系：
+本次先把外部模板里最稳定、最容易抽象的“全局视觉风格”接入到 V2 主题体系（作为样式资产保留）：
 
 - `google_brand_light`
   - 来源：`ppt169_谷歌风_google_annual_report`
@@ -35,13 +35,15 @@
 - `consulting_navy`
   - 来源：`ppt169_高端咨询风_汽车认证五年战略规划`
 
-这些主题已经可以直接用于：
+说明：
+
+- 当前生产链路已固定主题为 `sie_consulting_fixed`，上述主题暂不作为生产命令默认入口。
+- 这些主题保留为后续实验与样式资产，不参与当前主发布门禁。
+
+当前生产命令应使用：
 
 ```powershell
-enterprise-ai-ppt v2-make --topic "企业 AI 战略汇报" --theme google_brand_light
-enterprise-ai-ppt v2-make --topic "认证业务五年规划" --theme consulting_navy
-enterprise-ai-ppt v2-make --topic "Agent 工程实践分享" --theme anthropic_orange
-enterprise-ai-ppt v2-make --topic "客户忠诚度提升方案" --theme mckinsey_blue
+enterprise-ai-ppt v2-make --topic "企业 AI 战略汇报" --theme sie_consulting_fixed
 ```
 
 同时，V2 主题校验已改成从 `tools/sie_autoppt/v2/themes/` 动态发现，后续继续加主题时不需要再修改 schema 白名单。

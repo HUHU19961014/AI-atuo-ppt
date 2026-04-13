@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import math
@@ -43,7 +43,7 @@ GENERIC_CLOSING_TITLES = frozenset(
         "谢谢",
         "感谢",
         "感谢聆听",
-        "谢 谢",
+        "谢谢大家",
         "thanks",
         "thankyou",
         "q&a",
@@ -172,14 +172,23 @@ def _count_hanzi(text: str) -> int:
 DIRECTORY_STYLE_EXACT_TITLES = RULE_CONFIG.directory_style.exact_titles
 DIRECTORY_STYLE_SUFFIXES = RULE_CONFIG.directory_style.suffixes
 CONCLUSION_MARKERS = RULE_CONFIG.directory_style.conclusion_markers
+REQUIRED_THEME_NAME = "sie_consulting_fixed"
 
 
 def _normalize_title_for_pattern(title: str) -> str:
-    return re.sub(r"[\s:：，,。.、（）()\-]+", "", title)
+    return re.sub(r"[\s:：,，。、“”()（）-]+", "", title)
 
 
 def _normalize_free_text(text: str) -> str:
     return re.sub(r"[\W_]+", "", str(text or "").strip().lower(), flags=re.UNICODE)
+
+
+def _contains_cjk(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", str(text or "")))
+
+
+def _contains_latin_word(text: str) -> bool:
+    return bool(re.search(r"[A-Za-z]{3,}", str(text or "")))
 
 
 def _looks_conclusion_oriented(title: str) -> bool:
@@ -232,13 +241,13 @@ def _title_warnings(slide) -> list[ContentWarning]:
             )
         )
 
-    # Warning: directory-style title (lacks conclusion orientation)
+    # Error: directory-style title is not allowed by SIE consulting guideline.
     if _has_directory_style_title(slide.title):
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
-                warning_level=WARNING_LEVEL_WARNING,
-                message=f"title '{slide.title}' appears to be directory-style; consider making it more conclusion-oriented.",
+                warning_level=WARNING_LEVEL_ERROR,
+                message=f"title '{slide.title}' appears to be directory-style; use an assertion-oriented title.",
             )
         )
 
@@ -249,13 +258,13 @@ def _title_content_warnings(slide: TitleContentSlide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
     bullet_count = len(slide.content)
 
-    # Error level: bullet count severely out of range
-    if bullet_count < 1 or bullet_count > 7:
+    # Error level: bullet count outside hard range
+    if bullet_count < 1 or bullet_count > 6:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_ERROR,
-                message=f"title_content has {bullet_count} bullet items; must be between 1-7.",
+                message=f"title_content has {bullet_count} bullet items; must be between 1-6.",
             )
         )
     # Warning: bullet count outside recommended range
@@ -597,6 +606,14 @@ def check_slide_content(slide) -> list[ContentWarning]:
 
 def check_deck_content(deck: DeckDocument) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
+    if deck.meta.theme != REQUIRED_THEME_NAME:
+        warnings.append(
+            ContentWarning(
+                slide_id="meta",
+                warning_level=WARNING_LEVEL_ERROR,
+                message=f"deck theme must be '{REQUIRED_THEME_NAME}', got '{deck.meta.theme}'.",
+            )
+        )
     for slide in deck.slides:
         warnings.extend(check_slide_content(slide))
     warnings.extend(_check_deck_structure(deck))
@@ -662,7 +679,36 @@ def _check_deck_structure(deck: DeckDocument) -> list[ContentWarning]:
         )
 
     warnings.extend(_check_deck_repetition(deck))
+    warnings.extend(_check_language_consistency(deck))
 
+    return warnings
+
+
+def _check_language_consistency(deck: DeckDocument) -> list[ContentWarning]:
+    warnings: list[ContentWarning] = []
+    expected = str(deck.meta.language or "").strip().lower()
+    if expected.startswith("zh"):
+        for slide in deck.slides:
+            fragments = _iter_slide_text_fragments(slide)
+            if any(_contains_latin_word(item) for item in fragments if not re.fullmatch(r"(AI|KPI|ROI|API|OKR)", item)):
+                warnings.append(
+                    ContentWarning(
+                        slide_id=slide.slide_id,
+                        warning_level=WARNING_LEVEL_WARNING,
+                        message="slide contains mixed-language content; expected zh-CN dominant text.",
+                    )
+                )
+    elif expected.startswith("en"):
+        for slide in deck.slides:
+            fragments = _iter_slide_text_fragments(slide)
+            if any(_contains_cjk(item) for item in fragments):
+                warnings.append(
+                    ContentWarning(
+                        slide_id=slide.slide_id,
+                        warning_level=WARNING_LEVEL_WARNING,
+                        message="slide contains mixed-language content; expected en-US dominant text.",
+                    )
+                )
     return warnings
 
 
@@ -815,3 +861,4 @@ def write_quality_gate_result(result: QualityGateResult, output_path: str | Path
         encoding="utf-8",
     )
     return target_path
+

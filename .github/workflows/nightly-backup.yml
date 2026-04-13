@@ -1,0 +1,30 @@
+name: Nightly Backup
+
+on:
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare backup payload
+        run: |
+          mkdir -p backup_payload
+          if [ -d output ]; then cp -r output backup_payload/output; fi
+          if [ -d projects/generated ]; then mkdir -p backup_payload/projects && cp -r projects/generated backup_payload/projects/generated; fi
+          cp CHANGELOG.md backup_payload/CHANGELOG.md || true
+          cp docs/BACKUP_AND_RECOVERY.md backup_payload/BACKUP_AND_RECOVERY.md || true
+          tar -czf nightly-backup.tar.gz backup_payload
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-backup
+          path: nightly-backup.tar.gz
+          retention-days: 14

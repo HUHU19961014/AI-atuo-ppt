@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enterprise-AI-PPT 项目评价报告 v2 — 本地修改后全面复审</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --card2: #22263a;
+    --border: #2e3350;
+    --accent: #6c8aff;
+    --accent2: #ff7c5e;
+    --accent3: #5eff9e;
+    --text: #e8eaf0;
+    --text2: #9ba3bf;
+    --text3: #5d6480;
+    --gold: #ffd166;
+    --red: #ff5c5c;
+    --green: #5eff9e;
+    --blue: #5eb8ff;
+    --purple: #c98eff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  .hero {
+    text-align: center;
+    padding: 60px 0 50px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 48px;
+  }
+  .hero .badge {
+    display: inline-block;
+    background: linear-gradient(135deg, #6c8aff22, #ff7c5e22);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 16px;
+    font-size: 12px;
+    color: var(--text2);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-size: 34px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+  }
+  .hero .sub { color: var(--text2); font-size: 15px; margin-bottom: 8px; }
+  .hero .meta {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 20px;
+  }
+  .hero .meta-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: var(--text2);
+  }
+  .hero .meta-item span { color: var(--accent); font-weight: 600; }
+
+  .verdict {
+    background: linear-gradient(135deg, #6c8aff11, #ff7c5e11);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .verdict .verdict-score {
+    font-size: 72px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+  .verdict .verdict-label { font-size: 18px; color: var(--text2); margin-bottom: 16px; }
+  .verdict .verdict-desc { color: var(--text2); font-size: 14px; max-width: 620px; margin: 0 auto; }
+
+  .score-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+    margin-bottom: 48px;
+  }
+  .score-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .score-card .score-num {
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .score-card .score-label { font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; }
+  .score-card .score-bar { height: 4px; border-radius: 2px; background: var(--card2); margin-top: 10px; overflow: hidden; }
+  .score-card .score-bar-fill { height: 100%; border-radius: 2px; }
+  .score-A { color: var(--accent3); }
+  .score-A .score-bar-fill { background: var(--accent3); }
+  .score-B { color: var(--accent); }
+  .score-B .score-bar-fill { background: var(--accent); }
+  .score-C { color: var(--gold); }
+  .score-C .score-bar-fill { background: var(--gold); }
+  .score-D { color: var(--accent2); }
+  .score-D .score-bar-fill { background: var(--accent2); }
+
+  .section { margin-bottom: 48px; }
+  .section-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title .icon { font-size: 22px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .card h3 { font-size: 15px; margin-bottom: 10px; color: var(--accent); }
+  .card p, .card li { color: var(--text2); font-size: 14px; }
+  .card ul { padding-left: 20px; }
+  .card li { margin-bottom: 6px; }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 6px;
+    margin-bottom: 4px;
+  }
+  .tag-green { background: #5eff9e22; color: var(--accent3); border: 1px solid #5eff9e44; }
+  .tag-red { background: #ff5c5c22; color: var(--red); border: 1px solid #ff5c5c44; }
+  .tag-blue { background: #5eb8ff22; color: var(--blue); border: 1px solid #5eb8ff44; }
+  .tag-gold { background: #ffd16622; color: var(--gold); border: 1px solid #ffd16644; }
+  .tag-purple { background: #c98eff22; color: var(--purple); border: 1px solid #c98eff44; }
+  .tag-gray { background: #2e335022; color: var(--text3); border: 1px solid var(--border); }
+  .tag-dark { background: #6c8aff22; color: var(--accent); border: 1px solid #6c8aff44; }
+
+  .data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .data-table th {
+    background: var(--card2);
+    padding: 10px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .data-table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+
+  .timeline { position: relative; padding-left: 30px; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+  .timeline-item { position: relative; margin-bottom: 20px; }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -26px;
+    top: 6px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+  }
+  .timeline-item .date { font-size: 12px; color: var(--text3); margin-bottom: 2px; }
+  .timeline-item .event { font-size: 14px; color: var(--text2); }
+
+  .change-block {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 14px;
+  }
+  .change-block .change-type {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .change-block .change-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .change-block .change-files { font-size: 12px; color: var(--text3); margin-bottom: 8px; }
+  .change-block p { font-size: 14px; color: var(--text2); }
+
+  .diff-up { border-left: 3px solid var(--accent3); }
+  .diff-up .change-type { color: var(--accent3); }
+  .diff-down { border-left: 3px solid var(--red); }
+  .diff-down .change-type { color: var(--red); }
+  .diff-neutral { border-left: 3px solid var(--gold); }
+  .diff-neutral .change-type { color: var(--gold); }
+
+  .progress-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .progress-label { width: 140px; font-size: 13px; color: var(--text2); flex-shrink: 0; }
+  .progress-bar { flex: 1; height: 8px; background: var(--card2); border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 4px; }
+  .progress-val { width: 40px; text-align: right; font-size: 12px; color: var(--text3); }
+
+  .footer { text-align: center; padding-top: 32px; border-top: 1px solid var(--border); color: var(--text3); font-size: 12px; }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="badge">📋 本地修改后全面复审 v2</div>
+    <h1>Enterprise-AI-PPT</h1>
+    <p class="sub">企业级 AI PPT 智能生产平台 · 代码复审报告</p>
+    <p class="sub" style="font-size:13px; color:var(--text3);">本地路径：C:\Users\CHENHU\Documents\cursor\project\AI-atuo-ppt</p>
+    <div class="meta">
+      <div class="meta-item">分支 <span>codex/review-hardening-v2-cli</span></div>
+      <div class="meta-item">未提交变更 <span>73 个文件</span></div>
+      <div class="meta-item">新增文件 <span>20+ 个</span></div>
+      <div class="meta-item">删除文件 <span>3 个（archive）</span></div>
+      <div class="meta-item">最新 commit <span>2026-04-10</span></div>
+    </div>
+  </div>
+
+  <!-- Overall Score -->
+  <div class="verdict">
+    <div class="verdict-score">A- → A</div>
+    <div class="verdict-label">综合评级（较上版 B+ 显著提升）</div>
+    <p class="verdict-desc">
+      本次修改堪称一次<strong style="color:var(--accent)">质的飞跃</strong>——
+      CI/CD 管道、CLI 拆分、统一异常体系、进度反馈、Web UI、文档体系等多项 P0/P1 改进一次性到位，
+      体现了极强的工程判断力。项目从"高速迭代期个人项目"向"准生产就绪开源项目"迈出了一大步。
+      唯一需要关注的是 CRLF/LF 混用问题和部分新文件的测试覆盖。
+    </p>
+  </div>
+
+  <!-- Score Cards -->
+  <div class="section">
+    <div class="section-title"><span class="icon">📊</span> 多维评分（较上版对比）</div>
+    <div class="score-grid">
+      <div class="score-card score-B">
+        <div class="score-num">A-</div>
+        <div class="score-label">架构设计</div>
+        <div class="score-bar"><div class="score-bar-fill" style="width:88%"></div></div>
+      </div>
+      <div class="score-card score-B">
+        <div class="score-num">B+</div>
+        <div class="score-label">代码质量</div>
+        <div class="score-bar"><div class="score-bar-fill" style="width:78%"></div></div>
+      </div>
+      <div class="score-card score-B">
+        <div class="score-num">B+</div>
+        <div class="score-label">功能完备</div>
+        <div class="score-bar"><div class="score-bar-fill" style="width:82%"></div></div>
+      </div>
+      <div class="score-card score-B">
+        <div class="score-num">B+</div>
+        <div class="score-label">测试覆盖</div>
+        <div class="score-bar"><div class="score-bar-fill" style="width:78%"></div></div>
+      </div>
+      <div class="score-card score-B">
+        <div class="score-num">B+</div>
+        <div class="score-label">文档质量</div>
+        <div class="score-bar"><div class="score-bar-fill" style="width:80%"></div></div>
+      </div>
+      <div class="score-card score-B">
+        <div class="score-num">A-</div>
+        <div class="score-label">生产就绪</div>
+        <div class="score-bar"><div class="score-bar-fill" style="width:85%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1. 变更概览 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🔄</span> 1. 本次变更全景图</div>
+
+    <div class="change-block diff-up">
+      <div class="change-type">✨ 新增（New Files）</div>
+      <div class="change-title">CI/CD 管道 + 核心模块 + 文档体系</div>
+      <div class="change-files">
+        .github/workflows/quality-gates.yml · web/streamlit_app.py · CHANGELOG.md · .env.example ·
+        docs/API_REFERENCE.md · docs/COMPATIBILITY_MATRIX.md · docs/TROUBLESHOOTING.md ·
+        docs/FEASIBILITY_REPORT.md · mkdocs.yml · tools/sie_autoppt/cli_parser.py ·
+        tools/sie_autoppt/types.py · tools/sie_autoppt/language_policy.py · tools/sie_autoppt/plugins.py ·
+        tests/test_svg_primary_pipeline.py · tests/test_sie_palette_enforcement.py ·
+        tests/test_content_density_split.py
+      </div>
+      <p>这是本次修改最核心的价值注入——一次性补齐了开源项目的基础设施短板。</p>
+    </div>
+
+    <div class="change-block diff-up">
+      <div class="change-type">♻️ 重构（Refactored）</div>
+      <div class="change-title">CLI 拆分、异常体系、默认主题更新</div>
+      <div class="change-files">
+        tools/sie_autoppt/cli.py（~870行→瘦身后主逻辑）· tools/sie_autoppt/exceptions.py（新增5个异常类型）·
+        tools/sie_autoppt/v2/schema.py（默认主题 business_red → sie_consulting_fixed）·
+        tools/sie_autoppt/clarifier_models.py · tools/sie_autoppt/healthcheck.py · tools/sie_autoppt/v2/services.py
+      </div>
+      <p>CLI 从单文件臃肿状态中解脱，异常处理从裸 ValueError 进化为带退出码的分层体系。</p>
+    </div>
+
+    <div class="change-block diff-up">
+      <div class="change-type">📝 文档（Documentation）</div>
+      <div class="change-title">文档质量大幅提升，从 C+ 升级到 B+</div>
+      <div class="change-files">
+        README.md（精简 426 行→精炼版）· docs/CLI_REFERENCE.md · docs/DECK_JSON_SPEC.md ·
+        docs/LLM_COMPATIBILITY.md · docs/TESTING.md · docs/LEGACY_BOUNDARY.md · docs/TEMPLATE_FUSION_PLAN.md ·
+        docs/COMPATIBILITY.md → docs/COMPATIBILITY_MATRIX.md（重写）
+      </div>
+      <p>README 从 426 行缩减精炼，CLI 参考文档新增，变更日志、故障排查、API 文档首次出现。</p>
+    </div>
+
+    <div class="change-block diff-up">
+      <div class="change-type">🧪 测试（Testing）</div>
+      <div class="change-title">测试覆盖显著增强，新增 3 个专项测试</div>
+      <div class="change-files">
+        tests/conftest.py · tests/test_cli.py · tests/test_llm_openai.py · tests/test_quality_gate.py ·
+        tests/test_v2_*.py · tests/test_clarifier.py · tests/test_clarify_web.py
+      </div>
+      <p>CI 流程包含 ruff lint + pytest + coverage gate，覆盖率目标聚焦 cli/clarify_web/exceptions。</p>
+    </div>
+
+    <div class="change-block diff-neutral">
+      <div class="change-type">⚠️ 警告（Warnings）</div>
+      <div class="change-title">CRLF/LF 换行符不一致（需处理）</div>
+      <div class="change-files">
+        涉及几乎所有修改文件（Windows 平台 git checkout 默认 CRLF）
+      </div>
+      <p>
+        Git 在 60+ 个修改文件上发出 "LF will be replaced by CRLF" 警告。
+        建议在项目根目录添加 <code>.gitattributes</code>：
+        <code>* text=auto</code> 或 <code>*.py text eol=lf</code>，
+        并在本地执行 <code>git add --renormalize .</code> 后重新提交，
+        避免每次 git 操作都产生换行符 diff 噪声。
+      </p>
+    </div>
+
+    <div class="change-block diff-down">
+      <div class="change-type">🔴 问题（Issues）</div>
+      <div class="change-title">GitHub Actions workflow 缺少 name 字段（语法不完整）</div>
+      <div class="change-files">.github/workflows/quality-gates.yml</div>
+      <p>
+        workflow YAML 缺少顶层 <code>name:</code> 字段（YAML 标准推荐有，但非必需）。
+        另外 CI 只 lint 了 5 个文件，核心模块（v2/, planning/, qa/）均未纳入 lint。
+        覆盖率也只针对少数模块，未覆盖 V2 渲染引擎等核心代码。
+      </p>
+    </div>
+  </div>
+
+  <!-- 2. 重点变更深度分析 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🔍</span> 2. 重点变更深度分析</div>
+
+    <!-- CI/CD -->
+    <div class="card">
+      <h3>✅ .github/workflows/quality-gates.yml — 项目里程碑</h3>
+      <p>
+        这是本次修改中<strong>最具工程价值</strong>的变更。GitHub Actions workflow 在每次 push/PR 时自动运行：
+      </p>
+      <br>
+      <table class="data-table">
+        <tr><th>步骤</th><th>工具</th><th>范围</th><th>评价</th></tr>
+        <tr><td>Lint</td><td>ruff (F rules)</td><td>5 个核心文件</td><td><span class="tag tag-gold">范围偏窄</span></td></tr>
+        <tr><td>CLI 测试</td><td>pytest</td><td>test_cli.py 等 4 个文件</td><td><span class="tag tag-green">良好</span></td></tr>
+        <tr><td>覆盖率门槛</td><td>coverage.py</td><td>仅 3 个模块</td><td><span class="tag tag-gold">需扩展</span></td></tr>
+      </table>
+      <br>
+      <p>
+        <strong>改进建议：</strong>
+        ① workflow 顶层加 <code>name: Quality Gates</code>；
+        ② lint 扩展到全量 Python 文件（<code>ruff check tools/ tests/</code>）；
+        ③ 覆盖率扩展到 <code>--source=tools.sie_autoppt</code>（全模块）；
+        ④ 添加 <code>ruff format</code> 格式检查步；
+        ⑤ 添加 mypy 类型检查步。
+      </p>
+    </div>
+
+    <!-- CLI 拆分 -->
+    <div class="card">
+      <h3>✅ CLI 拆分 — cli.py → cli_parser.py + cli.py</h3>
+      <p>
+        原 <code>cli.py</code> 的 <code>main()</code> 函数中有大量 argparse 定义（~100 行参数定义 +
+        500+ 行参数解析逻辑），现已完全分离到 <code>cli_parser.py</code> 的 <code>build_main_parser()</code>。
+        这是正确的单一职责原则实践。
+      </p>
+      <br>
+      <p><strong>亮点：</strong></p>
+      <ul>
+        <li><code>build_main_parser()</code> 可独立测试，不依赖 CLI 入口</li>
+        <li><code>--progress</code> 全局 flag 新增，所有长时间命令均有阶段反馈</li>
+        <li><code>--patch-json</code> 新增，支撑 <code>v2-patch</code> 增量编辑命令</li>
+        <li><code>emit_progress()</code> 统一进度输出规范，写入 stderr，不污染 stdout（管道友好）</li>
+      </ul>
+      <br>
+      <p><strong>遗留问题：</strong>新增了 <code>validate_command_name()</code> 等辅助函数，需要确认其在测试中有覆盖。</p>
+    </div>
+
+    <!-- 异常体系 -->
+    <div class="card">
+      <h3>✅ 异常体系重构 — 从裸 ValueError 到分层异常树</h3>
+      <p>
+        之前大量裸 <code>raise ValueError("...")</code> 的问题已被系统化解决：
+      </p>
+      <br>
+      <table class="data-table">
+        <tr><th>异常类型</th><th>基类</th><th>退出码</th><th>用途</th></tr>
+        <tr><td><code>CliExecutionError</code></td><td>RuntimeError</td><td>1</td><td>通用执行失败</td></tr>
+        <tr><td><code>CliUserInputError</code></td><td>CliExecutionError</td><td>2</td><td>用户输入错误</td></tr>
+        <tr><td><code>ClarifierRequestError</code></td><td>ValueError</td><td>N/A</td><td>clarifier-web 请求校验失败</td></tr>
+        <tr><td><code>OpenAIHTTPStatusError</code></td><td>OpenAIResponsesError</td><td>N/A</td><td>HTTP 错误（带 status_code/detail/route）</td></tr>
+      </table>
+      <br>
+      <p>
+        <strong>正确实践：</strong>
+        <code>cli.py</code> 中的 <code>CliUserInputError</code> 触发 <code>parser.exit(status=2)</code>，
+        与 argparse 标准行为一致（参数错误退出码为 2）。<code>ValueError → CliUserInputError</code> 的映射清晰。
+      </p>
+    </div>
+
+    <!-- Streamlit Web UI -->
+    <div class="card">
+      <h3>✅ web/streamlit_app.py — Web UI 预览版</h3>
+      <p>
+        新增的 Streamlit UI 提供了 <strong>Generate</strong> 和 <strong>Patch Existing Deck</strong> 两个 Tab，
+        通过 subprocess 调用 <code>main.py</code>，具备 900 秒超时保护。
+        这对非技术用户的入门门槛降低有重要意义。
+      </p>
+      <br>
+      <p>
+        <strong>当前状态：</strong>标记为 "P3 lightweight UI preview"，
+        属于 MVP 阶段。建议后续增加实时日志输出（stdout/stderr 流式显示）和进度条。
+      </p>
+    </div>
+
+    <!-- 新增模块 -->
+    <div class="card">
+      <h3>✅ 新增核心模块</h3>
+      <table class="data-table">
+        <tr><th>文件</th><th>职责</th><th>设计评价</th></tr>
+        <tr>
+          <td><code>types.py</code></td>
+          <td>统一 JSON 类型别名（JSONDict / JSONScalar / JSONValue）</td>
+          <td><span class="tag tag-green">清晰简洁</span></td>
+        </tr>
+        <tr>
+          <td><code>language_policy.py</code></td>
+          <td>语言策略配置（zh-CN / en-US，含 unknown/none token）</td>
+          <td><span class="tag tag-green">良好</span></td>
+        </tr>
+        <tr>
+          <td><code>plugins.py</code></td>
+          <td>插件系统（预留扩展点）</td>
+          <td><span class="tag tag-blue">框架已建</span></td>
+        </tr>
+        <tr>
+          <td><code>v2-patch</code> 命令</td>
+          <td>增量编辑已有 Deck JSON</td>
+          <td><span class="tag tag-green">解决核心缺口</span></td>
+        </tr>
+        <tr>
+          <td><code>sie_consulting_fixed.json</code></td>
+          <td>新主题文件（替代 business_red 作为默认）</td>
+          <td><span class="tag tag-blue">待验证效果</span></td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- 文档新增 -->
+    <div class="card">
+      <h3>✅ 新增文档文件</h3>
+      <table class="data-table">
+        <tr><th>文件</th><th>内容</th><th>价值</th></tr>
+        <tr><td><code>CHANGELOG.md</code></td><td>Unreleased 变更记录</td><td><span class="tag tag-green">高优先级缺失已补</span></td></tr>
+        <tr><td><code>docs/API_REFERENCE.md</code></td><td>API 参考文档</td><td><span class="tag tag-green">高优先级缺失已补</span></td></tr>
+        <tr><td><code>docs/TROUBLESHOOTING.md</code></td><td>故障排查指南</td><td><span class="tag tag-green">实用</span></td></tr>
+        <tr><td><code>docs/COMPATIBILITY_MATRIX.md</code></td><td>兼容性矩阵</td><td><span class="tag tag-green">实用</span></td></tr>
+        <tr><td><code>docs/FEASIBILITY_REPORT.md</code></td><td>可行性报告</td><td><span class="tag tag-blue">待确认内容</span></td></tr>
+        <tr><td><code>mkdocs.yml</code></td><td>MkDocs 配置（静态文档站）</td><td><span class="tag tag-green">重要</span></td></tr>
+        <tr><td><code>.env.example</code></td><td>环境变量示例</td><td><span class="tag tag-green">良好实践</span></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- 3. 评分变化追踪 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">📈</span> 3. 评分变化追踪（v1 → v2）</div>
+    <div class="card">
+      <div class="progress-row">
+        <div class="progress-label">架构设计</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:88%; background:var(--accent3)"></div></div>
+        <div class="progress-val">B+ → A-</div>
+      </div>
+      <div class="progress-row">
+        <div class="progress-label">代码质量</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:78%; background:var(--accent)"></div></div>
+        <div class="progress-val">B → B+</div>
+      </div>
+      <div class="progress-row">
+        <div class="progress-label">功能完备</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:82%; background:var(--accent)"></div></div>
+        <div class="progress-val">B → B+</div>
+      </div>
+      <div class="progress-row">
+        <div class="progress-label">测试覆盖</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:78%; background:var(--accent)"></div></div>
+        <div class="progress-val">C+ → B+</div>
+      </div>
+      <div class="progress-row">
+        <div class="progress-label">文档质量</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:80%; background:var(--accent)"></div></div>
+        <div class="progress-val">C+ → B+</div>
+      </div>
+      <div class="progress-row">
+        <div class="progress-label">生产就绪</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:85%; background:var(--accent3)"></div></div>
+        <div class="progress-val">B → A-</div>
+      </div>
+    </div>
+    <div class="card" style="background:linear-gradient(135deg, #5eff9e0d, #5eb8ff0d); border-color: #5eff9e44;">
+      <h3 style="color:var(--accent3)">🎉 整体提升：综合 B+ → A-（提升两个小级）</h3>
+      <p style="margin-top:8px;">
+        测试覆盖和文档质量提升幅度最大（+3 小级），生产就绪度和架构设计各提升 1+ 小级。
+        这说明本次修改精准命中了上版评价中的核心短板。
+      </p>
+    </div>
+  </div>
+
+  <!-- 4. 剩余问题 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">⚠️</span> 4. 剩余问题（按优先级）</div>
+
+    <div class="card" style="border-left:3px solid var(--red);">
+      <h3>P0 — 立即修复</h3>
+      <ul>
+        <li><strong style="color:var(--red)">换行符规范化</strong>：创建 <code>.gitattributes</code>（<code>* text=auto</code>），执行 <code>git add --renormalize .</code> 避免每次修改都有 CRLF diff 噪声</li>
+        <li><strong style="color:var(--red)">CI workflow name 字段</strong>：在 <code>quality-gates.yml</code> 顶层添加 <code>name: Quality Gates</code></li>
+        <li><strong style="color:var(--red)">coverage 未提交文件</strong>：<code>.coverage</code> 已加入 <code>.gitignore</code>，确认没有意外提交风险</li>
+        <li><strong style="color:var(--red)">archive 目录清理</strong>：<code>tools/archive/legacy_helpers/</code> 下 3 个文件已删除但需确认是否需要归档保留</li>
+      </ul>
+    </div>
+
+    <div class="card" style="border-left:3px solid var(--gold);">
+      <h3>P1 — 近期优化（1-2 周）</h3>
+      <ul>
+        <li><strong>CI lint 扩展</strong>：将 ruff check 扩展到全量代码（<code>ruff check tools/ tests/</code>），不只是 5 个文件</li>
+        <li><strong>覆盖率扩展</strong>：CI 覆盖率 source 从 3 个模块扩展到 <code>--source=tools.sie_autoppt</code> 全模块</li>
+        <li><strong>Streamlit UI 增强</strong>：添加 subprocess stdout/stderr 流式显示（<code>st.empty()</code> + 实时更新），让用户看到 AI 生成进度</li>
+        <li><strong>新命令测试覆盖</strong>：<code>v2-patch</code> 命令需要对应的测试文件（<code>test_v2_patch.py</code>）</li>
+        <li><strong>新模块测试</strong>：<code>types.py</code>、<code>language_policy.py</code>、<code>plugins.py</code> 均无单元测试</li>
+      </ul>
+    </div>
+
+    <div class="card" style="border-left:3px solid var(--blue);">
+      <h3>P2 — 中期规划（1-3 月）</h3>
+      <ul>
+        <li><strong>CLI 进一步拆分</strong>：<code>cli.py</code> 的 main() 中仍有大量命令分支逻辑（<code>if effective_command == "xxx"</code>），可按命令拆分为独立函数/文件</li>
+        <li><strong>API 文档自动化</strong>：配合 <code>mkdocs.yml</code>，接入 <code>mkdocstrings</code> 自动从 docstring 生成 API 文档</li>
+        <li><strong>性能基准测试</strong>：添加生成速度 benchmark，跟踪每次修改对生成时间的影响</li>
+        <li><strong>多语言扩展验证</strong>：<code>language_policy.py</code> 已建立框架，但 <code>en-US</code> 策略需端到端验证</li>
+        <li><strong>插件系统完善</strong>：<code>plugins.py</code> 预留扩展点，但目前没有实际插件实现，需补充示例或使用文档</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 5. 总结 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🏁</span> 5. 最终总结</div>
+    <div class="card" style="background:linear-gradient(135deg, #6c8aff0d, #5eff9e0d);">
+      <h3 style="color:var(--accent)">一句话评价（更新版）</h3>
+      <p style="font-size:16px; margin-top:8px;">
+        本次修改是一次<strong>高质量的工程升级</strong>，在 CI/CD、架构解耦、异常体系、文档建设等多个维度同步推进，
+        体现了极强的系统性工程思维。
+        从"功能完备的个人项目"到"具备开源发布条件的准生产项目"，仅用一次迭代就完成了跨越。
+      </p>
+      <br>
+      <p>
+        最值得肯定的是：<strong>没有为了功能而牺牲代码质量</strong>——
+        CLI 拆分的边界清晰（parser 可独立测试）、异常体系有退出码语义、
+        进度反馈写入 stderr（管道友好）、CRLF 问题是已知的可修复项。
+        这些细节体现了工程成熟度。
+      </p>
+      <br>
+      <p>
+        <strong>建议下一步：</strong>
+        ① 修复 CRLF + CI name；② 提交第一版 changelog（v0.1.0）；③ 扩展 CI lint 到全量代码；
+        ④ 为新命令和新增模块补充测试；⑤ 考虑发布 PyPI 第一个版本。
+      </p>
+    </div>
+
+    <div class="two-col" style="margin-top:16px;">
+      <div class="card">
+        <h3>🔴 剩余风险</h3>
+        <ul>
+          <li>CRLF/LF 混用若不修复，每次 git 操作都产生 diff 噪声</li>
+          <li>CI 只 lint 5 个文件，核心代码未被 ruff 检查覆盖</li>
+          <li>v2-patch / language_policy / plugins 无测试保障</li>
+          <li>Streamlit UI 尚在 preview 阶段，功能有限</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🟢 本次最大改进</h3>
+        <ul>
+          <li>GitHub Actions CI/CD 从 0 到 1，自动化质量门禁</li>
+          <li>CLI 职责拆分（cli_parser.py 独立）</li>
+          <li>统一异常体系（CliExecutionError 分层）</li>
+          <li>进度反馈机制（emit_progress 写入 stderr）</li>
+          <li>CHANGELOG / API Reference / TROUBLESHOOTING 文档补全</li>
+          <li>Web UI 预览版（降低非技术用户门槛）</li>
+          <li>默认主题升级（sie_consulting_fixed）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>评价报告生成时间：2026-04-13 12:17 | 数据来源：本地 Git 工作区变更深度分析</p>
+    <p>评分说明：A- = CI/CD + CLI 拆分 + 异常体系 + 文档升级，综合评级从 B+ 显著提升至 A- 区间</p>
+  </div>
+
+</div>
+</body>
+</html>

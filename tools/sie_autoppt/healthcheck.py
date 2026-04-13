@@ -59,7 +59,7 @@ def run_ai_healthcheck(
     brief: str = "",
     audience: str = DEFAULT_AUDIENCE_HINT,
     language: str = "zh-CN",
-    theme: str = "business_red",
+    theme: str = "sie_consulting_fixed",
     generation_mode: str = "deep",
     model: str | None = None,
     with_render: bool = False,

@@ -7,17 +7,37 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tools.sie_autoppt import cli
+from tools.sie_autoppt.exceptions import CliExecutionError, CliUserInputError
 from tools.sie_autoppt.llm_openai import OpenAIConfigurationError, OpenAIResponsesConfig
-from tools.sie_autoppt.models import DeckRenderTrace, PageRenderTrace
+from tools.sie_autoppt.models import BodyPageSpec, DeckRenderTrace, DeckSpec, PageRenderTrace, StructureSpec
 from tools.sie_autoppt.v2.schema import OutlineDocument, validate_deck_payload
 
 
 class CliTests(unittest.TestCase):
+    def test_apply_ai_content_layout_requires_supported_patterns(self):
+        deck = DeckSpec(
+            cover_title="Test",
+            body_pages=[
+                BodyPageSpec(
+                    page_key="p1",
+                    title="Test",
+                    subtitle="Sub",
+                    bullets=["one", "two", "three"],
+                    pattern_id="general_business",
+                )
+            ],
+        )
+        with patch("tools.sie_autoppt.cli.supported_pattern_ids", return_value=()):
+            with self.assertRaises(CliUserInputError):
+                cli.apply_ai_content_layout_to_deck_spec(deck)
+
     def test_help_emphasizes_primary_commands_without_listing_legacy_choices(self):
         stdout = io.StringIO()
+        stderr = io.StringIO()
         with (
             patch("sys.argv", ["sie-autoppt", "--help"]),
             redirect_stdout(stdout),
+            redirect_stderr(stderr),
         ):
             with self.assertRaises(SystemExit) as ctx:
                 cli.main()
@@ -29,6 +49,35 @@ class CliTests(unittest.TestCase):
         self.assertIn("sie-render --topic ... or --structure-json ...", help_text)
         self.assertIn("use sie-render for actual SIE template delivery", help_text)
         self.assertNotIn("{make,plan,render", help_text)
+
+    def test_alias_invocation_prints_compatibility_notice(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch("sys.argv", ["sie-autoppt", "make", "--topic", "test", "--output-dir", temp_dir]),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=("test", "", "aud", None, 6, 8, "business_red")),
+                patch(
+                    "tools.sie_autoppt.cli.make_v2_ppt",
+                    return_value=type(
+                        "FakeArtifacts",
+                        (),
+                        {
+                            "outline_path": Path(temp_dir) / "deck.outline.json",
+                            "semantic_path": Path(temp_dir) / "deck.semantic.v2.json",
+                            "deck_path": Path(temp_dir) / "deck.deck.v2.json",
+                            "rewrite_log_path": Path(temp_dir) / "rewrite_log.json",
+                            "warnings_path": Path(temp_dir) / "warnings.json",
+                            "log_path": Path(temp_dir) / "deck.log.txt",
+                            "pptx_path": Path(temp_dir) / "deck.pptx",
+                        },
+                    )(),
+                ),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                cli.main()
+        self.assertIn("compatibility alias", stderr.getvalue())
 
     def test_unknown_command_returns_curated_error_message(self):
         stderr = io.StringIO()
@@ -192,6 +241,131 @@ class CliTests(unittest.TestCase):
             self.assertIn("Enterprise-AI-PPT_demo_", lines[3])
             self.assertTrue(lines[3].endswith(".log.txt"))
             self.assertTrue(lines[4].endswith("demo.pptx"))
+
+    def test_v2_render_progress_flag_emits_stage_markers(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        fake_deck = validate_deck_payload(
+            {
+                "meta": {"title": "Demo", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [{"slide_id": "s1", "layout": "title_only", "title": "Demo"}],
+            }
+        ).deck
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_json = Path(temp_dir) / "deck.json"
+            deck_json.write_text(
+                json.dumps(
+                    {
+                        "meta": {"title": "Demo", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                        "slides": [{"slide_id": "s1", "layout": "title_only", "title": "Demo"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch("sys.argv", ["sie-autoppt", "v2-render", "--deck-json", str(deck_json), "--progress"]),
+                patch("tools.sie_autoppt.cli.load_deck_document", return_value=fake_deck),
+                patch(
+                    "tools.sie_autoppt.cli.generate_v2_ppt",
+                    return_value=type(
+                        "FakeRenderArtifacts",
+                        (),
+                        {
+                            "rewrite_log_path": Path(temp_dir) / "rewrite_log.json",
+                            "warnings_path": Path(temp_dir) / "warnings.json",
+                            "output_path": Path(temp_dir) / "deck.pptx",
+                        },
+                    )(),
+                ),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                cli.main()
+        self.assertIn("[progress] v2-render: rendering ppt from deck json", stderr.getvalue())
+
+    def test_v2_patch_applies_incremental_patch_set(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_path = Path(temp_dir) / "deck.json"
+            patch_path = Path(temp_dir) / "patch.json"
+            output_path = Path(temp_dir) / "patched.json"
+            deck_path.write_text(
+                json.dumps(
+                    {
+                        "meta": {"title": "Demo", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                        "slides": [{"slide_id": "s1", "layout": "title_only", "title": "Old title"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            patch_path.write_text(
+                json.dumps(
+                    {
+                        "patches": [
+                            {
+                                "page": 1,
+                                "field": "slides[0].title",
+                                "old_value": "Old title",
+                                "new_value": "New title",
+                                "reason": "Update executive headline",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch("sys.argv", ["sie-autoppt", "v2-patch", "--deck-json", str(deck_path), "--patch-json", str(patch_path), "--plan-output", str(output_path)]),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+            self.assertEqual(stdout.getvalue().strip(), str(output_path))
+            patched_payload = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(patched_payload["slides"][0]["title"], "New title")
+
+    def test_v2_patch_rejects_invalid_patch_payload(self):
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_path = Path(temp_dir) / "deck.json"
+            patch_path = Path(temp_dir) / "patch.json"
+            deck_path.write_text(
+                json.dumps(
+                    {
+                        "meta": {"title": "Demo", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                        "slides": [{"slide_id": "s1", "layout": "title_only", "title": "Old title"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            patch_path.write_text(
+                json.dumps(
+                    {
+                        "patches": [
+                            {
+                                "page": 1,
+                                "field": "slides[0].title",
+                                "old_value": "Wrong old title",
+                                "new_value": "New title",
+                                "reason": "Update executive headline",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch("sys.argv", ["sie-autoppt", "v2-patch", "--deck-json", str(deck_path), "--patch-json", str(patch_path)]),
+                redirect_stderr(stderr),
+            ):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main()
+            self.assertEqual(ctx.exception.code, 2)
+            self.assertIn("invalid v2-patch payload", stderr.getvalue())
 
     def test_sie_render_builds_deck_spec_from_structure_json(self):
         stdout = io.StringIO()
@@ -668,6 +842,142 @@ class CliTests(unittest.TestCase):
         self.assertIn("Clarification required before 'v2-make'", stderr.getvalue())
         self.assertIn("semantic v2-make", stderr.getvalue())
 
+    def test_topic_with_sie_template_delivery_target_routes_to_sie_render(self):
+        stdout = io.StringIO()
+        fake_structure = StructureSpec.from_dict(
+            {
+                "core_message": "Supply chain traceability",
+                "structure_type": "analysis",
+                "sections": [
+                    {
+                        "title": "Context",
+                        "key_message": "Regulation pressure",
+                        "arguments": [{"point": "EU", "evidence": "CBAM"}],
+                    },
+                    {
+                        "title": "Plan",
+                        "key_message": "Phased rollout",
+                        "arguments": [{"point": "Pilot", "evidence": "Plant A"}],
+                    },
+                ],
+            }
+        )
+        fake_render_result = type(
+            "FakeRenderArtifacts",
+            (),
+            {
+                "output_path": Path("C:/tmp/fake-template.pptx"),
+                "render_trace": DeckRenderTrace(
+                    input_kind="deck_spec_json",
+                    body_render_mode="preallocated_pool",
+                    reference_import_applied=False,
+                    page_traces=[],
+                ),
+            },
+        )()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "sie-autoppt",
+                        "--topic",
+                        "Supply chain traceability",
+                        "--delivery-target",
+                        "sie-template",
+                        "--output-dir",
+                        temp_dir,
+                    ],
+                ),
+                patch(
+                    "tools.sie_autoppt.cli.generate_structure_with_ai",
+                    return_value=type("FakeStructureResult", (), {"structure": fake_structure})(),
+                ) as structure_mock,
+                patch(
+                    "tools.sie_autoppt.cli.apply_ai_content_layout_to_deck_spec",
+                    side_effect=lambda deck_spec, model=None: (deck_spec, []),
+                ),
+                patch("tools.sie_autoppt.cli.generate_ppt_artifacts_from_deck_spec", return_value=fake_render_result),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+        self.assertTrue(structure_mock.called)
+
+    def test_make_rejects_sie_template_delivery_target(self):
+        stderr = io.StringIO()
+        with (
+            patch("sys.argv", ["sie-autoppt", "make", "--topic", "Test", "--delivery-target", "sie-template"]),
+            redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main()
+
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--delivery-target sie-template cannot be combined with explicit 'make'", stderr.getvalue())
+
+    def test_sie_render_rejects_v2_delivery_target(self):
+        stderr = io.StringIO()
+        with (
+            patch("sys.argv", ["sie-autoppt", "sie-render", "--topic", "Test", "--delivery-target", "v2"]),
+            redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main()
+
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--delivery-target v2 conflicts with SIE template commands", stderr.getvalue())
+
+    def test_v2_make_rejects_sie_template_delivery_target(self):
+        stderr = io.StringIO()
+        with (
+            patch("sys.argv", ["sie-autoppt", "v2-make", "--topic", "Test", "--delivery-target", "sie-template"]),
+            redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main()
+
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--delivery-target sie-template conflicts with V2 commands", stderr.getvalue())
+
+    def test_topic_with_v2_delivery_target_keeps_v2_route(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "sie-autoppt",
+                        "--topic",
+                        "Test",
+                        "--delivery-target",
+                        "v2",
+                        "--output-dir",
+                        temp_dir,
+                    ],
+                ),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=("Test", "", "aud", None, 6, 8, "business_red")),
+                patch(
+                    "tools.sie_autoppt.cli.make_v2_ppt",
+                    return_value=type(
+                        "FakeArtifacts",
+                        (),
+                        {
+                            "outline_path": Path(temp_dir) / "deck.outline.json",
+                            "semantic_path": Path(temp_dir) / "deck.semantic.v2.json",
+                            "deck_path": Path(temp_dir) / "deck.deck.v2.json",
+                            "rewrite_log_path": Path(temp_dir) / "rewrite_log.json",
+                            "warnings_path": Path(temp_dir) / "warnings.json",
+                            "log_path": Path(temp_dir) / "deck.log.txt",
+                            "pptx_path": Path(temp_dir) / "deck.pptx",
+                        },
+                    )(),
+                ) as make_mock,
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+        self.assertTrue(make_mock.called)
+
     def test_v2_route_rejects_explicit_template_argument(self):
         stderr = io.StringIO()
         with (
@@ -875,3 +1185,261 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, 2)
         self.assertIn("--topic or --outline-json is required when command is 'v2-make'", stderr.getvalue())
+
+    def test_apply_ai_content_layout_returns_refined_deck_and_trace(self):
+        deck = DeckSpec(
+            cover_title="Test Deck",
+            body_pages=[
+                BodyPageSpec(
+                    page_key="p1",
+                    title="Old title",
+                    subtitle="Old subtitle",
+                    bullets=["one", "two", "three"],
+                    pattern_id="general_business",
+                )
+            ],
+        )
+        fake_client = type(
+            "FakeClient",
+            (),
+            {
+                "create_structured_json": lambda self, **kwargs: {
+                    "title": "New title",
+                    "subtitle": "New subtitle",
+                    "bullets": ["A", "B", "C", "D"],
+                    "pattern_id": "claim_breakdown",
+                    "rationale": "Better semantic fit for one-page reading rhythm.",
+                }
+            },
+        )()
+        with (
+            patch("tools.sie_autoppt.cli.supported_pattern_ids", return_value=("general_business", "claim_breakdown")),
+            patch("tools.sie_autoppt.cli.load_openai_responses_config", return_value=object()),
+            patch("tools.sie_autoppt.cli.OpenAIResponsesClient", return_value=fake_client),
+        ):
+            refined, trace = cli.apply_ai_content_layout_to_deck_spec(deck)
+
+        self.assertEqual(refined.body_pages[0].title, "New title")
+        self.assertEqual(refined.body_pages[0].subtitle, "New subtitle")
+        self.assertEqual(refined.body_pages[0].pattern_id, "claim_breakdown")
+        self.assertEqual(trace[0]["old_pattern_id"], "general_business")
+        self.assertEqual(trace[0]["new_pattern_id"], "claim_breakdown")
+
+    def test_apply_ai_content_layout_rejects_invalid_ai_payload(self):
+        deck = DeckSpec(
+            cover_title="Test Deck",
+            body_pages=[
+                BodyPageSpec(
+                    page_key="p1",
+                    title="Old title",
+                    subtitle="Old subtitle",
+                    bullets=["one", "two", "three"],
+                    pattern_id="general_business",
+                )
+            ],
+        )
+        fake_client = type(
+            "FakeClient",
+            (),
+            {
+                "create_structured_json": lambda self, **kwargs: {
+                    "title": "",
+                    "subtitle": "Sub",
+                    "bullets": ["only one"],
+                    "pattern_id": "",
+                    "rationale": "invalid payload",
+                }
+            },
+        )()
+        with (
+            patch("tools.sie_autoppt.cli.supported_pattern_ids", return_value=("general_business",)),
+            patch("tools.sie_autoppt.cli.load_openai_responses_config", return_value=object()),
+            patch("tools.sie_autoppt.cli.OpenAIResponsesClient", return_value=fake_client),
+        ):
+            with self.assertRaises(cli.OpenAIResponsesError):
+                cli.apply_ai_content_layout_to_deck_spec(deck)
+
+    def test_build_fallback_structure_spec_generates_three_sections(self):
+        structure = cli.build_fallback_structure_spec("Supply chain", "line1\nline2")
+        self.assertEqual(structure.core_message, "line1")
+        self.assertEqual(len(structure.sections), 3)
+        self.assertTrue(all(section.title for section in structure.sections))
+
+    def test_clarify_loads_existing_state_file_when_present(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "clarifier_state.json"
+            state_path.write_text('{"session":"existing"}', encoding="utf-8")
+            fake_result = type(
+                "FakeClarifyResult",
+                (),
+                {
+                    "to_json": lambda self: '{"status":"needs_clarification"}',
+                    "session": type("FakeSession", (), {"to_json": lambda self: '{"session":"updated"}'})(),
+                },
+            )()
+            with (
+                patch("sys.argv", ["sie-autoppt", "clarify", "--topic", "Need plan", "--clarifier-state-file", str(state_path)]),
+                patch("tools.sie_autoppt.cli.load_clarifier_session", return_value=object()) as load_mock,
+                patch("tools.sie_autoppt.cli.clarify_user_input", return_value=fake_result) as clarify_mock,
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+        self.assertEqual(load_mock.call_count, 1)
+        self.assertIsNotNone(clarify_mock.call_args.kwargs["session"])
+
+    def test_onepage_uses_structure_json_input_path(self):
+        stdout = io.StringIO()
+        structure_payload = {
+            "core_message": "topic",
+            "structure_type": "analysis",
+            "sections": [
+                {"title": "A", "key_message": "m1", "arguments": [{"point": "p1", "evidence": "e1"}]},
+                {"title": "B", "key_message": "m2", "arguments": [{"point": "p2", "evidence": "e2"}]},
+                {"title": "C", "key_message": "m3", "arguments": [{"point": "p3", "evidence": "e3"}]},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            structure_path = Path(temp_dir) / "structure.json"
+            structure_path.write_text(json.dumps(structure_payload, ensure_ascii=False), encoding="utf-8")
+            with (
+                patch("sys.argv", ["sie-autoppt", "onepage", "--structure-json", str(structure_path), "--output-dir", temp_dir]),
+                patch(
+                    "tools.sie_autoppt.cli.build_onepage_slide",
+                    return_value=(Path(temp_dir) / "onepage.pptx", Path(temp_dir) / "review.json", Path(temp_dir) / "score.json", object()),
+                ),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+        lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+        self.assertEqual(len(lines), 4)
+        self.assertTrue(lines[0].endswith(".onepage_brief.json"))
+
+    def test_onepage_reports_ai_strategy_selection_failure(self):
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            structure_payload = {
+                "core_message": "topic",
+                "structure_type": "analysis",
+                "sections": [
+                    {"title": "A", "key_message": "m1", "arguments": [{"point": "p1", "evidence": "e1"}]},
+                    {"title": "B", "key_message": "m2", "arguments": [{"point": "p2", "evidence": "e2"}]},
+                    {"title": "C", "key_message": "m3", "arguments": [{"point": "p3", "evidence": "e3"}]},
+                ],
+            }
+            structure_path = Path(temp_dir) / "structure.json"
+            structure_path.write_text(json.dumps(structure_payload, ensure_ascii=False), encoding="utf-8")
+            with (
+                patch("sys.argv", ["sie-autoppt", "onepage", "--structure-json", str(structure_path), "--output-dir", temp_dir]),
+                patch(
+                    "tools.sie_autoppt.cli.build_onepage_slide",
+                    side_effect=cli.OpenAIResponsesError("model rejected the request"),
+                ),
+                redirect_stderr(stderr),
+            ):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main()
+
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("AI strategy selection failed for 'onepage'", stderr.getvalue())
+
+    def test_sie_render_reports_ai_refinement_configuration_error(self):
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_spec_path = Path(temp_dir) / "deck_spec.json"
+            deck_spec_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "cover_title": "x",
+                        "body_pages": [
+                            {"page_key": "p1", "title": "t1", "subtitle": "", "bullets": ["a", "b", "c"], "pattern_id": "general_business", "payload": {}},
+                            {"page_key": "p2", "title": "t2", "subtitle": "", "bullets": ["d", "e", "f"], "pattern_id": "general_business", "payload": {}},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch("sys.argv", ["sie-autoppt", "sie-render", "--deck-spec-json", str(deck_spec_path)]),
+                patch(
+                    "tools.sie_autoppt.cli.apply_ai_content_layout_to_deck_spec",
+                    side_effect=cli.OpenAIConfigurationError("OPENAI_API_KEY missing"),
+                ),
+                redirect_stderr(stderr),
+            ):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main()
+
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("AI is mandatory for 'sie-render' content/layout planning", stderr.getvalue())
+
+    def test_sie_render_moves_generated_ppt_when_ppt_output_is_set(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_spec_path = Path(temp_dir) / "deck_spec.json"
+            source_ppt = Path(temp_dir) / "raw.pptx"
+            source_ppt.write_bytes(b"ppt")
+            target_ppt = Path(temp_dir) / "moved" / "final.pptx"
+            deck_spec_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "cover_title": "x",
+                        "body_pages": [
+                            {"page_key": "p1", "title": "t1", "subtitle": "", "bullets": ["a", "b", "c"], "pattern_id": "general_business", "payload": {}},
+                            {"page_key": "p2", "title": "t2", "subtitle": "", "bullets": ["d", "e", "f"], "pattern_id": "general_business", "payload": {}},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            fake_render_result = type(
+                "FakeRenderArtifacts",
+                (),
+                {
+                    "output_path": source_ppt,
+                    "render_trace": DeckRenderTrace(
+                        input_kind="deck_spec_json",
+                        body_render_mode="preallocated_pool",
+                        reference_import_applied=False,
+                        page_traces=[],
+                    ),
+                },
+            )()
+            with (
+                patch(
+                    "sys.argv",
+                    ["sie-autoppt", "sie-render", "--deck-spec-json", str(deck_spec_path), "--ppt-output", str(target_ppt)],
+                ),
+                patch(
+                    "tools.sie_autoppt.cli.apply_ai_content_layout_to_deck_spec",
+                    side_effect=lambda deck_spec, model=None: (deck_spec, []),
+                ),
+                patch("tools.sie_autoppt.cli.generate_ppt_artifacts_from_deck_spec", return_value=fake_render_result),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+            self.assertTrue(target_ppt.exists())
+            self.assertFalse(source_ppt.exists())
+            lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+            self.assertEqual(lines[-1], str(target_ppt))
+
+    def test_visual_draft_returns_cli_execution_error_exit_code(self):
+        stderr = io.StringIO()
+        with (
+            patch("sys.argv", ["sie-autoppt", "visual-draft", "--deck-spec-json", "C:/tmp/deck.json"]),
+            patch("tools.sie_autoppt.cli.load_deck_spec", return_value=object()),
+            patch(
+                "tools.sie_autoppt.cli.generate_visual_draft_artifacts",
+                side_effect=CliExecutionError("renderer unavailable"),
+            ),
+            redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main()
+
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("visual-draft failed: renderer unavailable", stderr.getvalue())

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -11,16 +12,13 @@ from typing import Any
 
 from ..clarifier import DEFAULT_AUDIENCE_HINT
 from ..config import DEFAULT_OUTPUT_DIR, PROJECT_ROOT
+from ..language_policy import format_language_constraints, get_language_policy, normalize_language_code
 from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
+from ..plugins import resolve_model_adapter
 from ..prompting import render_prompt_template
 from .content_rewriter import rewrite_deck, write_rewrite_log
 from .deck_director import build_semantic_deck_schema, compile_semantic_deck_payload
 from .io import (
-    build_deck_output_path,
-    build_log_output_path,
-    build_outline_output_path,
-    build_ppt_output_path,
-    build_semantic_output_path,
     default_deck_output_path,
     default_log_output_path,
     default_outline_output_path,
@@ -39,7 +37,6 @@ from .schema import (
     SUPPORTED_THEMES,
     ValidatedDeck,
     collect_deck_warnings,
-    validate_deck_payload,
 )
 from .theme_loader import load_theme
 
@@ -129,6 +126,17 @@ def _json_block(payload: dict[str, Any] | None, fallback: str = "none") -> str:
     if not payload:
         return fallback
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _create_structured_client(model: str | None = None) -> Any:
+    adapter_name = str(os.environ.get("SIE_AUTOPPT_MODEL_ADAPTER", "") or "").strip().lower()
+    if adapter_name:
+        adapter_factory = resolve_model_adapter(adapter_name)
+        if adapter_factory is None:
+            raise ValueError(f"Unknown SIE_AUTOPPT_MODEL_ADAPTER: {adapter_name}")
+        return adapter_factory(model)
+    config = load_openai_responses_config(model=model)
+    return OpenAIResponsesClient(config)
 
 
 def _safe_stem(value: str) -> str:
@@ -394,16 +402,19 @@ def build_context_prompts(
     audience: str,
     language: str,
 ) -> tuple[str, str]:
+    policy = get_language_policy(language)
+    language_constraints = format_language_constraints(policy)
     developer_prompt = (
         "You convert raw presentation requirements into structured business context JSON.\n"
-        f"Use {language}.\n"
-        "Do not invent facts. If information is missing, use '未知' for strings and [] for arrays.\n"
+        f"Use {policy.code}.\n"
+        f"Do not invent facts. If information is missing, use '{policy.unknown_token}' for strings and [] for arrays.\n"
+        f"{language_constraints}\n"
         "Extract only from the provided topic, brief, and audience."
     )
     user_prompt = (
         f"Topic:\n{topic.strip()}\n\n"
         f"Audience:\n{audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
-        f"Brief:\n{brief.strip() or 'none'}\n\n"
+        f"Brief:\n{brief.strip() or policy.none_token}\n\n"
         "Return only JSON."
     )
     return developer_prompt, user_prompt
@@ -418,18 +429,20 @@ def build_strategy_prompts(
     structured_context: dict[str, Any],
     validation_feedback: tuple[str, ...] = (),
 ) -> tuple[str, str]:
+    policy = get_language_policy(language)
     feedback_block = ""
     if validation_feedback:
         feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(f"- {item}" for item in validation_feedback)
     developer_prompt = render_prompt_template(
         "prompts/system/v2_strategy.md",
-        language=language,
+        language=policy.code,
+        language_constraints=format_language_constraints(policy),
         feedback_block=feedback_block,
     )
     user_prompt = (
         f"Topic:\n{topic.strip()}\n\n"
         f"Audience:\n{audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
-        f"Brief:\n{brief.strip() or 'none'}\n\n"
+        f"Brief:\n{brief.strip() or policy.none_token}\n\n"
         "Structured Context JSON:\n"
         f"{_json_block(structured_context)}\n\n"
         "Return only JSON."
@@ -445,13 +458,13 @@ def extract_structured_context(
     language: str = "zh-CN",
     model: str | None = None,
 ) -> dict[str, Any]:
-    config = load_openai_responses_config(model=model)
-    client = OpenAIResponsesClient(config)
+    normalized_language = normalize_language_code(language)
+    client = _create_structured_client(model=model)
     developer_prompt, user_prompt = build_context_prompts(
         topic=topic,
         brief=brief,
         audience=audience,
-        language=language,
+        language=normalized_language,
     )
     return client.create_structured_json(
         developer_prompt=developer_prompt,
@@ -471,15 +484,15 @@ def generate_strategy_with_ai(
     model: str | None = None,
     max_attempts: int = 3,
 ) -> dict[str, Any]:
-    config = load_openai_responses_config(model=model)
-    client = OpenAIResponsesClient(config)
+    normalized_language = normalize_language_code(language)
+    client = _create_structured_client(model=model)
     feedback: tuple[str, ...] = ()
     for _attempt in range(1, max_attempts + 1):
         developer_prompt, user_prompt = build_strategy_prompts(
             topic=topic,
             brief=brief,
             audience=audience,
-            language=language,
+            language=normalized_language,
             structured_context=structured_context,
             validation_feedback=feedback,
         )
@@ -559,6 +572,7 @@ def build_outline_prompts(
     request: OutlineGenerationRequest,
     validation_feedback: tuple[str, ...] = (),
 ) -> tuple[str, str]:
+    policy = get_language_policy(request.language)
     min_slides, max_slides = resolve_slide_bounds(request)
     slide_rule = f"Return exactly {min_slides} pages." if min_slides == max_slides else f"Return {min_slides}-{max_slides} pages."
     feedback_block = ""
@@ -567,13 +581,14 @@ def build_outline_prompts(
     developer_prompt = render_prompt_template(
         "prompts/system/v2_outline.md",
         slide_rule=slide_rule,
-        language=request.language,
+        language=policy.code,
+        language_constraints=format_language_constraints(policy),
         feedback_block=feedback_block,
     )
     user_prompt = (
         f"Topic:\n{request.topic.strip()}\n\n"
         f"Audience:\n{request.audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
-        f"Brief:\n{request.brief.strip() or 'none'}\n\n"
+        f"Brief:\n{request.brief.strip() or policy.none_token}\n\n"
         "Structured Context JSON:\n"
         f"{_json_block(request.structured_context)}\n\n"
         "Strategic Analysis JSON:\n"
@@ -591,12 +606,14 @@ def build_deck_prompts(
     request: DeckGenerationRequest,
     validation_feedback: tuple[str, ...] = (),
 ) -> tuple[str, str]:
+    policy = get_language_policy(request.language)
     feedback_block = ""
     if validation_feedback:
         feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(f"- {item}" for item in validation_feedback)
     developer_prompt = render_prompt_template(
         "prompts/system/v2_slides.md",
-        language=request.language,
+        language=policy.code,
+        language_constraints=format_language_constraints(policy),
         theme_name=request.theme,
         supported_layouts=", ".join(SUPPORTED_LAYOUTS),
         feedback_block=feedback_block,
@@ -604,7 +621,7 @@ def build_deck_prompts(
     user_prompt = (
         f"Topic:\n{request.topic.strip()}\n\n"
         f"Audience:\n{request.audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
-        f"Brief:\n{request.brief.strip() or 'none'}\n\n"
+        f"Brief:\n{request.brief.strip() or policy.none_token}\n\n"
         "Structured Context JSON:\n"
         f"{_json_block(request.structured_context)}\n\n"
         "Strategic Analysis JSON:\n"
@@ -631,12 +648,13 @@ def generate_outline_with_ai(
 ) -> OutlineDocument:
     if request.theme not in SUPPORTED_THEMES:
         raise ValueError(f"theme must be one of {', '.join(SUPPORTED_THEMES)}")
+    normalized_language = normalize_language_code(request.language)
     generation_mode = normalize_generation_mode(request.generation_mode)
     structured_context, strategic_analysis = ensure_generation_context(
         topic=request.topic,
         brief=request.brief,
         audience=request.audience,
-        language=request.language,
+        language=normalized_language,
         generation_mode=generation_mode,
         structured_context=request.structured_context,
         strategic_analysis=request.strategic_analysis,
@@ -647,7 +665,7 @@ def generate_outline_with_ai(
         topic=request.topic,
         brief=request.brief,
         audience=request.audience,
-        language=request.language,
+        language=normalized_language,
         theme=request.theme,
         exact_slides=request.exact_slides,
         min_slides=request.min_slides,
@@ -656,8 +674,7 @@ def generate_outline_with_ai(
         structured_context=structured_context,
         strategic_analysis=strategic_analysis,
     )
-    config = load_openai_responses_config(model=model)
-    client = OpenAIResponsesClient(config)
+    client = _create_structured_client(model=model)
     feedback: tuple[str, ...] = ()
     for _attempt in range(1, max_attempts + 1):
         developer_prompt, user_prompt = build_outline_prompts(enriched_request, validation_feedback=feedback)
@@ -679,6 +696,7 @@ def generate_deck_with_ai(
     model: str | None = None,
     max_attempts: int = 3,
 ) -> ValidatedDeck:
+    normalized_language = normalize_language_code(request.language)
     semantic_payload = generate_semantic_deck_with_ai(
         request=request,
         model=model,
@@ -688,7 +706,7 @@ def generate_deck_with_ai(
         semantic_payload,
         default_title=request.topic,
         default_theme=request.theme,
-        default_language=request.language,
+        default_language=normalized_language,
         default_author=request.author,
     )
 
@@ -700,12 +718,13 @@ def generate_semantic_deck_with_ai(
 ) -> dict[str, Any]:
     if request.theme not in SUPPORTED_THEMES:
         raise ValueError(f"theme must be one of {', '.join(SUPPORTED_THEMES)}")
+    normalized_language = normalize_language_code(request.language)
     generation_mode = normalize_generation_mode(request.generation_mode)
     structured_context, strategic_analysis = ensure_generation_context(
         topic=request.topic,
         brief=request.brief,
         audience=request.audience,
-        language=request.language,
+        language=normalized_language,
         generation_mode=generation_mode,
         structured_context=request.structured_context,
         strategic_analysis=request.strategic_analysis,
@@ -717,15 +736,14 @@ def generate_semantic_deck_with_ai(
         outline=request.outline,
         brief=request.brief,
         audience=request.audience,
-        language=request.language,
+        language=normalized_language,
         theme=request.theme,
         author=request.author,
         generation_mode=generation_mode,
         structured_context=structured_context,
         strategic_analysis=strategic_analysis,
     )
-    config = load_openai_responses_config(model=model)
-    client = OpenAIResponsesClient(config)
+    client = _create_structured_client(model=model)
     feedback: tuple[str, ...] = ()
     for _attempt in range(1, max_attempts + 1):
         developer_prompt, user_prompt = build_deck_prompts(enriched_request, validation_feedback=feedback)
@@ -772,12 +790,13 @@ def make_v2_ppt(
     outline_path: Path | None = None,
 ) -> V2MakeArtifacts:
     final_output_dir = output_dir or DEFAULT_OUTPUT_DIR
+    normalized_language = normalize_language_code(language)
     resolved_generation_mode = normalize_generation_mode(generation_mode)
     structured_context, strategic_analysis = ensure_generation_context(
         topic=topic,
         brief=brief,
         audience=audience,
-        language=language,
+        language=normalized_language,
         generation_mode=resolved_generation_mode,
         structured_context=None,
         strategic_analysis=None,
@@ -792,7 +811,7 @@ def make_v2_ppt(
                 topic=topic,
                 brief=brief,
                 audience=audience,
-                language=language,
+                language=normalized_language,
                 theme=theme,
                 exact_slides=exact_slides,
                 min_slides=min_slides,
@@ -812,7 +831,7 @@ def make_v2_ppt(
             outline=outline,
             brief=brief,
             audience=audience,
-            language=language,
+            language=normalized_language,
             theme=theme,
             author=author,
             generation_mode=resolved_generation_mode,
@@ -827,7 +846,7 @@ def make_v2_ppt(
         semantic_payload,
         default_title=topic,
         default_theme=theme,
-        default_language=language,
+        default_language=normalized_language,
         default_author=author,
     )
     final_deck_output = deck_output or default_deck_output_path(final_output_dir)
@@ -883,4 +902,6 @@ def make_v2_ppt(
         svg_project_path=svg_project_path,
         svg_final_dir=svg_project_path / "svg_final",
     )
+
+
 

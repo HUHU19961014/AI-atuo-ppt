@@ -27,7 +27,6 @@ description: >
   - `skills/sie-autoppt/references/*`
 - 可选兼容项：
   - PowerPoint COM：用于少量本机修复/预览场景，缺失时允许降级
-  - `tools/archive/legacy_helpers/*`：仅保留为历史辅助脚本，不属于默认主链路
 - 非默认硬依赖：
   - 外部 `ppt-master` 工作区
 
@@ -111,5 +110,5 @@ description: >
 ## 使用建议
 
 - 优先走当前仓库主流程，不默认依赖外部 `ppt-master`
-- 需要兼容旧流程时，只把 `tools/archive/legacy_helpers/*` 当参考，不当唯一入口
+- 需要兼容旧流程时，优先使用 `tools/legacy_html_regression_check.ps1` 进行验证，不回退为默认主链路
 - 当用户需求模糊时，先澄清“主题 / 受众 / 页数范围 / 语气 / 输出形式”

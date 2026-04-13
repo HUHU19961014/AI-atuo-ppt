@@ -18,12 +18,10 @@ class ClarifierTests(unittest.TestCase):
         self.assertTrue(result.blocking)
         self.assertEqual(
             result.missing_dimensions,
-            ("topic", "purpose", "audience", "slides", "style", "theme", "core_content"),
+            ("topic", "purpose", "audience", "slides", "style", "core_content"),
         )
         self.assertIn("1.", result.response_template)
-        theme_question = next(question for question in result.questions if question.dimension == "theme")
-        self.assertTrue(theme_question.options)
-        self.assertTrue(all(option.value.startswith("theme:") for option in theme_question.options))
+        self.assertTrue(all(question.dimension != "theme" for question in result.questions))
 
     def test_concrete_topic_triggers_partial_guidance(self):
         result = clarify_user_input("帮我做Q2业绩汇报，5页", prefer_llm=False)
@@ -34,7 +32,7 @@ class ClarifierTests(unittest.TestCase):
         self.assertEqual(result.requirements.chapters, 5)
         self.assertIn("audience", result.missing_dimensions)
         self.assertIn("style", result.missing_dimensions)
-        self.assertIn("theme", result.missing_dimensions)
+        self.assertNotIn("theme", result.missing_dimensions)
 
     def test_skip_keyword_short_circuits_clarification(self):
         result = clarify_user_input("直接生成，做一份产品方案PPT", prefer_llm=False)
@@ -57,7 +55,7 @@ class ClarifierTests(unittest.TestCase):
         self.assertEqual(second.requirements.topic, "Q2业绩汇报")
         self.assertEqual(second.requirements.audience, "公司领导")
         self.assertEqual(second.requirements.style, "商务专业")
-        self.assertEqual(second.requirements.theme, "business_red")
+        self.assertEqual(second.requirements.theme, "sie_consulting_fixed")
         self.assertIn("增长数据", second.requirements.core_content)
         self.assertEqual(second.requirements.chapters, 5)
 
@@ -77,8 +75,8 @@ class ClarifierTests(unittest.TestCase):
         self.assertEqual(second.requirements.audience, "公司领导")
         self.assertEqual(second.requirements.slide_hint, "10页左右")
         self.assertEqual(second.requirements.style, "商务专业")
-        self.assertEqual(second.requirements.theme, "business_red")
-        self.assertIn("收入增长", second.requirements.core_content)
+        self.assertEqual(second.requirements.theme, "sie_consulting_fixed")
+        self.assertEqual(second.requirements.core_content, "现状/问题/建议")
 
     def test_derive_planning_context_enriches_request_fields(self):
         context = derive_planning_context(
@@ -93,7 +91,7 @@ class ClarifierTests(unittest.TestCase):
         self.assertEqual(context.topic, "Q2业绩汇报")
         self.assertEqual(context.audience, "公司领导")
         self.assertEqual(context.chapters, 5)
-        self.assertIn("Theme: business_red", context.brief)
+        self.assertIn("Theme: sie_consulting_fixed", context.brief)
         self.assertIn("增长数据", context.brief)
 
     def test_session_json_round_trip_is_stable(self):
