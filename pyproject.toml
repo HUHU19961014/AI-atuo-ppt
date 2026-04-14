@@ -13,17 +13,19 @@ authors = [
 ]
 dependencies = [
   "python-pptx>=0.6.21",
-  "openai>=1.0.0",
+  "openai>=1.30.0",
   "beautifulsoup4>=4.12.0",
   "lxml>=4.9.0",
   "python-docx>=1.1.0",
   "pypdf>=4.0.0",
-  "pydantic>=2.12.0"
+  "pydantic>=2.12.0",
+  "jsonpath-ng>=1.7.0"
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0.0",
+  "hypothesis>=6.0.0",
   "coverage>=7.6.0",
   "ruff>=0.6.0",
   "mypy>=1.11.0",
@@ -99,6 +101,10 @@ ignore_missing_imports = true
 warn_unused_configs = true
 pretty = true
 files = [
+  "tools/sie_autoppt/v2/",
+  "tools/sie_autoppt/legacy/reference_styles.py",
+  "tools/sie_autoppt/planning/deck_planner.py",
+  "tools/sie_autoppt/planning/payload_builders.py",
   "tools/sie_autoppt/llm_openai.py",
   "tools/sie_autoppt/cli_v2_commands.py",
   "tools/sie_autoppt/language_policy.py"

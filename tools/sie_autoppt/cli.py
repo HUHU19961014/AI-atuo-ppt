@@ -1,23 +1,26 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, replace
 import json
 import shutil
 import sys
+from dataclasses import asdict, replace
 from pathlib import Path
 
+from tools.scenario_generators.sie_onepage_designer import build_onepage_brief_from_structure, build_onepage_slide
+
 from .clarifier import DEFAULT_AUDIENCE_HINT, clarify_user_input, derive_planning_context, load_clarifier_session
-from .cli_parser import build_main_parser
 from .clarify_web import serve_clarifier_web
+from .cli_parser import build_main_parser
+from .cli_v2_commands import V2CommandContext, handle_v2_and_health_command
+from . import cli_routing
 from .config import (
-    DEFAULT_REFERENCE_BODY,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_OUTPUT_PREFIX,
+    DEFAULT_REFERENCE_BODY,
     DEFAULT_TEMPLATE,
     PROJECT_ROOT,
 )
-from .cli_v2_commands import handle_v2_and_health_command
 from .content_service import build_deck_spec_from_structure
 from .deck_spec_io import load_deck_spec, write_deck_spec
 from .exceptions import (
@@ -27,7 +30,12 @@ from .exceptions import (
 from .generator import generate_ppt_artifacts_from_deck_spec
 from .healthcheck import run_ai_healthcheck
 from .inputs.source_text import extract_source_text
-from .llm_openai import OpenAIConfigurationError, OpenAIResponsesClient, OpenAIResponsesError, load_openai_responses_config
+from .llm_openai import (
+    OpenAIConfigurationError,
+    OpenAIResponsesClient,
+    OpenAIResponsesError,
+    load_openai_responses_config,
+)
 from .models import BodyPageSpec, DeckSpec, StructureSpec
 from .patterns import supported_pattern_ids
 from .structure_service import StructureGenerationRequest, generate_structure_with_ai
@@ -43,20 +51,21 @@ from .v2 import (
     default_semantic_output_path,
     generate_outline_with_ai,
     generate_semantic_deck_with_ai,
-    generate_ppt as generate_v2_ppt,
+    generate_semantic_decks_with_ai_batch,
     load_deck_document,
     load_outline_document,
-    write_semantic_document,
     make_v2_ppt,
     write_deck_document,
     write_outline_document,
+    write_semantic_document,
 )
+from .v2 import (
+    generate_ppt as generate_v2_ppt,
+)
+from .v2.io import DEFAULT_V2_OUTPUT_DIR
 from .v2.services import ensure_generation_context
 from .v2.visual_review import apply_patch_set, iterate_visual_review, review_deck_once
-from .v2.io import DEFAULT_V2_OUTPUT_DIR
 from .visual_service import generate_visual_draft_artifacts
-from tools.scenario_generators.sie_onepage_designer import build_onepage_brief_from_structure, build_onepage_slide
-
 
 WORKFLOW_COMMANDS = (
     "demo",
@@ -134,60 +143,45 @@ def validate_slide_args(args, parser: argparse.ArgumentParser):
 
 
 def command_was_explicit(argv: list[str]) -> bool:
-    for token in argv:
-        if token.startswith("-"):
-            continue
-        return token in WORKFLOW_COMMANDS
-    return False
+    return cli_routing.command_was_explicit(argv, WORKFLOW_COMMANDS)
 
 
 def normalize_command_alias(command_name: str) -> str:
-    return COMMAND_ALIASES.get(command_name, command_name)
+    return cli_routing.normalize_command_alias(command_name, COMMAND_ALIASES)
 
 
 def validate_command_name(command_name: str, parser: argparse.ArgumentParser) -> None:
-    normalized = normalize_command_alias(command_name)
-    if normalized in WORKFLOW_COMMANDS:
-        return
-    parser.error(
-        "unknown command "
-        f"'{command_name}'. Use one of the primary commands ({', '.join(PRIMARY_COMMANDS)}) "
-        f"or advanced commands ({', '.join(ADVANCED_COMMANDS)})."
+    cli_routing.validate_command_name(
+        command_name,
+        parser,
+        workflow_commands=WORKFLOW_COMMANDS,
+        command_aliases=COMMAND_ALIASES,
+        primary_commands=PRIMARY_COMMANDS,
+        advanced_commands=ADVANCED_COMMANDS,
     )
 
 
 def resolve_effective_command(argv: list[str], args) -> tuple[str, bool]:
-    explicit = command_was_explicit(argv)
-    normalized_command = normalize_command_alias(args.command)
-    if args.full_pipeline or normalized_command == "make":
-        return "v2-make", explicit
-    if explicit:
-        return normalized_command, explicit
-    if args.topic.strip() or args.outline_json.strip():
-        return "v2-make", explicit
-    return normalized_command, explicit
+    return cli_routing.resolve_effective_command(
+        argv,
+        args,
+        workflow_commands=WORKFLOW_COMMANDS,
+        command_aliases=COMMAND_ALIASES,
+    )
 
 
 def emit_command_notice(explicit: bool, parsed_command: str, effective_command: str) -> None:
-    if parsed_command in COMMAND_ALIASES:
-        print(
-            f"INFO: '{parsed_command}' maps to '{effective_command}'.",
-            file=sys.stderr,
-        )
-    if effective_command == "v2-make" and parsed_command == "make":
-        print(
-            "INFO: 'make' routes to semantic v2-make; legacy template generation has been removed.",
-            file=sys.stderr,
-        )
-        return
+    message = cli_routing.emit_command_notice(explicit, parsed_command, effective_command, COMMAND_ALIASES)
+    if message:
+        print(message, file=sys.stderr)
 
 
 def option_was_explicit(argv: list[str], option_name: str) -> bool:
-    return any(token == option_name or token.startswith(f"{option_name}=") for token in argv)
+    return cli_routing.option_was_explicit(argv, option_name)
 
 
 def is_v2_command(command_name: str) -> bool:
-    return command_name.startswith("v2-")
+    return cli_routing.is_v2_command(command_name)
 
 
 def validate_v2_option_compatibility(
@@ -196,23 +190,26 @@ def validate_v2_option_compatibility(
     effective_command: str,
     parser: argparse.ArgumentParser,
 ) -> None:
-    if not (is_v2_command(effective_command) or effective_command == "make"):
-        return
-    if option_was_explicit(argv, "--template"):
-        parser.error(
-            "--template is no longer supported. Use --theme with the V2 semantic workflow."
-        )
-    explicit_theme_values: list[str] = []
-    for index, token in enumerate(argv):
-        if token == "--theme" and index + 1 < len(argv):
-            explicit_theme_values.append(str(argv[index + 1]).strip())
-            continue
-        if token.startswith("--theme="):
-            explicit_theme_values.append(token.split("=", 1)[1].strip())
-    if any(value and value != "sie_consulting_fixed" for value in explicit_theme_values):
-        parser.error(
-            "--theme is fixed to 'sie_consulting_fixed' for SIE consulting workflow."
-        )
+    cli_routing.validate_v2_option_compatibility(argv, effective_command=effective_command, parser=parser)
+
+
+def validate_delivery_target_compatibility(
+    *,
+    args,
+    explicit_command: bool,
+    effective_command: str,
+    parser: argparse.ArgumentParser,
+) -> None:
+    cli_routing.validate_delivery_target_compatibility(
+        args=args,
+        explicit_command=explicit_command,
+        effective_command=effective_command,
+        parser=parser,
+    )
+
+
+def resolve_v2_output_dir(*, output_dir: Path, args) -> Path:
+    return cli_routing.resolve_v2_output_dir(output_dir=output_dir, args=args)
 
 
 def resolve_v2_clarified_context(
@@ -449,12 +446,19 @@ def main():
     validate_slide_args(args, parser)
     effective_command, explicit_command = resolve_effective_command(raw_argv, args)
     validate_v2_option_compatibility(raw_argv, effective_command=effective_command, parser=parser)
+    validate_delivery_target_compatibility(
+        args=args,
+        explicit_command=explicit_command,
+        effective_command=effective_command,
+        parser=parser,
+    )
     emit_command_notice(explicit_command, args.command, effective_command)
 
     output_dir = Path(args.output_dir)
     brief_text = load_brief_text(args.brief, args.brief_file)
     v2_theme = args.theme.strip() or "business_red"
     v2_output_dir = DEFAULT_V2_OUTPUT_DIR if output_dir == DEFAULT_OUTPUT_DIR else output_dir
+    v2_output_dir = resolve_v2_output_dir(output_dir=v2_output_dir, args=args)
     resolved_topic = args.topic.strip()
     resolved_brief = brief_text
     resolved_audience = args.audience
@@ -769,36 +773,39 @@ def main():
         effective_command=effective_command,
         args=args,
         parser=parser,
-        resolved_topic=resolved_topic,
-        resolved_brief=resolved_brief,
-        resolved_audience=resolved_audience,
-        resolved_chapters=resolved_chapters,
-        resolved_min_slides=resolved_min_slides,
-        resolved_max_slides=resolved_max_slides,
-        v2_theme=v2_theme,
-        v2_output_dir=v2_output_dir,
-        brief_text=brief_text,
-        emit_progress=emit_progress,
-        default_outline_output_path=default_outline_output_path,
-        default_semantic_output_path=default_semantic_output_path,
-        default_deck_output_path=default_deck_output_path,
-        default_log_output_path=default_log_output_path,
-        default_ppt_output_path=default_ppt_output_path,
-        load_outline_document=load_outline_document,
-        write_outline_document=write_outline_document,
-        write_semantic_document=write_semantic_document,
-        write_deck_document=write_deck_document,
-        load_deck_document=load_deck_document,
-        compile_semantic_deck_payload=compile_semantic_deck_payload,
-        generate_outline_with_ai=generate_outline_with_ai,
-        generate_semantic_deck_with_ai=generate_semantic_deck_with_ai,
-        ensure_generation_context=ensure_generation_context,
-        make_v2_ppt=make_v2_ppt,
-        generate_v2_ppt=generate_v2_ppt,
-        apply_patch_set=apply_patch_set,
-        review_deck_once=review_deck_once,
-        iterate_visual_review=iterate_visual_review,
-        run_ai_healthcheck=run_ai_healthcheck,
+        context=V2CommandContext(
+            resolved_topic=resolved_topic,
+            resolved_brief=resolved_brief,
+            resolved_audience=resolved_audience,
+            resolved_chapters=resolved_chapters,
+            resolved_min_slides=resolved_min_slides,
+            resolved_max_slides=resolved_max_slides,
+            v2_theme=v2_theme,
+            v2_output_dir=v2_output_dir,
+            brief_text=brief_text,
+            emit_progress=emit_progress,
+            default_outline_output_path=default_outline_output_path,
+            default_semantic_output_path=default_semantic_output_path,
+            default_deck_output_path=default_deck_output_path,
+            default_log_output_path=default_log_output_path,
+            default_ppt_output_path=default_ppt_output_path,
+            load_outline_document=load_outline_document,
+            write_outline_document=write_outline_document,
+            write_semantic_document=write_semantic_document,
+            write_deck_document=write_deck_document,
+            load_deck_document=load_deck_document,
+            compile_semantic_deck_payload=compile_semantic_deck_payload,
+            generate_outline_with_ai=generate_outline_with_ai,
+            generate_semantic_deck_with_ai=generate_semantic_deck_with_ai,
+            generate_semantic_decks_with_ai_batch=generate_semantic_decks_with_ai_batch,
+            ensure_generation_context=ensure_generation_context,
+            make_v2_ppt=make_v2_ppt,
+            generate_v2_ppt=generate_v2_ppt,
+            apply_patch_set=apply_patch_set,
+            review_deck_once=review_deck_once,
+            iterate_visual_review=iterate_visual_review,
+            run_ai_healthcheck=run_ai_healthcheck,
+        ),
     ):
         return
     parser.error(f"unsupported command '{effective_command}'.")

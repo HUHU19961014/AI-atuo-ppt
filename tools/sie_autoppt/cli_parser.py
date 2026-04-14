@@ -51,6 +51,12 @@ def build_main_parser() -> argparse.ArgumentParser:
     parser.add_argument("--theme", default="", help="Optional V2 theme name.")
     parser.add_argument("--language", default="zh-CN", help="Language used by V2 outline/deck generation.")
     parser.add_argument("--generation-mode", default="deep", choices=("quick", "deep"), help="V2 generation mode: 'quick' skips strategic analysis, 'deep' adds structured context and strategy analysis.")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="For v2-plan only: number of semantic deck candidates to generate in parallel (>=1).",
+    )
     parser.add_argument("--author", default="AI Auto PPT", help="Author metadata used by V2 deck generation.")
     parser.add_argument("--plan-output", default="", help="Optional output path for the generated compiled deck JSON.")
     parser.add_argument("--progress", action="store_true", help="Print stage progress to stderr for long-running generation flows.")
@@ -79,6 +85,22 @@ def build_main_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reference-body-path", default="", help="Optional reference body PPTX override for sie-render.")
     parser.add_argument("--active-start", type=int, default=0, help="Actual-template directory highlight offset used by sie-render.")
     parser.add_argument("--onepage-strategy", default="auto", help="Optional one-page strategy override. Default is auto.")
+    parser.add_argument(
+        "--delivery-target",
+        default="auto",
+        choices=("auto", "v2", "sie-template"),
+        help="Delivery route preference: auto (default), v2 semantic flow, or sie-template actual template flow.",
+    )
+    parser.add_argument(
+        "--isolate-output",
+        action="store_true",
+        help="For v2-make: write outputs into output-dir/runs/<run-id>.",
+    )
+    parser.add_argument(
+        "--run-id",
+        default="",
+        help="Optional run id used with --isolate-output. If omitted, a timestamp-based id is generated.",
+    )
     return parser
 
 

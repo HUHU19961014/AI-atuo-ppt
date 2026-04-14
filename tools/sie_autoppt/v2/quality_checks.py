@@ -212,32 +212,42 @@ def _has_directory_style_title(title: str) -> bool:
 def _title_warnings(slide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
     hanzi_count = _count_hanzi(slide.title)
+    title_rules = RULE_CONFIG.title_lengths
 
     # Error level: title too long (severe overflow risk)
-    if hanzi_count > 28:
+    if hanzi_count > title_rules.error_threshold:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_ERROR,
-                message=f"title contains {hanzi_count} Chinese characters, which exceeds the 28-character error threshold (severe overflow risk).",
+                message=(
+                    f"title contains {hanzi_count} Chinese characters, which exceeds the "
+                    f"{title_rules.error_threshold}-character error threshold (severe overflow risk)."
+                ),
             )
         )
     # High warning: title very long
-    elif hanzi_count > 24:
+    elif hanzi_count > title_rules.high_threshold:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_HIGH,
-                message=f"title contains {hanzi_count} Chinese characters, which exceeds the 24-character high-warning threshold.",
+                message=(
+                    f"title contains {hanzi_count} Chinese characters, which exceeds the "
+                    f"{title_rules.high_threshold}-character high-warning threshold."
+                ),
             )
         )
     # Warning: title longer than recommended
-    elif hanzi_count > 20:
+    elif hanzi_count > title_rules.warning_threshold:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"title contains {hanzi_count} Chinese characters, which exceeds the 20-character recommended threshold.",
+                message=(
+                    f"title contains {hanzi_count} Chinese characters, which exceeds the "
+                    f"{title_rules.warning_threshold}-character recommended threshold."
+                ),
             )
         )
 
@@ -257,23 +267,31 @@ def _title_warnings(slide) -> list[ContentWarning]:
 def _title_content_warnings(slide: TitleContentSlide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
     bullet_count = len(slide.content)
+    bullet_rules = RULE_CONFIG.bullets
+    hard_min = max(1, bullet_rules.min_items)
+    hard_max = max(hard_min, bullet_rules.max_items)
+    recommended_min = max(hard_min, bullet_rules.recommended_min_items)
+    recommended_max = max(recommended_min, min(hard_max, bullet_rules.recommended_max_items))
 
     # Error level: bullet count outside hard range
-    if bullet_count < 1 or bullet_count > 6:
+    if bullet_count < hard_min or bullet_count > hard_max:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_ERROR,
-                message=f"title_content has {bullet_count} bullet items; must be between 1-6.",
+                message=f"title_content has {bullet_count} bullet items; must be between {hard_min}-{hard_max}.",
             )
         )
     # Warning: bullet count outside recommended range
-    elif bullet_count < 2 or bullet_count > 6:
+    elif bullet_count < recommended_min or bullet_count > recommended_max:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"title_content has {bullet_count} bullet items; recommended range is 2-6.",
+                message=(
+                    f"title_content has {bullet_count} bullet items; recommended range is "
+                    f"{recommended_min}-{recommended_max}."
+                ),
             )
         )
 

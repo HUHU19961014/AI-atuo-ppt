@@ -38,10 +38,27 @@ class ScoringRuleConfig:
 
 
 @dataclass(frozen=True)
+class TitleLengthRuleConfig:
+    error_threshold: int
+    high_threshold: int
+    warning_threshold: int
+
+
+@dataclass(frozen=True)
+class BulletRuleConfig:
+    min_items: int
+    max_items: int
+    recommended_min_items: int
+    recommended_max_items: int
+
+
+@dataclass(frozen=True)
 class V2RuleConfig:
     rewrite: RewriteRuleConfig
     directory_style: DirectoryStyleRuleConfig
     scoring: ScoringRuleConfig
+    title_lengths: TitleLengthRuleConfig
+    bullets: BulletRuleConfig
 
 
 def _load_rule_payload(config_path: Path) -> dict[str, Any]:
@@ -70,6 +87,8 @@ def load_v2_rule_config() -> V2RuleConfig:
     quality_payload = payload.get("quality", {})
     directory_payload = quality_payload.get("directory_style", {})
     scoring_payload = quality_payload.get("scoring", {})
+    title_payload = quality_payload.get("titles", {})
+    bullet_payload = quality_payload.get("bullets", {})
 
     return V2RuleConfig(
         rewrite=RewriteRuleConfig(
@@ -90,5 +109,16 @@ def load_v2_rule_config() -> V2RuleConfig:
             excellent_threshold=int(scoring_payload.get("excellent_threshold", 90)),
             usable_threshold=int(scoring_payload.get("usable_threshold", 75)),
             review_threshold=int(scoring_payload.get("review_threshold", 60)),
+        ),
+        title_lengths=TitleLengthRuleConfig(
+            error_threshold=int(title_payload.get("error_threshold", 28)),
+            high_threshold=int(title_payload.get("high_threshold", 24)),
+            warning_threshold=int(title_payload.get("warning_threshold", 20)),
+        ),
+        bullets=BulletRuleConfig(
+            min_items=max(1, int(bullet_payload.get("min_items", 1))),
+            max_items=max(1, int(bullet_payload.get("max_items", 6))),
+            recommended_min_items=max(1, int(bullet_payload.get("recommended_min_items", 2))),
+            recommended_max_items=max(1, int(bullet_payload.get("recommended_max_items", 6))),
         ),
     )

@@ -84,3 +84,14 @@ baseline_slide_count = 6
 excellent_threshold = 90
 usable_threshold = 75
 review_threshold = 60
+
+[quality.titles]
+error_threshold = 28
+high_threshold = 24
+warning_threshold = 20
+
+[quality.bullets]
+min_items = 1
+max_items = 6
+recommended_min_items = 2
+recommended_max_items = 6

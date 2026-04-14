@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -15,6 +16,11 @@ from .io import is_semantic_deck_document, load_deck_document, load_semantic_doc
 from .ppt_engine import RenderArtifacts, generate_ppt
 from .quality_checks import QualityGateResult, quality_gate
 from .schema import DeckDocument, validate_deck_payload
+
+try:
+    from jsonpath_ng.ext import parse as jsonpath_parse
+except Exception:  # pragma: no cover - optional dependency fallback
+    jsonpath_parse = None
 
 RATING_LABELS = ("优秀", "合格", "可用初稿", "质量偏弱", "不合格")
 
@@ -467,11 +473,17 @@ def generate_blocker_patches(
 
 
 def _parse_field_path(path: str) -> list[str | int]:
+    normalized = path.strip()
+    if normalized.startswith("$."):
+        normalized = normalized[2:]
+    elif normalized == "$":
+        normalized = ""
+
     tokens: list[str | int] = []
     buffer = ""
     index_buffer = ""
     in_index = False
-    for char in path:
+    for char in normalized:
         if char == "." and not in_index:
             if buffer:
                 tokens.append(buffer)
@@ -497,14 +509,38 @@ def _parse_field_path(path: str) -> list[str | int]:
         else:
             buffer += char
     if in_index:
-        raise ValueError(f"Unclosed list index in field path: {path}")
+        raise ValueError(f"Unclosed list index in field path: {normalized or path}")
     if buffer:
         tokens.append(buffer)
     return tokens
 
 
-def _resolve_patch_reference(payload: dict[str, Any], path: str, patch_number: int) -> tuple[Any, str | int, Any]:
-    tokens = _parse_field_path(path)
+def _normalize_patch_jsonpath(path: str, patch_number: int) -> tuple[str, int]:
+    raw_path = path.strip()
+    if not raw_path:
+        raise ValueError(f"Patch {patch_number} field path must not be empty.")
+    normalized = raw_path if raw_path.startswith("$") else f"$.{raw_path}"
+    slide_match = re.match(r"^\$\.slides\[(\d+)\](?:\.|$)", normalized)
+    if not slide_match:
+        raise ValueError(f"Patch {patch_number} must target a slide field under slides[n].")
+    return normalized, int(slide_match.group(1))
+
+
+def _resolve_patch_reference(payload: dict[str, Any], path: str, patch_number: int) -> tuple[str, int, Any]:
+    normalized_path, slide_index = _normalize_patch_jsonpath(path, patch_number)
+    if jsonpath_parse is not None:
+        try:
+            expression = jsonpath_parse(normalized_path)
+        except Exception as exc:
+            raise ValueError(f"Patch {patch_number} points to an invalid field path: {path}") from exc
+        matches = expression.find(payload)
+        if not matches:
+            raise ValueError(f"Patch {patch_number} points to an invalid final field: {path}")
+        if len(matches) != 1:
+            raise ValueError(f"Patch {patch_number} field path must resolve to exactly one value: {path}")
+        return normalized_path, slide_index, matches[0].value
+
+    tokens = _parse_field_path(normalized_path)
     if not tokens:
         raise ValueError(f"Patch {patch_number} field path must not be empty.")
     if len(tokens) < 2 or tokens[0] != "slides" or not isinstance(tokens[1], int):
@@ -522,16 +558,15 @@ def _resolve_patch_reference(payload: dict[str, Any], path: str, patch_number: i
         current_value = cursor[final_token]
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError(f"Patch {patch_number} points to an invalid final field: {path}") from exc
-    return cursor, final_token, current_value
+    return normalized_path, slide_index, current_value
 
 
 def apply_patch_set(deck: DeckDocument, patch_set: dict[str, Any]) -> DeckDocument:
     payload = deck.model_dump(mode="json")
     for patch_number, patch in enumerate(patch_set.get("patches", []), start=1):
         path = str(patch["field"]).strip()
-        cursor, final_token, current_value = _resolve_patch_reference(payload, path, patch_number)
+        normalized_path, slide_index, current_value = _resolve_patch_reference(payload, path, patch_number)
         expected_page = patch.get("page")
-        slide_index = _parse_field_path(path)[1]
         if isinstance(expected_page, int) and expected_page != slide_index + 1:
             raise ValueError(
                 f"Patch {patch_number} page={expected_page} does not match field path slide index {slide_index + 1}."
@@ -540,7 +575,15 @@ def apply_patch_set(deck: DeckDocument, patch_set: dict[str, Any]) -> DeckDocume
             raise ValueError(
                 f"Patch {patch_number} old_value mismatch for {path}: expected {patch['old_value']!r}, found {current_value!r}."
             )
-        cursor[final_token] = patch["new_value"]
+        if jsonpath_parse is not None:
+            jsonpath_parse(normalized_path).update(payload, patch["new_value"])
+            continue
+
+        tokens = _parse_field_path(normalized_path)
+        cursor: Any = payload
+        for token in tokens[:-1]:
+            cursor = cursor[token]
+        cursor[tokens[-1]] = patch["new_value"]
     return validate_deck_payload(payload).deck
 
 

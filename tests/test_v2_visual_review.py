@@ -1,4 +1,5 @@
 ﻿import tempfile
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -257,6 +258,21 @@ class V2VisualReviewTests(unittest.TestCase):
         self.assertEqual(patched.slides[0].title, "结论页")
         self.assertEqual(patched.slides[1].left.items[1], "左二精简")
 
+    def test_apply_patch_set_accepts_jsonpath_style_fields(self):
+        deck = _sample_deck()
+        patched = apply_patch_set(
+            deck,
+            {
+                "patches": [
+                    {"page": 1, "field": "$.slides[0].title", "old_value": "第一页", "new_value": "结论页", "reason": "更结论导向"},
+                    {"page": 2, "field": "$.slides[1].right.items[0]", "old_value": "右一", "new_value": "右一精简", "reason": "压缩文案"},
+                ]
+            },
+        )
+
+        self.assertEqual(patched.slides[0].title, "结论页")
+        self.assertEqual(patched.slides[1].right.items[0], "右一精简")
+
     def test_apply_patch_set_rejects_page_mismatch(self):
         deck = _sample_deck()
         with self.assertRaisesRegex(ValueError, "does not match field path"):
@@ -404,6 +420,48 @@ class V2VisualReviewTests(unittest.TestCase):
         self.assertIn("PowerPoint COM unavailable", str(captured["preview_note"]))
         self.assertEqual(result.preview_mode, "content_only")
 
+    def test_review_once_falls_back_when_preview_export_times_out(self):
+        deck = _sample_deck()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_path = Path(temp_dir) / "deck.json"
+            write_deck_document(deck, deck_path)
+            fake_render = type(
+                "FakeRender",
+                (),
+                {"output_path": Path(temp_dir) / "deck.pptx", "final_deck": deck},
+            )()
+            captured: dict[str, object] = {}
+
+            def fake_review(deck_data, previews, *, model=None, preview_note=None):
+                captured["previews"] = previews
+                captured["preview_note"] = preview_note
+                return {
+                    "scores": {
+                        "structure": 3,
+                        "title_quality": 3,
+                        "content_density": 3,
+                        "layout_stability": 2,
+                        "deliverability": 2,
+                    },
+                    "total": 13,
+                    "rating": "可用初稿",
+                    "page_issues": [],
+                    "summary": "Fallback after timeout.",
+                }
+
+            with (
+                patch("tools.sie_autoppt.v2.visual_review.generate_ppt", return_value=fake_render),
+                patch(
+                    "tools.sie_autoppt.v2.visual_review.export_slide_previews",
+                    side_effect=subprocess.TimeoutExpired(cmd="soffice", timeout=10),
+                ),
+                patch("tools.sie_autoppt.v2.visual_review.review_rendered_deck", side_effect=fake_review),
+                patch("tools.sie_autoppt.v2.visual_review.generate_blocker_patches", return_value={"patches": []}),
+            ):
+                review_deck_once(deck_path=deck_path, output_dir=Path(temp_dir) / "review")
+
+        self.assertEqual(captured["previews"], [])
+        self.assertIn("timed out", str(captured["preview_note"]).lower())
     def test_review_once_preserves_semantic_input_source(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             semantic_path = Path(temp_dir) / "semantic.json"
@@ -538,3 +596,5 @@ def json_load(path: Path):
 
 if __name__ == "__main__":
     unittest.main()
+
+

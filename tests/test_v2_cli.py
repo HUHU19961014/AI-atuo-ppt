@@ -4,11 +4,10 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from tools.sie_autoppt import cli
 from tools.sie_autoppt.v2.schema import OutlineDocument, validate_deck_payload
-
 
 RESOLVED_V2_CONTEXT = (
     "AI make",
@@ -315,6 +314,59 @@ class V2CliTests(unittest.TestCase):
             self.assertEqual(lines[5], str(Path(temp_dir) / "log.txt"))
             self.assertEqual(lines[6], str(Path(temp_dir) / "Enterprise-AI-PPT_Presentation.pptx"))
 
+    def test_v2_make_full_pipeline_e2e_writes_all_artifacts(self):
+        stdout = io.StringIO()
+
+        def fake_make_v2_ppt(**kwargs):
+            outline_path = kwargs["outline_output"]
+            semantic_path = kwargs["semantic_output"]
+            deck_path = kwargs["deck_output"]
+            log_path = kwargs["log_output"]
+            pptx_path = kwargs["ppt_output"]
+            rewrite_log_path = kwargs["output_dir"] / "rewrite_log.json"
+            warnings_path = kwargs["output_dir"] / "warnings.json"
+
+            outline_path.parent.mkdir(parents=True, exist_ok=True)
+            outline_path.write_text('{"pages":[{"page_no":1,"title":"Intro","goal":"Set context."}]}', encoding="utf-8")
+            semantic_path.write_text('{"meta":{"title":"Deck"},"slides":[]}', encoding="utf-8")
+            deck_path.write_text('{"meta":{"title":"Deck"},"slides":[]}', encoding="utf-8")
+            rewrite_log_path.write_text('{"rewrites":[]}', encoding="utf-8")
+            warnings_path.write_text('{"warnings":[]}', encoding="utf-8")
+            log_path.write_text("render ok", encoding="utf-8")
+            pptx_path.write_bytes(b"pptx")
+
+            return type(
+                "FakeArtifacts",
+                (),
+                {
+                    "outline_path": outline_path,
+                    "semantic_path": semantic_path,
+                    "deck_path": deck_path,
+                    "rewrite_log_path": rewrite_log_path,
+                    "warnings_path": warnings_path,
+                    "log_path": log_path,
+                    "pptx_path": pptx_path,
+                },
+            )()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch("sys.argv", ["sie-autoppt", "v2-make", "--topic", "AI make", "--full-pipeline", "--output-dir", temp_dir]),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
+                patch("tools.sie_autoppt.cli.make_v2_ppt", side_effect=fake_make_v2_ppt),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+            lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+            self.assertEqual(len(lines), 7)
+            for line in lines:
+                self.assertTrue(Path(line).exists(), f"Expected artifact to exist: {line}")
+            self.assertTrue(lines[0].endswith("generated_outline.json"))
+            self.assertTrue(lines[1].endswith("generated_semantic_deck.json"))
+            self.assertTrue(lines[2].endswith("generated_deck.json"))
+            self.assertTrue(lines[6].endswith("Enterprise-AI-PPT_Presentation.pptx"))
+
     def test_v2_plan_with_outline_json_skips_context_generation(self):
         stdout = io.StringIO()
         outline = OutlineDocument.model_validate(
@@ -353,6 +405,59 @@ class V2CliTests(unittest.TestCase):
             self.assertEqual(len(out_lines), 2)
             self.assertIn("generated_semantic_deck.json", out_lines[0])
             self.assertIn("generated_deck.json", out_lines[1])
+
+    def test_v2_plan_batch_writes_candidate_semantic_outputs(self):
+        stdout = io.StringIO()
+        outline = OutlineDocument.model_validate(
+            {
+                "pages": [
+                    {"page_no": 1, "title": "Context", "goal": "Set context."},
+                    {"page_no": 2, "title": "Plan", "goal": "Propose options."},
+                ]
+            }
+        )
+        semantic_payloads = [
+            {
+                "meta": {"title": "Deck A", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [{"slide_id": "s1", "title": "Conclusion A", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "A"}]}],
+            },
+            {
+                "meta": {"title": "Deck B", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [{"slide_id": "s1", "title": "Conclusion B", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "B"}]}],
+            },
+        ]
+        validated = validate_deck_payload(
+            {
+                "meta": {"title": "Deck A", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [{"slide_id": "s1", "layout": "title_only", "title": "Conclusion A"}],
+            }
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch(
+                    "sys.argv",
+                    ["sie-autoppt", "v2-plan", "--topic", "AI plan", "--output-dir", temp_dir, "--batch-size", "2"],
+                ),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
+                patch("tools.sie_autoppt.cli.ensure_generation_context", return_value=({}, None)),
+                patch("tools.sie_autoppt.cli.generate_outline_with_ai", return_value=outline),
+                patch("tools.sie_autoppt.cli.generate_semantic_deck_with_ai") as single_generate_mock,
+                patch(
+                    "tools.sie_autoppt.cli.generate_semantic_decks_with_ai_batch",
+                    new=AsyncMock(return_value=semantic_payloads),
+                ) as batch_generate_mock,
+                patch("tools.sie_autoppt.cli.compile_semantic_deck_payload", return_value=validated),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+            batch_generate_mock.assert_called_once()
+            single_generate_mock.assert_not_called()
+            out_lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+            self.assertEqual(len(out_lines), 4)
+            self.assertIn("generated_outline.json", out_lines[0])
+            self.assertIn("generated_semantic_deck.json", out_lines[1])
+            self.assertIn("generated_semantic_deck.candidate_2.json", out_lines[2])
+            self.assertIn("generated_deck.json", out_lines[3])
 
     def test_v2_review_prints_five_artifact_paths(self):
         stdout = io.StringIO()

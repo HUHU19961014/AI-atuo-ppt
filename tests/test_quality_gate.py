@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import pytest
+from tools.sie_autoppt.v2 import quality_checks as quality_checks_module
 
 from tools.sie_autoppt.v2.quality_checks import (
     WARNING_LEVEL_ERROR,
@@ -10,6 +11,11 @@ from tools.sie_autoppt.v2.quality_checks import (
     count_errors,
     count_by_level,
     quality_gate,
+)
+from tools.sie_autoppt.v2.rule_config import (
+    BulletRuleConfig,
+    TitleLengthRuleConfig,
+    V2RuleConfig,
 )
 from tools.sie_autoppt.v2.schema import (
     ColumnBlock,
@@ -26,6 +32,63 @@ from tools.sie_autoppt.v2.schema import (
 
 
 class TestQualityGate:
+    def test_title_length_thresholds_follow_rule_config(self, monkeypatch):
+        custom_rules = V2RuleConfig(
+            rewrite=quality_checks_module.RULE_CONFIG.rewrite,
+            directory_style=quality_checks_module.RULE_CONFIG.directory_style,
+            scoring=quality_checks_module.RULE_CONFIG.scoring,
+            title_lengths=TitleLengthRuleConfig(error_threshold=18, high_threshold=16, warning_threshold=14),
+            bullets=quality_checks_module.RULE_CONFIG.bullets,
+        )
+        monkeypatch.setattr(quality_checks_module, "RULE_CONFIG", custom_rules)
+
+        slide = TitleContentSlide(
+            slide_id="s1",
+            layout="title_content",
+            title="啊" * 17,
+            content=["test"],
+        )
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
+                slides=[slide],
+            )
+        )
+        title_warnings = [w for w in warnings if "title contains" in w.message]
+        assert len(title_warnings) == 1
+        assert title_warnings[0].warning_level == WARNING_LEVEL_HIGH
+
+    def test_bullet_count_thresholds_follow_rule_config(self, monkeypatch):
+        custom_rules = V2RuleConfig(
+            rewrite=quality_checks_module.RULE_CONFIG.rewrite,
+            directory_style=quality_checks_module.RULE_CONFIG.directory_style,
+            scoring=quality_checks_module.RULE_CONFIG.scoring,
+            title_lengths=quality_checks_module.RULE_CONFIG.title_lengths,
+            bullets=BulletRuleConfig(
+                min_items=1,
+                max_items=5,
+                recommended_min_items=2,
+                recommended_max_items=4,
+            ),
+        )
+        monkeypatch.setattr(quality_checks_module, "RULE_CONFIG", custom_rules)
+
+        slide = TitleContentSlide(
+            slide_id="s1",
+            layout="title_content",
+            title="Test",
+            content=["a", "b", "c", "d", "e"],
+        )
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
+                slides=[slide],
+            )
+        )
+        bullet_warnings = [w for w in warnings if "bullet items" in w.message]
+        assert len(bullet_warnings) == 1
+        assert bullet_warnings[0].warning_level == WARNING_LEVEL_WARNING
+
     def test_title_length_thresholds(self):
         """Test that title length triggers appropriate warning levels."""
         # 20 chars: no warning
