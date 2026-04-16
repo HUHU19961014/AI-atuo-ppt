@@ -26,5 +26,5 @@ This project primarily exposes a CLI interface, with selected Python modules int
 
 ## Notes
 
-- Internal modules under `sie_autoppt.legacy` and many helper modules are not guaranteed to stay stable.
+- Internal helper modules and low-level rendering modules are not guaranteed to stay stable.
 - Prefer CLI contracts (`docs/CLI_REFERENCE.md`) for external automation unless you need in-process integration.

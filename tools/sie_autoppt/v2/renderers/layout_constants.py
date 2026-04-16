@@ -171,6 +171,10 @@ class StatsDashboardLayout:
     insights_body_top: float = 5.3
     insights_body_width: float = 9.45
     insights_body_height: float = 0.62
+    chart_left: float = 1.9
+    chart_top: float = 5.42
+    chart_width: float = 9.9
+    chart_height: float = 0.68
 
 
 @dataclass(frozen=True)

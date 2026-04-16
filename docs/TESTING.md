@@ -1,4 +1,4 @@
-# Testing
+﻿# Testing
 
 ## Local Quality Gate (CI-aligned)
 
@@ -37,30 +37,30 @@ python .\main.py v2-make --topic "run A" --isolate-output --run-id run-a
 python .\main.py v2-make --topic "run B" --isolate-output --run-id run-b
 ```
 
-`SIE-autoppt` 当前建议分成 4 类主测试与 1 类条件性兼容测试：
+`SIE-autoppt` 褰撳墠寤鸿鍒嗘垚 4 绫讳富娴嬭瘯涓?1 绫绘潯浠舵€у吋瀹规祴璇曪細
 
-1. 单元测试
-2. 轻量集成测试
-3. `python .\main.py demo` 无 AI 冒烟回归
-4. `tools/v2_regression_check.ps1` V2 deck 回归
-5. 兼容测试：`tools/legacy_html_regression_check.ps1` legacy HTML 样例回归
+1. 鍗曞厓娴嬭瘯
+2. 杞婚噺闆嗘垚娴嬭瘯
+3. `python .\main.py make --topic "test smoke"` 鏃?AI 鍐掔儫鍥炲綊
+4. `tools/v2_regression_check.ps1` V2 deck 鍥炲綊
+5. 鍏煎娴嬭瘯锛歚tools/legacy_html_regression_check.ps1` legacy HTML 鏍蜂緥鍥炲綊
 
-## 基线原则
+## 鍩虹嚎鍘熷垯
 
-- 只要测试会落到实际渲染、视觉检查、发布验收，就优先使用仓库内的 SIE 模板基线：`assets/templates/sie_template.pptx`。
-- 生产链路主题固定为 `sie_consulting_fixed`；测试样例如果使用其他主题，仅可用于兼容/实验，不作为主回归签收依据。
-- 其他 theme、外部模板、参考样式更适合作为补充覆盖，不应替代 SIE 模板的主回归。
-- 如果某条测试没有直接显式传模板，也应确认它最终走的是当前默认的 SIE 模板链路。
+- 鍙娴嬭瘯浼氳惤鍒板疄闄呮覆鏌撱€佽瑙夋鏌ャ€佸彂甯冮獙鏀讹紝灏变紭鍏堜娇鐢ㄤ粨搴撳唴鐨?SIE 妯℃澘鍩虹嚎锛歚assets/templates/sie_template.pptx`銆?
+- 鐢熶骇閾捐矾涓婚鍥哄畾涓?`sie_consulting_fixed`锛涙祴璇曟牱渚嬪鏋滀娇鐢ㄥ叾浠栦富棰橈紝浠呭彲鐢ㄤ簬鍏煎/瀹為獙锛屼笉浣滀负涓诲洖褰掔鏀朵緷鎹€?
+- 鍏朵粬 theme銆佸閮ㄦā鏉裤€佸弬鑰冩牱寮忔洿閫傚悎浣滀负琛ュ厖瑕嗙洊锛屼笉搴旀浛浠?SIE 妯℃澘鐨勪富鍥炲綊銆?
+- 濡傛灉鏌愭潯娴嬭瘯娌℃湁鐩存帴鏄惧紡浼犳ā鏉匡紝涔熷簲纭瀹冩渶缁堣蛋鐨勬槸褰撳墠榛樿鐨?SIE 妯℃澘閾捐矾銆?
 
-## 当前硬门禁（测试必须覆盖）
+## 褰撳墠纭棬绂侊紙娴嬭瘯蹇呴』瑕嗙洊锛?
 
-- 主题必须为 `sie_consulting_fixed`
-- 目录式标题（例如“建设背景”“现状介绍”）按错误级别处理
-- `title_content` 要点数量必须在 `1-6` 之间
+- 涓婚蹇呴』涓?`sie_consulting_fixed`
+- 鐩綍寮忔爣棰橈紙渚嬪鈥滃缓璁捐儗鏅€濃€滅幇鐘朵粙缁嶁€濓級鎸夐敊璇骇鍒鐞?
+- `title_content` 瑕佺偣鏁伴噺蹇呴』鍦?`1-6` 涔嬮棿
 
-## 推荐安装
+## 鎺ㄨ崘瀹夎
 
-优先使用可安装包方式：
+浼樺厛浣跨敤鍙畨瑁呭寘鏂瑰紡锛?
 
 ```bash
 python -m venv .venv
@@ -69,110 +69,124 @@ python -m pip install --upgrade pip
 python -m pip install -e .[dev]
 ```
 
-如果只走兼容路径：
+濡傛灉鍙蛋鍏煎璺緞锛?
 
 ```bash
 python -m pip install -r requirements.txt
 python -m pip install pytest
 ```
 
-## 自动化部分
+## 鑷姩鍖栭儴鍒?
 
-这些可以直接由代码和本机环境完成，不需要人工逐页确认：
+杩欎簺鍙互鐩存帴鐢变唬鐮佸拰鏈満鐜瀹屾垚锛屼笉闇€瑕佷汉宸ラ€愰〉纭锛?
 
-- HTML 解析与输入校验
-- Deck planning 与章节钳制
-- 模板 manifest 加载
-- 最小生成链路
-- 条件性 `QA.txt` / `QA.json` 结构与关键字段
-- `demo` 无 API 冒烟路径
+- HTML 瑙ｆ瀽涓庤緭鍏ユ牎楠?
+- Deck planning 涓庣珷鑺傞挸鍒?
+- 妯℃澘 manifest 鍔犺浇
+- 鏈€灏忕敓鎴愰摼璺?
+- 鏉′欢鎬?`QA.txt` / `QA.json` 缁撴瀯涓庡叧閿瓧娈?
+- `make` 鏃?API 鍐掔儫璺緞
 
-优先运行方式：
+浼樺厛杩愯鏂瑰紡锛?
 
 ```bash
 python -m pytest tests -q
 ```
 
-兼容运行方式：
+鍏煎杩愯鏂瑰紡锛?
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-PowerShell 快捷入口：
+PowerShell 蹇嵎鍏ュ彛锛?
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run_unit_tests.ps1
 ```
 
-推荐先跑的主路径检查：
+鎺ㄨ崘鍏堣窇鐨勪富璺緞妫€鏌ワ細
 
 ```powershell
 python -m pytest tests -q
-python .\main.py demo
+python .\main.py make --topic "test smoke"
 powershell -ExecutionPolicy Bypass -File .\tools\v2_regression_check.ps1
 ```
 
-这些主路径检查应默认视为 SIE 模板基线回归。
+杩欎簺涓昏矾寰勬鏌ュ簲榛樿瑙嗕负 SIE 妯℃澘鍩虹嚎鍥炲綊銆?
 
-可选真实 AI 小样本回归：
+鍙€夌湡瀹?AI 灏忔牱鏈洖褰掞細
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run_real_ai_smoke.ps1
 ```
 
-说明：
+璇存槑锛?
 
-- 这个 smoke test 默认不参与常规回归，只有显式设置 `OPENAI_API_KEY` 并运行脚本时才执行。
-- 默认使用 `quick` 模式控制成本和时延；如需更接近正式主链路，可传 `-GenerationMode deep`。
-- 如需把 smoke test 跑到实际 PPT 渲染阶段，可传 `-WithRender`，但这会增加耗时和本机依赖。
+- 杩欎釜 smoke test 榛樿涓嶅弬涓庡父瑙勫洖褰掞紝鍙湁鏄惧紡璁剧疆 `OPENAI_API_KEY` 骞惰繍琛岃剼鏈椂鎵嶆墽琛屻€?
+- 榛樿浣跨敤 `quick` 妯″紡鎺у埗鎴愭湰鍜屾椂寤讹紱濡傞渶鏇存帴杩戞寮忎富閾捐矾锛屽彲浼?`-GenerationMode deep`銆?
+- 濡傞渶鎶?smoke test 璺戝埌瀹為檯 PPT 娓叉煋闃舵锛屽彲浼?`-WithRender`锛屼絾杩欎細澧炲姞鑰楁椂鍜屾湰鏈轰緷璧栥€?
 
-兼容层回归，仅在修改 legacy HTML/template 路径时需要：
+鍏煎灞傚洖褰掞紝浠呭湪淇敼 legacy HTML/template 璺緞鏃堕渶瑕侊細
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\legacy_html_regression_check.ps1
 ```
 
-## 需要人工配合的部分
+## 闇€瑕佷汉宸ラ厤鍚堢殑閮ㄥ垎
 
-这些测试不适合完全自动化，或者至少在当前阶段不值得优先自动化：
+杩欎簺娴嬭瘯涓嶉€傚悎瀹屽叏鑷姩鍖栵紝鎴栬€呰嚦灏戝湪褰撳墠闃舵涓嶅€煎緱浼樺厛鑷姩鍖栵細
 
-- 模板换版后的视觉验收
-- 新业务样例是否“讲得对、排得顺”
-- 不同模板是否已经迁移到 preallocated slide pool
-- 最终交付前的黄金样例抽检
+- 妯℃澘鎹㈢増鍚庣殑瑙嗚楠屾敹
+- 鏂颁笟鍔℃牱渚嬫槸鍚︹€滆寰楀銆佹帓寰楅『鈥?
+- 涓嶅悓妯℃澘鏄惁宸茬粡杩佺Щ鍒?preallocated slide pool
+- 鏈€缁堜氦浠樺墠鐨勯粍閲戞牱渚嬫娊妫€
 
-建议最少保留 3 个黄金样例做人眼验收：
+寤鸿鏈€灏戜繚鐣?3 涓粍閲戞牱渚嬪仛浜虹溂楠屾敹锛?
 
-- 通用业务页
-- ERP / 架构页
-- 参考样式导入页
+- 閫氱敤涓氬姟椤?
+- ERP / 鏋舵瀯椤?
+- 鍙傝€冩牱寮忓鍏ラ〉
 
-## 运行时注意事项
+## 杩愯鏃舵敞鎰忎簨椤?
 
-- `legacy clone` 路径已经标记为 deprecated，仅用于没有 slide pool 的旧模板兜底
-- 如果 legacy clone 目录页资源修复连续失败，生成流程会明确报错，而不是静默继续
-- 新模板应优先维护 `manifest.slide_pools`
+- `legacy clone` 璺緞宸茬粡鏍囪涓?deprecated锛屼粎鐢ㄤ簬娌℃湁 slide pool 鐨勬棫妯℃澘鍏滃簳
+- 濡傛灉 legacy clone 鐩綍椤佃祫婧愪慨澶嶈繛缁け璐ワ紝鐢熸垚娴佺▼浼氭槑纭姤閿欙紝鑰屼笉鏄潤榛樼户缁?
+- 鏂版ā鏉垮簲浼樺厛缁存姢 `manifest.slide_pools`
 
-可直接生成视觉验收批次：
+鍙洿鎺ョ敓鎴愯瑙夐獙鏀舵壒娆★細
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\prepare_visual_review.ps1
 ```
 
-说明：
+璇存槑锛?
 
-- `prepare_visual_review.ps1` 属于内部辅助脚本，不是普通用户主路径。
-- 它会使用仓库内置的 V2 `deck.json` 回归样例，而不是旧的 HTML 样例。
-- 这批视觉验收默认也应以当前 SIE 模板输出作为签收基线。
-- 视觉复核若拿不到 PNG 预览，会退化成基于 Deck 内容的保守评审。
+- `prepare_visual_review.ps1` 灞炰簬鍐呴儴杈呭姪鑴氭湰锛屼笉鏄櫘閫氱敤鎴蜂富璺緞銆?
+- 瀹冧細浣跨敤浠撳簱鍐呯疆鐨?V2 `deck.json` 鍥炲綊鏍蜂緥锛岃€屼笉鏄棫鐨?HTML 鏍蜂緥銆?
+- 杩欐壒瑙嗚楠屾敹榛樿涔熷簲浠ュ綋鍓?SIE 妯℃澘杈撳嚭浣滀负绛炬敹鍩虹嚎銆?
+- 瑙嗚澶嶆牳鑻ユ嬁涓嶅埌 PNG 棰勮锛屼細閫€鍖栨垚鍩轰簬 Deck 鍐呭鐨勪繚瀹堣瘎瀹°€?
 
-人工验收说明见 [docs/HUMAN_VISUAL_QA.md](./HUMAN_VISUAL_QA.md)。
+浜哄伐楠屾敹璇存槑瑙?[docs/HUMAN_VISUAL_QA.md](./HUMAN_VISUAL_QA.md)銆?
 
-## 当前测试入口
+## 褰撳墠娴嬭瘯鍏ュ彛
 
-- 单元与轻集成测试：`tests/`
-- 自动化运行入口：[tools/run_unit_tests.ps1](../tools/run_unit_tests.ps1)
-- V2 回归入口：[tools/v2_regression_check.ps1](../tools/v2_regression_check.ps1)
-- 真实 AI smoke 入口（按需执行）：[tools/run_real_ai_smoke.ps1](../tools/run_real_ai_smoke.ps1)
-- Legacy HTML 回归入口（兼容层，仅按需执行）：[tools/legacy_html_regression_check.ps1](../tools/legacy_html_regression_check.ps1)
+- 鍗曞厓涓庤交闆嗘垚娴嬭瘯锛歚tests/`
+- 鑷姩鍖栬繍琛屽叆鍙ｏ細[tools/run_unit_tests.ps1](../tools/run_unit_tests.ps1)
+- V2 鍥炲綊鍏ュ彛锛歔tools/v2_regression_check.ps1](../tools/v2_regression_check.ps1)
+- 鐪熷疄 AI smoke 鍏ュ彛锛堟寜闇€鎵ц锛夛細[tools/run_real_ai_smoke.ps1](../tools/run_real_ai_smoke.ps1)
+- Legacy HTML 鍥炲綊鍏ュ彛锛堝吋瀹瑰眰锛屼粎鎸夐渶鎵ц锛夛細[tools/legacy_html_regression_check.ps1](../tools/legacy_html_regression_check.ps1)
+
+
+## Real AI Golden Dataset
+
+Optional real-model baseline:
+
+`powershell
+='1'
+='sk-...'
+python -m pytest tests/test_real_ai_golden_dataset.py -q
+`
+
+Dataset file: egression/real_ai_golden_dataset.json.
+

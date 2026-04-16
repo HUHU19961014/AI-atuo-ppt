@@ -45,6 +45,9 @@ svg-pipeline = [
   "Pillow>=9.0.0",
   "numpy>=1.20.0"
 ]
+viz = [
+  "matplotlib>=3.8.0"
+]
 
 [project.scripts]
 enterprise-ai-ppt = "sie_autoppt.cli:main"
@@ -102,7 +105,7 @@ warn_unused_configs = true
 pretty = true
 files = [
   "tools/sie_autoppt/v2/",
-  "tools/sie_autoppt/legacy/reference_styles.py",
+  "tools/sie_autoppt/reference_styles.py",
   "tools/sie_autoppt/planning/deck_planner.py",
   "tools/sie_autoppt/planning/payload_builders.py",
   "tools/sie_autoppt/llm_openai.py",

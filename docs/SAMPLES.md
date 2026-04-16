@@ -4,14 +4,13 @@
 
 ## Why It Stays
 
-- `demo` command depends on `samples/sample_deck_v2.json`.
 - V2 render/review tests use sample decks and visual fixtures.
 - Visual review prep scripts read `samples/visual_review_cases.json`.
 
 ## Scope
 
 - `samples/sample_deck_v2.json`, `samples/sample_outline_v2.json`: CLI and renderer smoke fixtures.
-- `samples/input/`: legacy/compatibility and reference-style fixture inputs.
+- `samples/input/`: reference-style and planning fixture inputs.
 - `samples/visual_draft/`: visual-draft fixture inputs.
 - `samples/visual_review_cases.json`: visual review batch fixture registry.
 

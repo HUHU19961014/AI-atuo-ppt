@@ -8,9 +8,9 @@ from .generation_support import LEGACY_CLONE_DEPRECATION_MESSAGE
 from .openxml_slide_ops import copy_slide_xml_assets, slide_assets_preserved
 from .presentation_ops import clone_slide_after, remove_slide
 from .body_renderers import fill_body_slide, fill_directory_slide
-from ..models import BodyPageSpec
-from ..planning.deck_planner import build_directory_window
-from ..template_manifest import TemplateManifest
+from .models import BodyPageSpec
+from .planning.deck_planner import build_directory_window
+from .template_manifest import TemplateManifest
 
 
 def directory_lines_for_page(body_pages: list[BodyPageSpec], active_index: int) -> tuple[list[str], int]:

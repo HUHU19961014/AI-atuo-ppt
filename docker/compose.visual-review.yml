@@ -1,0 +1,7 @@
+services:
+  visual-review-export:
+    build:
+      context: ./visual-review
+      dockerfile: Dockerfile
+    image: libreoffice-docker:latest
+    entrypoint: ["soffice"]

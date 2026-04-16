@@ -1,0 +1,40 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-label="Enterprise-AI-PPT pipeline dark">
+  <rect width="1200" height="420" fill="#020617"/>
+  <text x="60" y="52" font-family="Segoe UI, Arial" font-size="28" font-weight="700" fill="#e2e8f0">Enterprise-AI-PPT Release Pipeline (Dark)</text>
+
+  <rect x="60" y="100" width="190" height="84" rx="12" fill="#0f172a" stroke="#475569"/>
+  <text x="78" y="134" font-family="Segoe UI, Arial" font-size="20" font-weight="600" fill="#e2e8f0">AI Planning</text>
+  <text x="78" y="160" font-family="Segoe UI, Arial" font-size="15" fill="#94a3b8">Outline + Semantic</text>
+
+  <rect x="290" y="100" width="210" height="84" rx="12" fill="#0f172a" stroke="#475569"/>
+  <text x="308" y="134" font-family="Segoe UI, Arial" font-size="20" font-weight="600" fill="#e2e8f0">Deterministic Compile</text>
+  <text x="308" y="160" font-family="Segoe UI, Arial" font-size="15" fill="#94a3b8">Schema-safe deck</text>
+
+  <rect x="540" y="100" width="190" height="84" rx="12" fill="#0f172a" stroke="#475569"/>
+  <text x="558" y="134" font-family="Segoe UI, Arial" font-size="20" font-weight="600" fill="#e2e8f0">SVG Render</text>
+  <text x="558" y="160" font-family="Segoe UI, Arial" font-size="15" fill="#94a3b8">Editable PPTX</text>
+
+  <rect x="770" y="100" width="180" height="84" rx="12" fill="#0f172a" stroke="#475569"/>
+  <text x="788" y="134" font-family="Segoe UI, Arial" font-size="20" font-weight="600" fill="#e2e8f0">Visual Review</text>
+  <text x="788" y="160" font-family="Segoe UI, Arial" font-size="15" fill="#94a3b8">Host or Docker</text>
+
+  <rect x="980" y="100" width="160" height="84" rx="12" fill="#0f172a" stroke="#475569"/>
+  <text x="998" y="134" font-family="Segoe UI, Arial" font-size="20" font-weight="600" fill="#e2e8f0">Release</text>
+  <text x="998" y="160" font-family="Segoe UI, Arial" font-size="15" fill="#94a3b8">GitHub Ready</text>
+
+  <path d="M250 142 L286 142" stroke="#60a5fa" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M500 142 L536 142" stroke="#60a5fa" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M730 142 L766 142" stroke="#60a5fa" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M950 142 L976 142" stroke="#60a5fa" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="60" y="240" width="1080" height="126" rx="12" fill="#111827" stroke="#334155"/>
+  <text x="84" y="276" font-family="Segoe UI, Arial" font-size="21" font-weight="700" fill="#e2e8f0">This Release Includes</text>
+  <text x="84" y="306" font-family="Segoe UI, Arial" font-size="17" fill="#cbd5e1">• Containerized visual preview fallback • Layout DSL foundation • Real-AI golden dataset entry</text>
+  <text x="84" y="332" font-family="Segoe UI, Arial" font-size="17" fill="#cbd5e1">• LLM token/cost budget + cache + usage log • Stats dashboard chart rendering (matplotlib optional)</text>
+
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L6,3 z" fill="#60a5fa"/>
+    </marker>
+  </defs>
+</svg>

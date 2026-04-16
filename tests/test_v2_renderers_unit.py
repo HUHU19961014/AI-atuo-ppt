@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from tools.sie_autoppt.v2.renderers.cards_grid import render_cards_grid
@@ -223,6 +225,36 @@ class V2RendererUnitTests(unittest.TestCase):
         ):
             render_stats_dashboard(self._ctx(), slide_data)
         self.assertGreaterEqual(add_textbox.call_count, 3)
+
+    def test_render_stats_dashboard_adds_chart_when_numeric_metrics_available(self):
+        slide_data = StatsDashboardSlide.model_validate(
+            {
+                "slide_id": "s2",
+                "layout": "stats_dashboard",
+                "title": "Dashboard",
+                "metrics": [
+                    {"label": "Revenue", "value": "120", "note": "Q1"},
+                    {"label": "Margin", "value": "95", "note": "Q1"},
+                    {"label": "Cost", "value": "80", "note": "Q1"},
+                ],
+                "insights": [],
+            }
+        )
+        fake_slide = Mock()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            chart_path = Path(temp_dir) / "chart.png"
+            chart_path.write_bytes(b"png")
+            with (
+                patch("tools.sie_autoppt.v2.renderers.stats_dashboard.add_blank_slide", return_value=fake_slide),
+                patch("tools.sie_autoppt.v2.renderers.stats_dashboard.fill_background"),
+                patch("tools.sie_autoppt.v2.renderers.stats_dashboard.add_card"),
+                patch("tools.sie_autoppt.v2.renderers.stats_dashboard.add_bullet_list"),
+                patch("tools.sie_autoppt.v2.renderers.stats_dashboard.add_page_number"),
+                patch("tools.sie_autoppt.v2.renderers.stats_dashboard.add_textbox"),
+                patch("tools.sie_autoppt.v2.renderers.stats_dashboard._build_metrics_chart_image", return_value=chart_path),
+            ):
+                render_stats_dashboard(self._ctx(), slide_data)
+        fake_slide.shapes.add_picture.assert_called()
 
     def test_render_title_image_uses_placeholder_when_local_image_missing(self):
         slide_data = TitleImageSlide.model_validate(

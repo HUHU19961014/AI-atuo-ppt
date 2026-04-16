@@ -1,17 +1,28 @@
-from __future__ import annotations
+from pathlib import Path
 
-from importlib import import_module
-from typing import Any
-
-_LEGACY_MODULE = "tools.sie_autoppt.legacy.pipeline"
-_EXPORTED = ("build_deck_plan", "plan_deck_from_html", "plan_deck_from_json")
+from .deck_spec_io import load_deck_spec
+from .models import DeckPlan
+from .planning.deck_planner import build_deck_spec_from_html, build_directory_lines
 
 
-def __getattr__(name: str) -> Any:
-    if name not in _EXPORTED:
-        raise AttributeError(name)
-    module = import_module(_LEGACY_MODULE)
-    return getattr(module, name)
+def build_deck_plan(deck) -> DeckPlan:
+    body_pages = deck.body_pages
+    return DeckPlan(
+        deck=deck,
+        chapter_lines=build_directory_lines(body_pages),
+        pattern_ids=[page.pattern_id for page in body_pages],
+    )
 
 
-__all__ = list(_EXPORTED)
+def plan_deck_from_html(html_path: Path, chapters: int | None = None) -> DeckPlan:
+    html = html_path.read_text(encoding="utf-8")
+    deck = build_deck_spec_from_html(html, chapters)
+    return build_deck_plan(deck)
+
+
+def plan_deck_from_json(deck_spec_path: Path) -> DeckPlan:
+    deck = load_deck_spec(deck_spec_path)
+    return build_deck_plan(deck)
+
+
+__all__ = ["build_deck_plan", "plan_deck_from_html", "plan_deck_from_json"]

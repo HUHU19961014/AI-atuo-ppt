@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import mimetypes
@@ -6,8 +7,9 @@ import os
 import threading
 import time
 from base64 import b64encode
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
+from threading import Lock
 from typing import Any
 from urllib import error, request
 from urllib.parse import urlparse
@@ -44,6 +46,46 @@ class AnthropicVisionConfig:
     base_url: str
     model: str
     timeout_sec: float
+
+
+@dataclass(frozen=True)
+class LLMUsageStats:
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
+def extract_usage_stats(payload: dict[str, Any]) -> dict[str, int]:
+    usage_payload = payload.get("usage") if isinstance(payload, dict) else None
+    if not isinstance(usage_payload, dict):
+        return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    def _to_int(value: Any) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
+
+    input_tokens = _to_int(usage_payload.get("input_tokens", usage_payload.get("prompt_tokens", 0)))
+    output_tokens = _to_int(usage_payload.get("output_tokens", usage_payload.get("completion_tokens", 0)))
+    total_tokens = _to_int(usage_payload.get("total_tokens", input_tokens + output_tokens))
+    if total_tokens == 0:
+        total_tokens = input_tokens + output_tokens
+    return {"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens}
+
+
+def _estimate_cost_usd_from_usage(usage: dict[str, int]) -> float:
+    try:
+        input_price = float(os.environ.get("SIE_AUTOPPT_LLM_PRICE_INPUT_PER_1K", "0") or "0")
+        output_price = float(os.environ.get("SIE_AUTOPPT_LLM_PRICE_OUTPUT_PER_1K", "0") or "0")
+    except ValueError:
+        return 0.0
+    if input_price <= 0 and output_price <= 0:
+        return 0.0
+    return (
+        (usage.get("input_tokens", 0) / 1000.0) * max(0.0, input_price)
+        + (usage.get("output_tokens", 0) / 1000.0) * max(0.0, output_price)
+    )
 
 
 def _allows_empty_api_key(base_url: str) -> bool:
@@ -285,8 +327,155 @@ def format_openai_http_error(status_code: int, detail: str) -> str:
 
 
 class OpenAIResponsesClient:
+    _usage_lock = Lock()
+    _session_input_tokens = 0
+    _session_output_tokens = 0
+    _session_total_tokens = 0
+    _session_total_cost_usd = 0.0
+
     def __init__(self, config: OpenAIResponsesConfig):
         self._config = config
+
+    @classmethod
+    def reset_usage_counters(cls) -> None:
+        with cls._usage_lock:
+            cls._session_input_tokens = 0
+            cls._session_output_tokens = 0
+            cls._session_total_tokens = 0
+            cls._session_total_cost_usd = 0.0
+
+    @classmethod
+    def usage_counters(cls) -> dict[str, float]:
+        with cls._usage_lock:
+            return {
+                "input_tokens": float(cls._session_input_tokens),
+                "output_tokens": float(cls._session_output_tokens),
+                "total_tokens": float(cls._session_total_tokens),
+                "total_cost_usd": float(cls._session_total_cost_usd),
+            }
+
+    def _token_budget_limit(self) -> int:
+        raw = os.environ.get("SIE_AUTOPPT_LLM_TOKEN_BUDGET", "").strip()
+        if not raw:
+            return 0
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return 0
+
+    def _cost_budget_limit(self) -> float:
+        raw = os.environ.get("SIE_AUTOPPT_LLM_COST_BUDGET_USD", "").strip()
+        if not raw:
+            return 0.0
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            return 0.0
+
+    def _usage_log_path(self) -> Path | None:
+        raw = os.environ.get("SIE_AUTOPPT_LLM_USAGE_LOG_PATH", "").strip()
+        if not raw:
+            return None
+        return Path(raw)
+
+    def _cache_enabled(self) -> bool:
+        return os.environ.get("SIE_AUTOPPT_LLM_CACHE_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def _cache_dir(self) -> Path:
+        raw = os.environ.get("SIE_AUTOPPT_LLM_CACHE_DIR", ".tmp_llm_cache").strip() or ".tmp_llm_cache"
+        return Path(raw)
+
+    def _cache_key(self, route: str, payload: dict[str, Any]) -> str:
+        raw = json.dumps(
+            {
+                "base_url": self._config.base_url,
+                "model": self._config.model,
+                "api_style": self._config.api_style,
+                "route": route,
+                "payload": payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def _cache_path(self, route: str, payload: dict[str, Any]) -> Path:
+        return self._cache_dir() / f"{self._cache_key(route, payload)}.json"
+
+    def _try_load_cached_response(self, route: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        if not self._cache_enabled():
+            return None
+        cache_path = self._cache_path(route, payload)
+        if not cache_path.exists():
+            return None
+        try:
+            data = json.loads(cache_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if isinstance(data, dict):
+            return data
+        return None
+
+    def _save_cached_response(self, route: str, payload: dict[str, Any], response_payload: dict[str, Any]) -> None:
+        if not self._cache_enabled():
+            return
+        cache_dir = self._cache_dir()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = self._cache_path(route, payload)
+        cache_path.write_text(json.dumps(response_payload, ensure_ascii=False), encoding="utf-8")
+
+    def _append_usage_log(self, *, route: str, usage: dict[str, int], cost_usd: float) -> None:
+        log_path = self._usage_log_path()
+        if log_path is None:
+            return
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "timestamp": int(time.time()),
+            "route": route,
+            "model": self._config.model,
+            "base_url": self._config.base_url,
+            "usage": usage,
+            "estimated_cost_usd": cost_usd,
+            "session_totals": self.usage_counters(),
+        }
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def _enforce_budget_pre_request(self) -> None:
+        token_budget = self._token_budget_limit()
+        cost_budget = self._cost_budget_limit()
+        with self._usage_lock:
+            if token_budget and self._session_total_tokens >= token_budget:
+                raise OpenAIResponsesError(
+                    f"LLM token budget exceeded: {self._session_total_tokens}/{token_budget} tokens used in this process."
+                )
+            if cost_budget and self._session_total_cost_usd >= cost_budget:
+                raise OpenAIResponsesError(
+                    f"LLM cost budget exceeded: ${self._session_total_cost_usd:.6f}/${cost_budget:.6f} used in this process."
+                )
+
+    def _record_usage(self, *, route: str, payload: dict[str, Any]) -> None:
+        usage = extract_usage_stats(payload)
+        cost_usd = _estimate_cost_usd_from_usage(usage)
+        with self._usage_lock:
+            self._session_input_tokens += usage["input_tokens"]
+            self._session_output_tokens += usage["output_tokens"]
+            self._session_total_tokens += usage["total_tokens"]
+            self._session_total_cost_usd += cost_usd
+            token_budget = self._token_budget_limit()
+            cost_budget = self._cost_budget_limit()
+            over_token_budget = bool(token_budget and self._session_total_tokens > token_budget)
+            over_cost_budget = bool(cost_budget and self._session_total_cost_usd > cost_budget)
+        self._append_usage_log(route=route, usage=usage, cost_usd=cost_usd)
+        if over_token_budget:
+            raise OpenAIResponsesError(
+                f"LLM token budget exceeded after this call: {self._session_total_tokens}/{token_budget}."
+            )
+        if over_cost_budget:
+            raise OpenAIResponsesError(
+                f"LLM cost budget exceeded after this call: ${self._session_total_cost_usd:.6f}/${cost_budget:.6f}."
+            )
 
     def create_structured_json(
         self,
@@ -475,6 +664,12 @@ class OpenAIResponsesClient:
         return content
 
     def _post_json(self, route: str, payload: dict[str, Any]) -> dict[str, Any]:
+        cached = self._try_load_cached_response(route, payload)
+        if cached is not None:
+            self._record_usage(route=route, payload=cached)
+            return cached
+
+        self._enforce_budget_pre_request()
         raw_body = json.dumps(payload).encode("utf-8")
         req = request.Request(
             url=f"{self._config.base_url}{route}",
@@ -498,6 +693,8 @@ class OpenAIResponsesClient:
                     raise OpenAIResponsesError(f"Responses API returned invalid JSON: {exc}") from exc
                 if not isinstance(data, dict):
                     raise OpenAIResponsesError("Responses API returned a non-object JSON payload.")
+                self._save_cached_response(route, payload, data)
+                self._record_usage(route=route, payload=data)
                 return data
 
             except error.HTTPError as exc:

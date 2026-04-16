@@ -5,9 +5,9 @@ from pathlib import Path
 
 from .openxml_slide_ops import copy_slide_xml_assets, import_slides_from_presentation, slide_assets_preserved
 from .body_renderers import resolve_render_pattern
-from ..models import BodyPageSpec, PageRenderTrace
+from .models import BodyPageSpec, PageRenderTrace
 from .reference_styles import build_reference_import_plan
-from ..template_manifest import TemplateManifest
+from .template_manifest import TemplateManifest
 
 
 LEGACY_CLONE_DEPRECATION_MESSAGE = (

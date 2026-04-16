@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from tools.sie_autoppt.legacy.reference_styles import fill_reference_style_slide
+from tools.sie_autoppt.reference_styles import fill_reference_style_slide
 from tools.sie_autoppt.models import BodyPageSpec
 
 
@@ -16,7 +16,7 @@ class ReferenceStylesPayloadValidationTests(unittest.TestCase):
             reference_style_id=None,
             payload={"metrics": [{"label": "OTD", "value": "95%"}]},
         )
-        with patch("tools.sie_autoppt.legacy.reference_styles.validate_body_page_payload") as validate_payload:
+        with patch("tools.sie_autoppt.reference_styles.validate_body_page_payload") as validate_payload:
             result = fill_reference_style_slide(slide=None, page=page)
         self.assertFalse(result)
         validate_payload.assert_called_once()

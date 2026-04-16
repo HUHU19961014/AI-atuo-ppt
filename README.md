@@ -7,6 +7,11 @@ AI-assisted planning plus deterministic PowerPoint rendering for enterprise-grad
 
 > Diagram note: all flowcharts use default Mermaid styling without hard-coded fill colors, so they stay readable in browser light mode and dark mode.
 
+<p align="center">
+  <img src="./assets/readme/overview-light.svg#gh-light-mode-only" alt="Enterprise-AI-PPT release overview (light mode)" width="100%" />
+  <img src="./assets/readme/overview-dark.svg#gh-dark-mode-only" alt="Enterprise-AI-PPT release overview (dark mode)" width="100%" />
+</p>
+
 Documentation quick links:
 
 - `docs/CLI_REFERENCE.md`
@@ -32,7 +37,6 @@ The current product direction is **V2-first**:
 - Local compilers choose schema-safe layouts.
 - SVG-primary pipeline generates editable PowerPoint files (`svg_output -> svg_final -> pptx`).
 - Quality gates, content rewriting, and visual review loops help catch issues before delivery.
-- Legacy/SIE template delivery remains available, but it is isolated behind compatibility boundaries.
 
 ### Best-Fit Use Cases
 
@@ -64,7 +68,6 @@ flowchart TB
     User[User input] --> CLI[CLI]
     CLI --> Clarifier[Clarifier]
     CLI --> V2[V2 semantic pipeline]
-    CLI --> SIE[SIE template delivery]
 
     V2 --> Outline[Outline JSON]
     Outline --> Semantic[Semantic deck JSON]
@@ -73,17 +76,12 @@ flowchart TB
     Deck --> Renderer[SVG primary exporter]
     Renderer --> Review[Quality gate and visual review]
 
-    SIE --> DeckSpec[DeckSpec]
-    DeckSpec --> TemplateRenderer[Actual SIE template renderer]
-
-    Legacy[Legacy compatibility modules] --> SIE
 ```
 
 ### Current Capabilities
 
 - One-shot topic-to-PPT generation through the SVG-primary V2 pipeline.
 - Step-by-step generation: outline, semantic deck, compiled deck, render.
-- Legacy-compatible SIE template rendering through `sie-render` (non-default path).
 - Single-page SIE business slide generation through `onepage`.
 - Clarification flow for vague requests.
 - Local deterministic layout compilation.
@@ -96,6 +94,10 @@ flowchart TB
 - Visual review provider switch: `--vision-provider auto|openai|claude`.
 - Built-in fixed consulting theme `sie_consulting_fixed` aligned with SIE red/blue-gray palette and Microsoft YaHei typography.
 - Optional `svg-export` bridge command to run `ppt-master` SVG-to-PPTX conversion from this repo CLI.
+- Docker fallback for visual preview export when host `soffice`/COM is unavailable.
+- LLM usage accounting with token/cost budgets, request cache, and usage JSONL logging.
+- Real-model golden dataset test entry for repeatable end-to-end baseline checks.
+- Stats dashboard optional chart rendering (matplotlib), with automatic fallback.
 
 ### Install
 
@@ -157,12 +159,6 @@ Useful optional variables:
 
 ### Quick Start
 
-Run a no-AI smoke test:
-
-```powershell
-enterprise-ai-ppt demo
-```
-
 Generate a full V2 deck:
 
 ```powershell
@@ -172,14 +168,6 @@ enterprise-ai-ppt make `
   --generation-mode deep `
   --min-slides 6 `
   --max-slides 8
-```
-
-Compatibility path: render with the actual SIE template:
-
-```powershell
-enterprise-ai-ppt sie-render `
-  --topic "Supply chain traceability program" `
-  --brief "Customer proposal covering regulatory pressure, pain points, architecture, implementation path, and value."
 ```
 
 Run visual review on an existing deck JSON:
@@ -270,18 +258,7 @@ enterprise-ai-ppt clarify `
 enterprise-ai-ppt clarify-web
 ```
 
-#### 4. Actual SIE Template Delivery
-
-Use this when the output must use the real SIE PPTX template.
-
-```powershell
-enterprise-ai-ppt sie-render `
-  --structure-json .\projects\generated\traceability.structure.json `
-  --topic "Supply chain traceability proposal" `
-  --ppt-output .\projects\generated\Traceability_SIE_Template.pptx
-```
-
-#### 5. Review And Iterate
+#### 4. Review And Iterate
 
 Use this after you already have a deck JSON.
 
@@ -300,13 +277,11 @@ enterprise-ai-ppt v2-iterate `
 
 | Command | Purpose | Needs AI | Main output |
 |---|---|---:|---|
-| `demo` | Render bundled sample deck | No | `.pptx`, logs, warning JSON |
 | `make` | Default one-shot generation (`AI -> SVG -> PPTX`) | Yes | outline, semantic deck, compiled deck, `.pptx` |
 | `review` | One-pass visual review alias for `v2-review` | No | review JSON, patch JSON |
 | `iterate` | Multi-round review alias for `v2-iterate` | No | final review, patched deck, `.pptx` |
 | `visual-draft` | Generate VisualSpec + HTML draft + screenshot + rule score (AI review optional) | No (optional) | `.visual_spec.json`, `.preview.html`, `.preview.png`, scoring JSON |
 | `onepage` | Generate one SIE-style business slide | Optional | one-page `.pptx` |
-| `sie-render` | Compatibility SIE template delivery path | Optional | SIE-template `.pptx`, trace JSON |
 | `clarify` | Clarify vague requirements | Optional | clarifier session JSON |
 | `clarify-web` | Browser UI for clarification | Optional | local web app |
 | `v2-outline` | Generate outline only | Yes | outline JSON |
@@ -383,7 +358,6 @@ enterprise-ai-ppt make `
 | [main.py](./main.py) | Local entrypoint wrapper |
 | [tools/sie_autoppt](./tools/sie_autoppt/) | Main Python package |
 | [tools/sie_autoppt/v2](./tools/sie_autoppt/v2/) | V2 semantic pipeline, renderer, quality checks, visual review |
-| [tools/sie_autoppt/legacy](./tools/sie_autoppt/legacy/) | Isolated legacy/SIE compatibility implementation |
 | [assets/templates](./assets/templates/) | SIE template and manifest assets |
 | [samples](./samples/) | Sample input and deck fixtures |
 | [docs](./docs/) | Architecture, CLI, compatibility, and QA docs |
@@ -425,7 +399,7 @@ enterprise-ai-ppt ai-check `
 ### Current Boundaries
 
 - Use `make`, `v2-*`, `review`, and `iterate` for the active V2 semantic path.
-- Use `sie-render` or `onepage` when the actual SIE template output is required.
+- Use `onepage` only for single-slide fast delivery when needed.
 - Legacy HTML/template internals are retained for compatibility, but they are not the recommended user path.
 - Renderer coordinates are local implementation details. AI outputs semantic content, not raw geometry.
 
@@ -436,6 +410,14 @@ enterprise-ai-ppt ai-check `
 ### 项目定位
 
 `Enterprise-AI-PPT` 是面向企业汇报场景的 AI PPT 生成与交付工具。当前默认走 **V2 SVG 主链路**：`AI -> SVG -> PPTX`，目标是输出可编辑、可复核、可追溯的交付件。
+
+### 本次发布亮点
+
+- 视觉复核新增容器化导图兜底：本机缺少 `LibreOffice/COM` 时可走 Docker。
+- 渲染层新增轻量布局 DSL 基础（`Box/Grid`），降低后续新布局接入成本。
+- 增加真实模型 golden dataset 测试入口，用于持续跟踪端到端质量。
+- 增加 LLM token/cost 预算控制、请求缓存与 usage 日志。
+- `stats_dashboard` 增强：可选 matplotlib 图表渲染，缺依赖时自动回退。
 
 ### 推荐入口
 
@@ -465,7 +447,6 @@ $env:OPENAI_BASE_URL="http://localhost:8000/v1"
 - 固定主题 `sie_consulting_fixed`（配色与字体约束）。
 - 超过 6 条要点自动拆页（每页 4-6 条）。
 - 视觉复核支持 `auto/openai/claude` provider 切换。
-- `sie-render` 保留为兼容路径（非默认）。
 
 ### 常用命令
 

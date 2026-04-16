@@ -226,6 +226,26 @@ class V2VisualReviewTests(unittest.TestCase):
 
         self.assertEqual(previews, [])
 
+    def test_export_slide_previews_uses_docker_fallback_when_enabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pptx_path = Path(temp_dir) / "deck.pptx"
+            pptx_path.write_bytes(b"fake-pptx")
+            output_dir = Path(temp_dir) / "previews"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "slide1.png").write_bytes(b"png")
+            completed = type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+            with (
+                patch("tools.sie_autoppt.v2.visual_review.platform.system", return_value="Linux"),
+                patch("tools.sie_autoppt.v2.visual_review.shutil.which", side_effect=lambda cmd: None if cmd == "soffice" else "docker"),
+                patch.dict("os.environ", {"SIE_AUTOPPT_VISUAL_REVIEW_DOCKER_ENABLED": "1"}, clear=False),
+                patch("tools.sie_autoppt.v2.visual_review.subprocess.run", return_value=completed) as run_mock,
+            ):
+                previews = export_slide_previews(pptx_path, output_dir)
+
+        self.assertEqual(len(previews), 1)
+        docker_cmd = run_mock.call_args.args[0]
+        self.assertEqual(docker_cmd[0], "docker")
+
     def test_export_slide_previews_passes_timeout_to_subprocess(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             pptx_path = Path(temp_dir) / "deck.pptx"

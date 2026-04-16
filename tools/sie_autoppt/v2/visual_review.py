@@ -49,6 +49,7 @@ EXTENDED_REVIEW_DIMENSIONS = BASELINE_REVIEW_DIMENSIONS + (
 )
 VISUAL_REVIEW_DIMENSIONS = EXTENDED_REVIEW_DIMENSIONS
 DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC = 120
+DEFAULT_VISUAL_REVIEW_DOCKER_IMAGE = "libreoffice-docker:latest"
 
 
 class StructuredJsonProvider(Protocol):
@@ -279,25 +280,73 @@ def export_slide_previews(pptx_path: Path, output_dir: Path) -> list[Path]:
         if result.returncode != 0:
             raise RuntimeError(f"Failed to export slide previews: {(result.stderr or result.stdout).strip()}")
     else:
-        if shutil.which("soffice") is None:
+        soffice_path = shutil.which("soffice")
+        if soffice_path is not None:
+            try:
+                result = subprocess.run(
+                    ["soffice", "--headless", "--convert-to", "png", "--outdir", str(output_dir), str(pptx_path)],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError(f"Failed to export slide previews: timed out after {DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC}s") from exc
+            if result.returncode != 0:
+                raise RuntimeError(f"Failed to export slide previews: {(result.stderr or result.stdout).strip()}")
+        elif _docker_preview_export_enabled() and shutil.which("docker") is not None:
+            _export_slide_previews_with_docker(pptx_path=pptx_path, output_dir=output_dir)
+        else:
             return []
-        try:
-            result = subprocess.run(
-                ["soffice", "--headless", "--convert-to", "png", "--outdir", str(output_dir), str(pptx_path)],
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(f"Failed to export slide previews: timed out after {DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC}s") from exc
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to export slide previews: {(result.stderr or result.stdout).strip()}")
 
     previews = sorted(output_dir.glob("slide*.png"))
     if not previews:
         raise RuntimeError(f"No slide previews were generated for {pptx_path}")
     return previews
+
+
+def _docker_preview_export_enabled() -> bool:
+    return os.environ.get("SIE_AUTOPPT_VISUAL_REVIEW_DOCKER_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _export_slide_previews_with_docker(*, pptx_path: Path, output_dir: Path) -> None:
+    image = os.environ.get("SIE_AUTOPPT_VISUAL_REVIEW_DOCKER_IMAGE", DEFAULT_VISUAL_REVIEW_DOCKER_IMAGE).strip()
+    if not image:
+        image = DEFAULT_VISUAL_REVIEW_DOCKER_IMAGE
+    pptx_parent = str(pptx_path.resolve().parent)
+    out_parent = str(output_dir.resolve().parent)
+    input_name = pptx_path.resolve().name
+    out_dir_name = output_dir.resolve().name
+    command = [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{pptx_parent}:/input:ro",
+        "-v",
+        f"{out_parent}:/output",
+        image,
+        "soffice",
+        "--headless",
+        "--convert-to",
+        "png",
+        "--outdir",
+        f"/output/{out_dir_name}",
+        f"/input/{input_name}",
+    ]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        result = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"Failed to export slide previews via Docker: timed out after {DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC}s") from exc
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to export slide previews via Docker: {(result.stderr or result.stdout).strip()}")
 
 
 def _build_preview_fallback_note(reason: str | None = None) -> str:

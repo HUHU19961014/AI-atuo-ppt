@@ -20,6 +20,97 @@ from tools.sie_autoppt.llm_openai import (
 
 
 class OpenAIResponsesTests(unittest.TestCase):
+    def test_extract_usage_stats_handles_responses_payload(self):
+        from tools.sie_autoppt.llm_openai import extract_usage_stats
+
+        usage = extract_usage_stats({"usage": {"input_tokens": 120, "output_tokens": 80, "total_tokens": 200}})
+        self.assertEqual(usage["input_tokens"], 120)
+        self.assertEqual(usage["output_tokens"], 80)
+        self.assertEqual(usage["total_tokens"], 200)
+
+    def test_extract_usage_stats_handles_chat_completions_payload(self):
+        from tools.sie_autoppt.llm_openai import extract_usage_stats
+
+        usage = extract_usage_stats({"usage": {"prompt_tokens": 45, "completion_tokens": 55, "total_tokens": 100}})
+        self.assertEqual(usage["input_tokens"], 45)
+        self.assertEqual(usage["output_tokens"], 55)
+        self.assertEqual(usage["total_tokens"], 100)
+
+    def test_post_json_uses_file_cache_when_enabled(self):
+        import tempfile
+
+        client = OpenAIResponsesClient(
+            OpenAIResponsesConfig(
+                api_key="sk-test",
+                base_url="https://api.openai.com/v1",
+                model="gpt-4o-mini",
+                timeout_sec=30,
+                reasoning_effort="low",
+                text_verbosity="low",
+                api_style="responses",
+            )
+        )
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'{"output_text":"{\\"ok\\":true}","usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}'
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            "os.environ",
+            {"SIE_AUTOPPT_LLM_CACHE_ENABLED": "1", "SIE_AUTOPPT_LLM_CACHE_DIR": temp_dir},
+            clear=False,
+        ), patch("tools.sie_autoppt.llm_openai.request.urlopen", return_value=_Response()) as urlopen_mock:
+            first = client._post_json("/responses", {"k": "v"})
+            second = client._post_json("/responses", {"k": "v"})
+
+        self.assertEqual(first["output_text"], second["output_text"])
+        self.assertEqual(urlopen_mock.call_count, 1)
+
+    def test_post_json_enforces_token_budget(self):
+        import tempfile
+
+        OpenAIResponsesClient.reset_usage_counters()
+        client = OpenAIResponsesClient(
+            OpenAIResponsesConfig(
+                api_key="sk-test",
+                base_url="https://api.openai.com/v1",
+                model="gpt-4o-mini",
+                timeout_sec=30,
+                reasoning_effort="low",
+                text_verbosity="low",
+                api_style="responses",
+            )
+        )
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'{"output_text":"{\\"ok\\":true}","usage":{"input_tokens":6,"output_tokens":4,"total_tokens":10}}'
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            "os.environ",
+            {
+                "SIE_AUTOPPT_LLM_CACHE_ENABLED": "0",
+                "SIE_AUTOPPT_LLM_CACHE_DIR": temp_dir,
+                "SIE_AUTOPPT_LLM_TOKEN_BUDGET": "10",
+            },
+            clear=False,
+        ), patch("tools.sie_autoppt.llm_openai.request.urlopen", return_value=_Response()):
+            client._post_json("/responses", {"k": "v"})
+            with self.assertRaises(OpenAIResponsesError):
+                client._post_json("/responses", {"k": "v2"})
+
     def test_extract_text_prefers_output_text(self):
         payload = {"output_text": '{"ok": true}'}
 

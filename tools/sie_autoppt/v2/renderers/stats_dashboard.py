@@ -1,7 +1,15 @@
-from __future__ import annotations
+﻿from __future__ import annotations
+
+import os
+import re
+import tempfile
+from pathlib import Path
+
+from pptx.util import Inches
 
 from ..schema import StatsDashboardSlide
 from .common import RenderContext, add_blank_slide, add_bullet_list, add_card, add_page_number, add_textbox, fill_background
+from .layout_dsl import Box, Grid
 from .layout_constants import STATS_DASHBOARD, TITLE_BAND
 
 
@@ -24,6 +32,55 @@ def _insights_title(slide_data: StatsDashboardSlide) -> str:
     )
     has_cjk = any("\u4e00" <= char <= "\u9fff" for char in probe_text)
     return "关键洞察" if has_cjk else "Key Insights"
+
+
+def _to_numeric_metric(value: str) -> float | None:
+    normalized = str(value or "").strip().replace(",", "")
+    if not normalized:
+        return None
+    is_percent = normalized.endswith("%")
+    if is_percent:
+        normalized = normalized[:-1]
+    match = re.search(r"-?\d+(?:\.\d+)?", normalized)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def _build_metrics_chart_image(slide_data: StatsDashboardSlide) -> Path | None:
+    enabled = os.environ.get("SIE_AUTOPPT_STATS_CHART_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
+    if not enabled:
+        return None
+
+    numeric_pairs: list[tuple[str, float]] = []
+    for metric in slide_data.metrics:
+        value = _to_numeric_metric(metric.value)
+        if value is not None:
+            numeric_pairs.append((metric.label, value))
+    if len(numeric_pairs) < 2:
+        return None
+
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except Exception:
+        return None
+
+    labels = [item[0] for item in numeric_pairs]
+    values = [item[1] for item in numeric_pairs]
+    temp_dir = Path(tempfile.mkdtemp(prefix="sie_stats_chart_"))
+    chart_path = temp_dir / "stats_dashboard_chart.png"
+    fig, ax = plt.subplots(figsize=(6.4, 2.2), dpi=150)
+    ax.bar(labels, values)
+    ax.tick_params(axis="x", labelrotation=20)
+    ax.grid(axis="y", linestyle="--", alpha=0.25)
+    ax.set_title("Metric Snapshot", fontsize=10)
+    fig.tight_layout()
+    fig.savefig(chart_path, format="png", transparent=True)
+    plt.close(fig)
+    return chart_path
 
 
 def render_stats_dashboard(
@@ -65,35 +122,32 @@ def render_stats_dashboard(
         )
 
     metrics_top = STATS_DASHBOARD.metrics_top
-    metrics_height = (
-        STATS_DASHBOARD.metrics_height_with_insights
-        if slide_data.insights
-        else STATS_DASHBOARD.metrics_height_without_insights
-    )
+    metrics_height = STATS_DASHBOARD.metrics_height_with_insights if slide_data.insights else STATS_DASHBOARD.metrics_height_without_insights
     metrics_width = STATS_DASHBOARD.metrics_width
     add_card(slide, STATS_DASHBOARD.metrics_card_left, metrics_top, metrics_width, metrics_height, theme)
 
     cols, rows = _metric_grid(len(slide_data.metrics))
-    gap_x = STATS_DASHBOARD.metric_gap_x
-    gap_y = STATS_DASHBOARD.metric_gap_y
-    card_width = (metrics_width - STATS_DASHBOARD.metric_horizontal_inset - gap_x * (cols - 1)) / cols
-    card_height = (metrics_height - STATS_DASHBOARD.metric_vertical_inset - gap_y * (rows - 1)) / rows
+    metrics_container = Box(
+        left=STATS_DASHBOARD.metrics_card_left,
+        top=metrics_top,
+        width=metrics_width,
+        height=metrics_height,
+    ).inset(
+        left=STATS_DASHBOARD.metric_outer_left_padding,
+        top=STATS_DASHBOARD.metric_outer_top_padding,
+        right=STATS_DASHBOARD.metric_horizontal_inset - STATS_DASHBOARD.metric_outer_left_padding,
+        bottom=STATS_DASHBOARD.metric_vertical_inset - STATS_DASHBOARD.metric_outer_top_padding,
+    )
+    metric_cells = Grid(columns=cols, rows=rows, gap_x=STATS_DASHBOARD.metric_gap_x, gap_y=STATS_DASHBOARD.metric_gap_y).cells(metrics_container)
 
     for index, metric in enumerate(slide_data.metrics):
-        row = index // cols
-        col = index % cols
-        left = (
-            STATS_DASHBOARD.metrics_card_left
-            + STATS_DASHBOARD.metric_outer_left_padding
-            + col * (card_width + gap_x)
-        )
-        top = metrics_top + STATS_DASHBOARD.metric_outer_top_padding + row * (card_height + gap_y)
-        add_card(slide, left, top, card_width, card_height, theme)
+        cell = metric_cells[index]
+        add_card(slide, cell.left, cell.top, cell.width, cell.height, theme)
         add_textbox(
             slide,
-            left=left + STATS_DASHBOARD.metric_label_left_padding,
-            top=top + STATS_DASHBOARD.metric_label_top_padding,
-            width=card_width - STATS_DASHBOARD.metric_label_left_padding * 2,
+            left=cell.left + STATS_DASHBOARD.metric_label_left_padding,
+            top=cell.top + STATS_DASHBOARD.metric_label_top_padding,
+            width=cell.width - STATS_DASHBOARD.metric_label_left_padding * 2,
             height=STATS_DASHBOARD.metric_label_height,
             text=metric.label,
             font_name=theme.fonts.body,
@@ -103,9 +157,9 @@ def render_stats_dashboard(
         )
         add_textbox(
             slide,
-            left=left + STATS_DASHBOARD.metric_label_left_padding,
-            top=top + STATS_DASHBOARD.metric_value_top_offset,
-            width=card_width - STATS_DASHBOARD.metric_label_left_padding * 2,
+            left=cell.left + STATS_DASHBOARD.metric_label_left_padding,
+            top=cell.top + STATS_DASHBOARD.metric_value_top_offset,
+            width=cell.width - STATS_DASHBOARD.metric_label_left_padding * 2,
             height=STATS_DASHBOARD.metric_value_height,
             text=metric.value,
             font_name=theme.fonts.title,
@@ -116,9 +170,9 @@ def render_stats_dashboard(
         if metric.note:
             add_textbox(
                 slide,
-                left=left + STATS_DASHBOARD.metric_label_left_padding,
-                top=top + card_height - STATS_DASHBOARD.metric_note_bottom_padding,
-                width=card_width - STATS_DASHBOARD.metric_label_left_padding * 2,
+                left=cell.left + STATS_DASHBOARD.metric_label_left_padding,
+                top=cell.top + cell.height - STATS_DASHBOARD.metric_note_bottom_padding,
+                width=cell.width - STATS_DASHBOARD.metric_label_left_padding * 2,
                 height=STATS_DASHBOARD.metric_note_height,
                 text=metric.note,
                 font_name=theme.fonts.body,
@@ -157,6 +211,36 @@ def render_stats_dashboard(
             theme=theme,
             font_size=theme.font_sizes.small,
         )
+    else:
+        chart_path = _build_metrics_chart_image(slide_data)
+        if chart_path is not None and chart_path.exists():
+            add_card(
+                slide,
+                STATS_DASHBOARD.insights_card.left,
+                STATS_DASHBOARD.insights_card.top,
+                STATS_DASHBOARD.insights_card.width,
+                STATS_DASHBOARD.insights_card.height,
+                theme,
+            )
+            add_textbox(
+                slide,
+                left=STATS_DASHBOARD.insights_title_left,
+                top=STATS_DASHBOARD.insights_title_top,
+                width=3.2,
+                height=STATS_DASHBOARD.insights_title_height,
+                text="Trend Snapshot",
+                font_name=theme.fonts.title,
+                font_size=theme.font_sizes.small + 1,
+                color_hex=theme.colors.secondary,
+                bold=True,
+            )
+            slide.shapes.add_picture(
+                str(chart_path),
+                Inches(STATS_DASHBOARD.chart_left),
+                Inches(STATS_DASHBOARD.chart_top),
+                Inches(STATS_DASHBOARD.chart_width),
+                Inches(STATS_DASHBOARD.chart_height),
+            )
 
     log.info(f"{slide_data.slide_id}: rendered semantic stats dashboard layout.")
     add_page_number(slide, slide_number, total_slides, theme)
