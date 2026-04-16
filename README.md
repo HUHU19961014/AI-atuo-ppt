@@ -411,6 +411,21 @@ enterprise-ai-ppt ai-check `
 
 `Enterprise-AI-PPT` 是面向企业汇报场景的 AI PPT 生成与交付工具。当前默认走 **V2 SVG 主链路**：`AI -> SVG -> PPTX`，目标是输出可编辑、可复核、可追溯的交付件。
 
+当前产品路线是 **V2-first**：
+
+- AI 负责叙事规划与语义内容生成。
+- 本地编译器负责 schema 安全与布局选择。
+- SVG 主流水线负责生成可编辑 PowerPoint（`svg_output -> svg_final -> pptx`）。
+- 质量门禁、内容重写、视觉复核循环用于交付前缺陷拦截。
+
+### 适用场景
+
+- 管理层经营汇报与专题复盘。
+- 咨询方案、售前提案、客户汇报。
+- 项目分阶段推进与里程碑沟通。
+- 行业研究、经营分析、转型规划。
+- 结构化材料到 PPT 的标准化转换。
+
 ### 本次发布亮点
 
 - 视觉复核新增容器化导图兜底：本机缺少 `LibreOffice/COM` 时可走 Docker。
@@ -419,19 +434,50 @@ enterprise-ai-ppt ai-check `
 - 增加 LLM token/cost 预算控制、请求缓存与 usage 日志。
 - `stats_dashboard` 增强：可选 matplotlib 图表渲染，缺依赖时自动回退。
 
-### 推荐入口
+### 功能总览
 
-- `make`: 默认一键生成（主链路）。
-- `review`: 单轮视觉复核。
-- `iterate`: 多轮复核与自动修复。
-- `svg-pipeline`: 对已有 SVG 项目执行 `split -> finalize -> export` 严格流水线。
+- 一键生成：`make` 直达可编辑 PPTX。
+- 分步生成：大纲、语义 deck、编译 deck、渲染可独立执行。
+- 单页交付：`onepage` 快速生成 SIE 风格单页。
+- 需求澄清：`clarify` / `clarify-web`。
+- 语义布局：`timeline`、`stats_dashboard`、`matrix_grid`、`cards_grid`、`two_columns`、`title_image`、`title_content`、`title_only`、`section_break`。
+- 规则质检 + 自动重写 + 多轮视觉复核。
+- 视觉复核 provider 可切换：`auto|openai|claude`。
+- 固定主主题：`sie_consulting_fixed`。
 
-### 环境变量
-
-`OPENAI_API_KEY` 默认可选。若上游要求显式鉴权再设置；若要恢复强制本地 key，可设置：
+### 安装
 
 ```powershell
-$env:SIE_AUTOPPT_REQUIRE_API_KEY="1"
+python -m venv .venv
+.\.venv\Scripts\activate
+python -m pip install --upgrade pip
+python -m pip install -e .[dev]
+```
+
+安装后命令：
+
+- `enterprise-ai-ppt`
+- `sie-autoppt`
+
+也可直接运行：
+
+```powershell
+python .\main.py --help
+```
+
+可选 Web 预览：
+
+```powershell
+python -m pip install -e .[ui]
+python -m streamlit run .\web\streamlit_app.py
+```
+
+### 环境配置
+
+`OPENAI_API_KEY` 默认可选；上游要求显式鉴权时再设置：
+
+```powershell
+$env:OPENAI_API_KEY="your-api-key"
 ```
 
 可选网关地址：
@@ -440,26 +486,144 @@ $env:SIE_AUTOPPT_REQUIRE_API_KEY="1"
 $env:OPENAI_BASE_URL="http://localhost:8000/v1"
 ```
 
-### 核心能力
-
-- 语义化大纲与页面内容生成。
-- 本地确定性编译与布局。
-- 固定主题 `sie_consulting_fixed`（配色与字体约束）。
-- 超过 6 条要点自动拆页（每页 4-6 条）。
-- 视觉复核支持 `auto/openai/claude` provider 切换。
-
-### 常用命令
+私有网关示例：
 
 ```powershell
-python .\main.py make --topic "企业 AI 战略汇报"
-python .\main.py review --deck-json .\output\generated_deck.json --vision-provider auto
-python .\main.py svg-pipeline --svg-project-path .\projects\ppt-master\examples\demo_project_intro_ppt169_20251211
+$env:OPENAI_BASE_URL="https://llm-gateway.internal.company/v1"
+$env:OPENAI_API_KEY="internal-gateway-token"
 ```
 
-### 文档导航
+常用可选变量：
+
+- `SIE_AUTOPPT_LLM_MODEL`
+- `SIE_AUTOPPT_LLM_TIMEOUT_SEC`
+- `SIE_AUTOPPT_LLM_REASONING_EFFORT`
+- `SIE_AUTOPPT_LLM_VERBOSITY`
+- `SIE_AUTOPPT_LLM_TOKEN_BUDGET`
+- `SIE_AUTOPPT_LLM_COST_BUDGET_USD`
+- `SIE_AUTOPPT_LLM_CACHE_ENABLED`
+- `SIE_AUTOPPT_LLM_USAGE_LOG_PATH`
+
+### 快速开始
+
+一键生成完整 V2 deck：
+
+```powershell
+enterprise-ai-ppt make `
+  --topic "企业 AI 战略落地路线图" `
+  --brief "面向管理层，覆盖现状问题、目标架构、分阶段落地与价值评估" `
+  --generation-mode deep `
+  --min-slides 6 `
+  --max-slides 8
+```
+
+对已有 deck 执行单轮视觉复核：
+
+```powershell
+enterprise-ai-ppt review `
+  --deck-json .\output\generated_deck.json
+```
+
+执行多轮复核与自动修复：
+
+```powershell
+enterprise-ai-ppt iterate `
+  --deck-json .\output\generated_deck.json `
+  --max-rounds 2
+```
+
+执行 SVG 严格导出流水线：
+
+```powershell
+enterprise-ai-ppt svg-pipeline `
+  --svg-project-path .\projects\ppt-master\examples\demo_project_intro_ppt169_20251211
+```
+
+### 主命令矩阵
+
+| 命令 | 用途 | 需要 AI | 主要输出 |
+|---|---|---:|---|
+| `make` | 默认一键生成（`AI -> SVG -> PPTX`） | 是 | outline/semantic/compiled/pptx |
+| `review` | 单轮视觉复核（`v2-review` 别名） | 否 | review JSON、patch JSON |
+| `iterate` | 多轮复核与修复（`v2-iterate` 别名） | 否 | final review、patched deck、pptx |
+| `visual-draft` | 生成 VisualSpec + HTML 预览 + 截图 + 评分 | 可选 | visual artifacts |
+| `onepage` | 生成单页业务 PPT | 可选 | onepage pptx |
+| `v2-outline` | 仅生成大纲 | 是 | outline JSON |
+| `v2-plan` | 生成大纲 + 语义 + 编译 deck | 是 | JSON artifacts |
+| `v2-compile` | 语义 deck 转编译 deck | 否 | compiled deck JSON |
+| `v2-render` | 从语义或编译 deck 渲染 PPTX | 否 | pptx |
+| `v2-make` | 显式一键生成 | 是 | JSON artifacts + pptx |
+| `ai-check` | AI 连通性与链路健康检查 | 是 | healthcheck JSON |
+
+### 中间产物
+
+- `outline.json`：叙事结构。
+- `semantic_deck.json`：AI 语义契约。
+- `compiled_deck.json`：渲染契约。
+- `.pptx`：可编辑交付件。
+- `warnings/rewrite/review/patch` JSON：质检与追溯材料。
+
+### 质量体系
+
+- 规则质检：检测 schema 错误、溢出风险、密度问题、重复页面、弱开场/弱结尾、缺失数据来源等。
+- 视觉复核：基于 9 维评分卡产出 blocker/warning，并驱动 patch。
+- `errors` 为硬阻断；`warnings/high` 为软信号。
+
+### 主题
+
+主题目录：`tools/sie_autoppt/v2/themes/`。  
+当前生产主路径使用固定主题：
+
+- `sie_consulting_fixed`
+
+### 仓库结构
+
+| 路径 | 说明 |
+|---|---|
+| [main.py](./main.py) | 本地入口 |
+| [tools/sie_autoppt](./tools/sie_autoppt/) | 主 Python 包 |
+| [tools/sie_autoppt/v2](./tools/sie_autoppt/v2/) | V2 语义链路、渲染、质检、复核 |
+| [assets/templates](./assets/templates/) | 模板与 manifest |
+| [samples](./samples/) | 样例输入与回归样例 |
+| [docs](./docs/) | 架构、CLI、兼容性、测试文档 |
+| [tests](./tests/) | 测试集 |
+
+### 关键文档
 
 - [CLI Reference](./docs/CLI_REFERENCE.md)
+- [API Reference](./docs/API_REFERENCE.md)
 - [Deck JSON Spec](./docs/DECK_JSON_SPEC.md)
-- [Legacy Boundary](./docs/LEGACY_BOUNDARY.md)
-- [LLM Compatibility](./docs/LLM_COMPATIBILITY.md)
 - [Testing](./docs/TESTING.md)
+- [LLM Compatibility](./docs/LLM_COMPATIBILITY.md)
+- [LLM 成本控制](./docs/LLM_COST_CONTROL.md)
+- [视觉复核容器化](./docs/VISUAL_REVIEW_CONTAINER.md)
+- [Compatibility](./docs/COMPATIBILITY.md)
+
+### 开发与验证
+
+运行全量测试：
+
+```powershell
+python -m pytest -q
+```
+
+运行核心回归：
+
+```powershell
+python -m pytest tests/test_cli.py tests/test_v2_services.py tests/test_v2_visual_review.py -q
+```
+
+运行健康检查：
+
+```powershell
+enterprise-ai-ppt ai-check `
+  --topic "企业 AI 汇报链路健康检查" `
+  --with-render
+```
+
+### 当前边界
+
+- 主路径优先 `make`、`v2-*`、`review`、`iterate`。
+- `onepage` 用于单页快交付，不作为完整 deck 主路径替代。
+- legacy HTML/template 仅保留兼容层角色，不作为对外主推荐。
+- AI 输出语义内容，不直接产出底层几何坐标。
