@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
 import shutil
 import sys
 from dataclasses import asdict, replace
@@ -14,7 +16,6 @@ from .clarify_web import serve_clarifier_web
 from .cli_parser import build_main_parser
 from .cli_sie import handle_pre_v2_command
 from .cli_utils import (
-    build_fallback_structure_spec,
     build_template_output_stem,
     emit_progress,
     load_brief_text,
@@ -75,8 +76,9 @@ from .v2.services import ensure_generation_context
 from .v2.visual_review import apply_patch_set, iterate_visual_review, review_deck_once
 from .visual_service import generate_visual_draft_artifacts
 
+LOGGER = logging.getLogger(__name__)
+
 WORKFLOW_COMMANDS = (
-    "demo",
     "make",
     "onepage",
     "sie-render",
@@ -97,7 +99,6 @@ WORKFLOW_COMMANDS = (
 )
 PRIMARY_COMMANDS = ("make", "review", "iterate")
 ADVANCED_COMMANDS = (
-    "demo",
     "onepage",
     "sie-render",
     "v2-plan",
@@ -118,7 +119,6 @@ COMMAND_ALIASES = {
     "iterate": "v2-iterate",
 }
 DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC = 120
-DEMO_SAMPLE_DECK = PROJECT_ROOT / "samples" / "sample_deck_v2.json"
 
 
 def command_was_explicit(argv: list[str]) -> bool:
@@ -217,7 +217,7 @@ def resolve_v2_clarified_context(
         chapters=args.chapters,
         min_slides=args.min_slides,
         max_slides=args.max_slides,
-        prefer_llm=False,
+        prefer_llm=True,
     )
 
     if context.requirements.template:
@@ -245,31 +245,6 @@ def resolve_v2_clarified_context(
         context.max_slides,
         args.theme.strip() or context.requirements.theme or "business_red",
     )
-
-
-def run_demo_render(
-    *,
-    output_dir: Path,
-    output_prefix: str,
-    theme_name: str | None = None,
-    log_output: Path | None = None,
-    ppt_output: Path | None = None,
-) -> tuple[Path, Path, Path, Path]:
-    if not DEMO_SAMPLE_DECK.exists():
-        raise FileNotFoundError(f"bundled demo deck not found: {DEMO_SAMPLE_DECK}")
-
-    demo_output_dir = output_dir / "demo"
-    demo_prefix = f"{output_prefix}_demo"
-    final_log_output = log_output or build_log_output_path(demo_output_dir, demo_prefix)
-    final_ppt_output = ppt_output or build_ppt_output_path(demo_output_dir, demo_prefix)
-    deck = load_deck_document(DEMO_SAMPLE_DECK)
-    render_result = generate_v2_ppt(
-        deck,
-        output_path=final_ppt_output,
-        theme_name=theme_name,
-        log_path=final_log_output,
-    )
-    return DEMO_SAMPLE_DECK, render_result.rewrite_log_path, render_result.warnings_path, final_log_output, render_result.output_path
 
 
 def _build_ai_page_schema(candidate_pattern_ids: tuple[str, ...]) -> dict[str, object]:
@@ -377,6 +352,24 @@ def main():
     )
     emit_command_notice(explicit_command, args.command, effective_command)
 
+    # --- CLI AI overrides: patch env vars from --api-key / --base-url / --api-style ---
+    _patched_keys: list[str] = []
+    cli_api_key = getattr(args, "api_key", "").strip()
+    cli_base_url = getattr(args, "base_url", "").strip()
+    cli_api_style = getattr(args, "api_style", "").strip()
+    if cli_api_key:
+        os.environ["OPENAI_API_KEY"] = cli_api_key
+        _patched_keys.append("OPENAI_API_KEY")
+    if cli_base_url:
+        os.environ["OPENAI_BASE_URL"] = cli_base_url
+        _patched_keys.append("OPENAI_BASE_URL")
+    if cli_api_style:
+        os.environ["SIE_AUTOPPT_LLM_API_STYLE"] = cli_api_style
+        _patched_keys.append("SIE_AUTOPPT_LLM_API_STYLE")
+    if _patched_keys:
+        LOGGER.info("CLI AI overrides applied: %s", ", ".join(_patched_keys))
+        print(f"[config] AI overrides from CLI: {', '.join(_patched_keys)}", file=sys.stderr)
+
     output_dir = Path(args.output_dir)
     brief_text = load_brief_text(args.brief, args.brief_file)
     v2_theme = args.theme.strip() or "business_red"
@@ -421,7 +414,6 @@ def main():
         load_clarifier_session=load_clarifier_session,
         clarify_user_input=clarify_user_input,
         serve_clarifier_web=serve_clarifier_web,
-        run_demo_render=run_demo_render,
         build_template_output_stem=build_template_output_stem,
         emit_progress=emit_progress,
         generate_structure_with_ai=generate_structure_with_ai,

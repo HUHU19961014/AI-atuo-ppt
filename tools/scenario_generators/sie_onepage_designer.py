@@ -363,10 +363,6 @@ def resolve_onepage_strategy(
     model: str | None = None,
     require_ai: bool = False,
 ) -> tuple[OnePageBrief, StrategySelectionResult]:
-    if require_ai:
-        selection = select_onepage_strategy_with_ai(brief, model=model)
-        return replace(brief, variant=selection.layout_variant), selection
-
     layout_strategy = brief.layout_strategy.strip().lower()
     if layout_strategy and layout_strategy != AUTO_LAYOUT_STRATEGY:
         manual_strategy = STRATEGY_BY_ID.get(layout_strategy)
@@ -393,6 +389,13 @@ def resolve_onepage_strategy(
             rationale="Layout variant was explicitly set by the caller.",
             source="manual",
         )
+
+    if require_ai:
+        try:
+            selection = select_onepage_strategy_with_ai(brief, model=model)
+        except (OpenAIConfigurationError, OpenAIResponsesError, ValueError):
+            selection = select_onepage_strategy_heuristically(brief)
+        return replace(brief, variant=selection.layout_variant), selection
 
     try:
         selection = select_onepage_strategy_with_ai(brief, model=model)

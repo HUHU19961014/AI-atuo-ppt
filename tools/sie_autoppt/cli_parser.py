@@ -7,16 +7,16 @@ from .config import DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_PREFIX, MAX_BODY_CHAPTERS
 
 RECOMMENDED_WORKFLOW_HELP = (
     "Recommended workflows:\n"
-    "  demo                  no-AI sample render using the bundled deck\n"
     "  onepage --topic ...   single SIE body page with adaptive business layout\n"
-    "  sie-render --topic ... or --structure-json ...  actual SIE template render with optional AI planning\n"
+    "  sie-render --topic ... or --structure-json ...  actual SIE template render with AI planning\n"
     "  make --topic ...     semantic V2 full generation\n"
     "  review --deck-json   one-pass visual review alias for v2-review\n"
     "  iterate --deck-json  multi-round review alias for v2-iterate\n"
     "  visual-draft --deck-spec-json ...  HTML visual draft + scoring before PPTX\n"
     "Advanced commands:\n"
-    "  demo, onepage, sie-render, v2-plan, v2-render, v2-compile, v2-patch, v2-outline, v2-make, v2-review, v2-iterate, clarify, clarify-web, ai-check, visual-draft\n"
-    "Legacy HTML/template generation commands remain retired; use sie-render for actual SIE template delivery."
+    "  onepage, sie-render, v2-plan, v2-render, v2-compile, v2-patch, v2-outline, v2-make, v2-review, v2-iterate, clarify, clarify-web, ai-check, visual-draft\n"
+    "Legacy HTML/template generation commands remain retired; use sie-render for actual SIE template delivery.\n"
+    "Note: All generation commands require a reachable AI endpoint (OPENAI_API_KEY + OPENAI_BASE_URL)."
 )
 
 
@@ -101,11 +101,13 @@ def build_main_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional run id used with --isolate-output. If omitted, a timestamp-based id is generated.",
     )
+    parser.add_argument("--api-key", default="", help="AI API key override. If set, takes precedence over OPENAI_API_KEY env var.")
+    parser.add_argument("--base-url", default="", help="AI base URL override. If set, takes precedence over OPENAI_BASE_URL env var.")
     parser.add_argument(
-        "--ai-fallback",
-        default="disabled",
-        choices=("local-render", "disabled"),
-        help="AI failure handling for PPT commands: disabled (hard fail, default) or local-render (allow local fallback).",
+        "--api-style",
+        default="",
+        choices=("responses", "chat_completions", "auto"),
+        help="LLM API style override. If set, takes precedence over SIE_AUTOPPT_LLM_API_STYLE env var.",
     )
     return parser
 

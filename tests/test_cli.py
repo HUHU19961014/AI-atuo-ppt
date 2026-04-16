@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from tools.sie_autoppt import cli
 from tools.sie_autoppt.exceptions import CliExecutionError, CliUserInputError
-from tools.sie_autoppt.llm_openai import OpenAIConfigurationError, OpenAIResponsesConfig
+from tools.sie_autoppt.llm_openai import OpenAIConfigurationError, OpenAIResponsesConfig, OpenAIResponsesError
 from tools.sie_autoppt.models import BodyPageSpec, DeckRenderTrace, DeckSpec, PageRenderTrace, StructureSpec
 from tools.sie_autoppt.v2.schema import OutlineDocument, validate_deck_payload
 
@@ -197,50 +197,6 @@ class CliTests(unittest.TestCase):
             cli.main()
 
         mocked_serve.assert_called_once_with(host="127.0.0.1", port=9001)
-
-    def test_demo_renders_bundled_sample_without_ai(self):
-        stdout = io.StringIO()
-        demo_deck = validate_deck_payload(
-            {
-                "meta": {"title": "Demo", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
-                "slides": [{"slide_id": "s1", "layout": "title_only", "title": "Demo"}],
-            }
-        ).deck
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with (
-                patch("sys.argv", ["sie-autoppt", "demo", "--output-dir", temp_dir]),
-                patch("tools.sie_autoppt.cli.load_deck_document", return_value=demo_deck) as load_mock,
-                patch(
-                    "tools.sie_autoppt.cli.generate_v2_ppt",
-                    return_value=type(
-                        "FakeRenderArtifacts",
-                        (),
-                        {
-                            "rewrite_log_path": Path(temp_dir) / "demo" / "rewrite_log.json",
-                            "warnings_path": Path(temp_dir) / "demo" / "warnings.json",
-                            "output_path": Path(temp_dir) / "demo" / "demo.pptx",
-                        },
-                    )(),
-                ) as render_mock,
-                redirect_stdout(stdout),
-            ):
-                cli.main()
-
-            load_mock.assert_called_once_with(cli.DEMO_SAMPLE_DECK)
-            called = render_mock.call_args.kwargs
-            self.assertEqual(called["output_path"].parent, Path(temp_dir) / "demo")
-            self.assertEqual(called["log_path"].parent, Path(temp_dir) / "demo")
-            self.assertTrue(called["output_path"].name.startswith("Enterprise-AI-PPT_demo_"))
-            self.assertTrue(called["output_path"].name.endswith(".pptx"))
-            self.assertTrue(called["log_path"].name.startswith("Enterprise-AI-PPT_demo_"))
-            self.assertTrue(called["log_path"].name.endswith(".log.txt"))
-            lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
-            self.assertEqual(lines[0], str(cli.DEMO_SAMPLE_DECK))
-            self.assertTrue(lines[1].endswith("rewrite_log.json"))
-            self.assertTrue(lines[2].endswith("warnings.json"))
-            self.assertIn("Enterprise-AI-PPT_demo_", lines[3])
-            self.assertTrue(lines[3].endswith(".log.txt"))
-            self.assertTrue(lines[4].endswith("demo.pptx"))
 
     def test_v2_render_progress_flag_emits_stage_markers(self):
         stdout = io.StringIO()
@@ -715,75 +671,6 @@ class CliTests(unittest.TestCase):
             self.assertEqual(lines[1], str(fake_review_path))
             self.assertEqual(lines[2], str(fake_score_path))
             self.assertEqual(lines[3], str(fake_ppt_path))
-
-    @unittest.skip("onepage now requires AI; fallback mode removed")
-    def test_onepage_falls_back_when_ai_key_is_missing(self):
-        stdout = io.StringIO()
-        fake_review_path = Path("C:/tmp/fallback.review.json")
-        fake_score_path = Path("C:/tmp/fallback.score.json")
-        fake_ppt_path = Path("C:/tmp/fallback.onepage.pptx")
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with (
-                patch(
-                    "sys.argv",
-                    [
-                        "sie-autoppt",
-                        "onepage",
-                        "--topic",
-                        "供应链周报",
-                        "--brief",
-                        "按状态、风险和动作组织一页汇报",
-                        "--output-dir",
-                        temp_dir,
-                    ],
-                ),
-                patch(
-                    "tools.sie_autoppt.cli.generate_structure_with_ai",
-                    side_effect=OpenAIConfigurationError("OPENAI_API_KEY is required for AI planning."),
-                ),
-                patch(
-                    "tools.sie_autoppt.cli.build_onepage_slide",
-                    return_value=(fake_ppt_path, fake_review_path, fake_score_path, object()),
-                ),
-                redirect_stdout(stdout),
-            ):
-                cli.main()
-
-            brief_output_path = Path(temp_dir) / "Enterprise-AI-PPT.onepage_brief.json"
-            payload = json.loads(brief_output_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["title"], "供应链周报")
-            self.assertEqual(payload["layout_strategy"], "auto")
-            lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
-            self.assertEqual(lines[0], str(brief_output_path))
-            self.assertEqual(lines[3], str(fake_ppt_path))
-
-    def test_onepage_requires_ai_and_fails_when_ai_key_is_missing(self):
-        stderr = io.StringIO()
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with (
-                patch(
-                    "sys.argv",
-                    [
-                        "sie-autoppt",
-                        "onepage",
-                        "--topic",
-                        "供应链周报",
-                        "--brief",
-                        "按状态、风险和动作组织一页汇报",
-                        "--output-dir",
-                        temp_dir,
-                    ],
-                ),
-                patch(
-                    "tools.sie_autoppt.cli.generate_structure_with_ai",
-                    side_effect=OpenAIConfigurationError("OPENAI_API_KEY is required for AI planning."),
-                ),
-                redirect_stderr(stderr),
-            ):
-                with self.assertRaises(SystemExit) as ctx:
-                    cli.main()
-        self.assertEqual(ctx.exception.code, 1)
-        self.assertIn("AI is mandatory for 'onepage' content/layout planning", stderr.getvalue())
 
     def test_v2_plan_reuses_generation_context_between_outline_and_semantic_deck(self):
         stdout = io.StringIO()
@@ -1275,12 +1162,6 @@ class CliTests(unittest.TestCase):
             with self.assertRaises(cli.OpenAIResponsesError):
                 cli.apply_ai_content_layout_to_deck_spec(deck)
 
-    def test_build_fallback_structure_spec_generates_three_sections(self):
-        structure = cli.build_fallback_structure_spec("Supply chain", "line1\nline2")
-        self.assertEqual(structure.core_message, "line1")
-        self.assertEqual(len(structure.sections), 3)
-        self.assertTrue(all(section.title for section in structure.sections))
-
     def test_clarify_loads_existing_state_file_when_present(self):
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1362,6 +1243,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("AI strategy selection failed for 'onepage'", stderr.getvalue())
 
     def test_sie_render_reports_ai_refinement_configuration_error(self):
+        """When AI refinement is unavailable, sie-render exits with a clear error."""
         stderr = io.StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:
             deck_spec_path = Path(temp_dir) / "deck_spec.json"
@@ -1379,7 +1261,7 @@ class CliTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with (
-                patch("sys.argv", ["sie-autoppt", "sie-render", "--deck-spec-json", str(deck_spec_path)]),
+                patch("sys.argv", ["sie-autoppt", "sie-render", "--deck-spec-json", str(deck_spec_path), "--output-dir", temp_dir]),
                 patch(
                     "tools.sie_autoppt.cli.apply_ai_content_layout_to_deck_spec",
                     side_effect=cli.OpenAIConfigurationError("OPENAI_API_KEY missing"),
@@ -1390,7 +1272,9 @@ class CliTests(unittest.TestCase):
                     cli.main()
 
         self.assertEqual(ctx.exception.code, 1)
-        self.assertIn("AI is mandatory for 'sie-render' content/layout planning", stderr.getvalue())
+        stderr_text = stderr.getvalue()
+        self.assertIn("AI is required for 'sie-render'", stderr_text)
+        self.assertIn("--api-key", stderr_text)
 
     def test_sie_render_moves_generated_ppt_when_ppt_output_is_set(self):
         stdout = io.StringIO()

@@ -47,12 +47,9 @@ class AnthropicVisionConfig:
 
 
 def _allows_empty_api_key(base_url: str) -> bool:
-    # Default is permissive: in hosted agent environments (Codex/Claude Code/etc.),
-    # auth may be injected upstream and no local OPENAI_API_KEY is required.
-    if os.environ.get("SIE_AUTOPPT_REQUIRE_API_KEY", "").strip().lower() in {"1", "true", "yes"}:
-        hostname = (urlparse(base_url).hostname or "").lower()
-        return hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
-    return True
+    """Only localhost endpoints are allowed without an API key (Ollama, LM Studio, etc.)."""
+    hostname = (urlparse(base_url).hostname or "").lower()
+    return hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
 def _local_probe_paths(base_url: str) -> tuple[str, ...]:
@@ -92,6 +89,12 @@ def _discover_local_base_url() -> str:
         for probe_url in _local_probe_paths(base_url):
             if _probe_local_openai_compat(probe_url):
                 return base_url.rstrip("/")
+    LOGGER.debug(
+        "No local OpenAI-compatible endpoint found (probed %s). "
+        "Set OPENAI_BASE_URL to configure a specific endpoint, or set "
+        "SIE_AUTOPPT_DISABLE_LOCAL_AI_DISCOVERY=1 to skip probing.",
+        ", ".join(candidates),
+    )
     return ""
 
 
@@ -103,17 +106,39 @@ def load_openai_responses_config(model: str | None = None) -> OpenAIResponsesCon
     elif api_key:
         base_url = "https://api.openai.com/v1"
     else:
-        base_url = _discover_local_base_url() or "https://api.openai.com/v1"
+        discovered = _discover_local_base_url()
+        if discovered:
+            base_url = discovered
+        else:
+            base_url = "https://api.openai.com/v1"
+            LOGGER.warning(
+                "No OPENAI_API_KEY, OPENAI_BASE_URL, or local LLM endpoint found. "
+                "Falling back to %s which may be unreachable in some network environments. "
+                "Set OPENAI_BASE_URL (e.g. https://dashscope.aliyuncs.com/compatible-mode/v1) "
+                "and OPENAI_API_KEY to configure a reachable AI endpoint.",
+                base_url,
+            )
 
     if not api_key and not _allows_empty_api_key(base_url):
         raise OpenAIConfigurationError(
-            "OPENAI_API_KEY is required because SIE_AUTOPPT_REQUIRE_API_KEY=1 is enabled. "
-            "Set OPENAI_API_KEY, or disable SIE_AUTOPPT_REQUIRE_API_KEY, or use a localhost gateway."
+            f"OPENAI_API_KEY is required when connecting to {base_url}. "
+            "Configure via:\n"
+            "  - CLI: --api-key sk-xxx --base-url https://your-endpoint/v1\n"
+            "  - Env: set OPENAI_API_KEY=sk-xxx and OPENAI_BASE_URL=https://your-endpoint/v1\n"
+            "  - Local: start Ollama (port 11434) or other OpenAI-compatible local server."
         )
 
     if not base_url:
         raise OpenAIConfigurationError("OPENAI_BASE_URL must not be empty.")
     api_style = infer_llm_api_style(base_url, configured_style=os.environ.get("SIE_AUTOPPT_LLM_API_STYLE"))
+
+    LOGGER.info(
+        "LLM config: base_url=%s, model=%s, api_style=%s, api_key=%s",
+        base_url,
+        model or DEFAULT_AI_MODEL,
+        api_style,
+        f"{api_key[:8]}..." if len(api_key) > 8 else ("(empty)" if not api_key else "(local)"),
+    )
 
     return OpenAIResponsesConfig(
         api_key=api_key,
@@ -485,7 +510,13 @@ class OpenAIResponsesClient:
                 if attempt < max_retries - 1:
                     time.sleep(self._retry_delay_seconds(attempt=attempt))
                     continue
-                raise OpenAIResponsesError(f"Responses API request failed: {exc.reason}") from exc
+                raise OpenAIResponsesError(
+                    f"Responses API request failed: {exc.reason}. "
+                    f"Target: {self._config.base_url}{route}. "
+                    "Please set OPENAI_BASE_URL and OPENAI_API_KEY, "
+                    "or start a local LLM service (e.g. Ollama). "
+                    "See TROUBLESHOOTING.md for details."
+                ) from exc
             finally:
                 heartbeat_stop.set()
                 if heartbeat_thread is not None:

@@ -46,18 +46,6 @@ class V2CommandContext:
     run_ai_healthcheck: Callable[..., Any]
 
 
-def _is_ai_enforced_for_ppt() -> bool:
-    return str(os.environ.get("SIE_AUTOPPT_ENFORCE_AI_FOR_PPT", "1")).strip().lower() not in {"0", "false", "no"}
-
-
-def _allow_local_fallback(args: Any) -> bool:
-    cli_mode = str(getattr(args, "ai_fallback", "local-render")).strip().lower()
-    env_mode = str(os.environ.get("SIE_AUTOPPT_AI_FALLBACK", "")).strip().lower()
-    if env_mode in {"disabled", "off", "none"}:
-        return False
-    return cli_mode != "disabled"
-
-
 def _write_json(path: Path, payload: dict[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -262,34 +250,31 @@ def handle_v2_and_health_command(
         ppt_output = Path(args.ppt_output) if args.ppt_output else default_ppt_output_path(v2_output_dir)
         deck_path = Path(args.deck_json)
         deck = load_deck_document(deck_path)
-        if _is_ai_enforced_for_ppt():
-            emit_progress(args.progress, "v2-render", "running AI review gate before rendering")
-            try:
-                ai_review_output_dir = v2_output_dir / "ai_render_gate"
-                ai_review_result = review_deck_once(
-                    deck_path=deck_path,
-                    output_dir=ai_review_output_dir,
-                    model=args.llm_model or None,
-                    theme_name=args.theme.strip() or None,
-                )
-                reviewed_deck = load_deck_document(ai_review_result.deck_path)
-                patch_set = json.loads(ai_review_result.patch_path.read_text(encoding="utf-8-sig"))
-                if isinstance(patch_set, dict) and patch_set.get("patches"):
-                    emit_progress(args.progress, "v2-render", "applying AI-generated blocker patches")
-                    deck = apply_patch_set(reviewed_deck, patch_set)
-                    write_deck_document(deck, ai_review_output_dir / "ai_render_gate.patched.deck.json")
-                else:
-                    deck = reviewed_deck
-            except Exception as exc:
-                if not _allow_local_fallback(args):
-                    parser.exit(
-                        status=1,
-                        message=(
-                            "AI is mandatory for 'v2-render' under current policy. "
-                            f"AI review/patch gate failed: {exc}\n"
-                        ),
-                    )
-                emit_progress(args.progress, "v2-render", f"AI gate failed, fallback to local render: {exc}")
+        emit_progress(args.progress, "v2-render", "running AI review gate before rendering")
+        try:
+            ai_review_output_dir = v2_output_dir / "ai_render_gate"
+            ai_review_result = review_deck_once(
+                deck_path=deck_path,
+                output_dir=ai_review_output_dir,
+                model=args.llm_model or None,
+                theme_name=args.theme.strip() or None,
+            )
+            reviewed_deck = load_deck_document(ai_review_result.deck_path)
+            patch_set = json.loads(ai_review_result.patch_path.read_text(encoding="utf-8-sig"))
+            if isinstance(patch_set, dict) and patch_set.get("patches"):
+                emit_progress(args.progress, "v2-render", "applying AI-generated blocker patches")
+                deck = apply_patch_set(reviewed_deck, patch_set)
+                write_deck_document(deck, ai_review_output_dir / "ai_render_gate.patched.deck.json")
+            else:
+                deck = reviewed_deck
+        except Exception as exc:
+            parser.exit(
+                status=1,
+                message=(
+                    "AI is mandatory for 'v2-render'. "
+                    f"AI review/patch gate failed: {exc}\n"
+                ),
+            )
         emit_progress(args.progress, "v2-render", "rendering ppt from AI-gated deck json")
         render_result = generate_v2_ppt(
             deck,
@@ -355,83 +340,13 @@ def handle_v2_and_health_command(
                 outline_path=Path(args.outline_json) if args.outline_json else None,
             )
         except TimeoutError:
-            if not _allow_local_fallback(args):
-                parser.exit(
-                    status=1,
-                    message=(
-                        "AI is mandatory for 'v2-make' under current policy. "
-                        "Generation timed out and local fallback path is disabled.\n"
-                    ),
-                )
-            emit_progress(args.progress, "v2-make", "timeout detected, applying graceful fallback")
-            outline_path = outline_output or default_outline_output_path(v2_output_dir)
-            semantic_path = semantic_output or default_semantic_output_path(v2_output_dir)
-            deck_path = deck_output or default_deck_output_path(v2_output_dir)
-            log_path = log_output or default_log_output_path(v2_output_dir)
-            pptx_path = ppt_output or default_ppt_output_path(v2_output_dir)
-
-            _write_json(
-                outline_path,
-                {
-                    "pages": [
-                        {
-                            "page_no": 1,
-                            "title": "Fallback Outline",
-                            "goal": "Primary v2 generation timed out; continue with a safe fallback deck.",
-                        }
-                    ]
-                },
+            parser.exit(
+                status=1,
+                message=(
+                    "AI is mandatory for 'v2-make'. "
+                    "Generation timed out.\n"
+                ),
             )
-            semantic_payload = {
-                "meta": {
-                    "title": resolved_topic or "AI Auto PPT",
-                    "theme": v2_theme,
-                    "language": args.language,
-                    "author": args.author,
-                    "version": "2.0",
-                },
-                "slides": [
-                    {
-                        "slide_id": "s1",
-                        "title": "Fallback Deck",
-                        "intent": "conclusion",
-                        "blocks": [
-                            {
-                                "kind": "statement",
-                                "text": "Primary generation timed out; fallback output generated.",
-                            }
-                        ],
-                    }
-                ],
-            }
-            write_semantic_document(semantic_payload, semantic_path)
-            validated = compile_semantic_deck_payload(
-                semantic_payload,
-                default_title=resolved_topic or "AI Auto PPT",
-                default_theme=v2_theme,
-                default_language=args.language,
-                default_author=args.author,
-            )
-            write_deck_document(validated.deck, deck_path)
-            render_result = generate_v2_ppt(
-                validated.deck,
-                output_path=pptx_path,
-                theme_name=args.theme.strip() or None,
-                log_path=log_path,
-            )
-            result = type(
-                "V2MakeFallbackArtifacts",
-                (),
-                {
-                    "outline_path": outline_path,
-                    "semantic_path": semantic_path,
-                    "deck_path": deck_path,
-                    "rewrite_log_path": render_result.rewrite_log_path,
-                    "warnings_path": render_result.warnings_path,
-                    "log_path": log_path,
-                    "pptx_path": render_result.output_path,
-                },
-            )()
         print(str(result.outline_path))
         print(str(result.semantic_path))
         print(str(result.deck_path))

@@ -7,7 +7,6 @@ from pathlib import Path
 
 from .config import DEFAULT_OUTPUT_PREFIX
 from .inputs.source_text import extract_source_text
-from .models import StructureSpec
 from .types import JSONDict
 
 
@@ -57,42 +56,3 @@ def emit_progress(enabled: bool, stage: str, detail: str) -> None:
     if not enabled:
         return
     print(f"[progress] {stage}: {detail}", file=sys.stderr)
-
-
-def build_fallback_structure_spec(topic: str, brief_text: str) -> StructureSpec:
-    brief_lines = [line.strip(" -?\t") for line in brief_text.splitlines() if line.strip()]
-    while len(brief_lines) < 3:
-        brief_lines.append("")
-
-    return StructureSpec.from_dict(
-        {
-            "core_message": (brief_lines[0] or topic or "one-page briefing").strip(),
-            "structure_type": "general",
-            "sections": [
-                {
-                    "title": "Core Conclusion",
-                    "key_message": (brief_lines[0] or f"{topic}: clarify the key judgement first.").strip(),
-                    "arguments": [
-                        {"point": "Theme focus", "evidence": topic.strip() or "one-page briefing"},
-                        {"point": "Business background", "evidence": brief_lines[1] or "add business context to refine"},
-                    ],
-                },
-                {
-                    "title": "Key Support",
-                    "key_message": (brief_lines[1] or "organize support around facts, actions, and constraints.").strip(),
-                    "arguments": [
-                        {"point": "Facts", "evidence": brief_lines[0] or "summarize current inputs"},
-                        {"point": "Execution", "evidence": brief_lines[2] or "extract 2-3 priority actions"},
-                    ],
-                },
-                {
-                    "title": "Action Plan",
-                    "key_message": (brief_lines[2] or "define next actions and rollout cadence.").strip(),
-                    "arguments": [
-                        {"point": "Next step", "evidence": "compress into one-page action items"},
-                        {"point": "Usage", "evidence": "fit management review and business communication"},
-                    ],
-                },
-            ],
-        }
-    )

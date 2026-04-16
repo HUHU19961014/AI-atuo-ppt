@@ -1,10 +1,25 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import shutil
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable
+
+LOGGER = logging.getLogger(__name__)
+
+_AI_CONFIG_HINT = (
+    "\n\n"
+    "To fix this, configure a reachable AI endpoint via:\n"
+    "  - CLI:  --api-key sk-xxx --base-url https://dashscope.aliyuncs.com/compatible-mode/v1 --api-style chat_completions\n"
+    "  - Env:  set OPENAI_API_KEY=sk-xxx\n"
+    "         set OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1\n"
+    "         set SIE_AUTOPPT_LLM_API_STYLE=chat_completions\n"
+    "  - Local: start Ollama (port 11434) or other OpenAI-compatible local server\n"
+    "  - Docs:  see docs/TROUBLESHOOTING.md for more options.\n"
+)
 
 
 def handle_pre_v2_command(
@@ -18,7 +33,6 @@ def handle_pre_v2_command(
     load_clarifier_session: Callable[[str], Any],
     clarify_user_input: Callable[..., Any],
     serve_clarifier_web: Callable[..., Any],
-    run_demo_render: Callable[..., tuple[Path, Path, Path, Path, Path]],
     build_template_output_stem: Callable[[str], str],
     emit_progress: Callable[[bool, str, str], None],
     generate_structure_with_ai: Callable[..., Any],
@@ -64,21 +78,6 @@ def handle_pre_v2_command(
         serve_clarifier_web(host=args.host, port=args.port)
         return True
 
-    if effective_command == "demo":
-        demo_sample_path, rewrite_log_path, warnings_path, log_output, ppt_output = run_demo_render(
-            output_dir=v2_output_dir,
-            output_prefix=args.output_name,
-            theme_name=args.theme.strip() or None,
-            log_output=Path(args.log_output) if args.log_output else None,
-            ppt_output=Path(args.ppt_output) if args.ppt_output else None,
-        )
-        print(str(demo_sample_path))
-        print(str(rewrite_log_path))
-        print(str(warnings_path))
-        print(str(log_output))
-        print(str(ppt_output))
-        return True
-
     if effective_command == "onepage":
         structure_json = args.structure_json.strip()
         if not structure_json and not args.topic.strip():
@@ -92,8 +91,8 @@ def handle_pre_v2_command(
             payload = json.loads(structure_path.read_text(encoding="utf-8-sig"))
             structure = structure_spec_cls.from_dict(payload)
         else:
+            emit_progress(args.progress, "onepage", "calling AI structure planner")
             try:
-                emit_progress(args.progress, "onepage", "calling AI structure planner")
                 structure_result = generate_structure_with_ai(
                     structure_generation_request_cls(
                         topic=args.topic.strip(),
@@ -111,12 +110,19 @@ def handle_pre_v2_command(
                 parser.exit(
                     status=1,
                     message=(
-                        "AI is mandatory for 'onepage' content/layout planning. "
-                        f"Configure a reachable AI endpoint first. Details: {exc}\n"
+                        f"AI is required for 'onepage' structure planning. "
+                        f"Configuration error: {exc}\n"
+                        + _AI_CONFIG_HINT
                     ),
                 )
             except openai_responses_error_cls as exc:
-                parser.exit(status=1, message=f"AI planning failed for 'onepage': {exc}\n")
+                parser.exit(
+                    status=1,
+                    message=(
+                        f"AI structure planning failed for 'onepage': {exc}\n"
+                        + _AI_CONFIG_HINT
+                    ),
+                )
 
         onepage_brief = build_onepage_brief_from_structure(
             structure,
@@ -143,10 +149,14 @@ def handle_pre_v2_command(
                 message=(
                     "AI is mandatory for 'onepage' content/layout planning. "
                     f"Configure a reachable AI endpoint first. Details: {exc}\n"
+                    + _AI_CONFIG_HINT
                 ),
             )
         except openai_responses_error_cls as exc:
-            parser.exit(status=1, message=f"AI strategy selection failed for 'onepage': {exc}\n")
+            parser.exit(
+                status=1,
+                message=f"AI strategy selection failed for 'onepage': {exc}\n" + _AI_CONFIG_HINT,
+            )
         print(str(brief_output_path))
         print(str(review_path))
         print(str(score_path))
@@ -181,32 +191,40 @@ def handle_pre_v2_command(
             write_deck_spec(deck_spec, deck_spec_path)
             render_deck_spec = deck_spec
         elif uses_topic_generation:
+            emit_progress(args.progress, "sie-render", "calling AI structure planner")
             try:
-                emit_progress(args.progress, "sie-render", "calling AI structure planner")
                 structure_result = generate_structure_with_ai(
                     structure_generation_request_cls(
                         topic=args.topic.strip(),
                         brief=brief_text,
                         audience=args.audience,
                         language=args.language,
-                        sections=args.chapters,
+                        sections=args.chapters or 3,
                         min_sections=args.min_slides,
                         max_sections=args.max_slides,
                     ),
                     model=args.llm_model or None,
                 )
+                structure = structure_result.structure
             except openai_configuration_error_cls as exc:
                 parser.exit(
                     status=1,
                     message=(
-                        "AI is mandatory for 'sie-render' content/layout planning. "
-                        f"Configure a reachable AI endpoint first. Details: {exc}\n"
+                        f"AI is required for 'sie-render' structure planning. "
+                        f"Configuration error: {exc}\n"
+                        + _AI_CONFIG_HINT
                     ),
                 )
             except openai_responses_error_cls as exc:
-                parser.exit(status=1, message=f"AI planning failed for 'sie-render': {exc}\n")
+                parser.exit(
+                    status=1,
+                    message=(
+                        f"AI structure planning failed for 'sie-render': {exc}\n"
+                        + _AI_CONFIG_HINT
+                    ),
+                )
             deck_spec = build_deck_spec_from_structure(
-                structure_result.structure,
+                structure,
                 topic=args.topic.strip(),
                 cover_title=args.cover_title.strip() or None,
             )
@@ -238,14 +256,18 @@ def handle_pre_v2_command(
             parser.exit(
                 status=1,
                 message=(
-                    "AI is mandatory for 'sie-render' content/layout planning. "
-                    f"Configure a reachable AI endpoint first. Details: {exc}\n"
+                    f"AI is required for 'sie-render' content/layout refinement. "
+                    f"Configuration error: {exc}\n"
+                    + _AI_CONFIG_HINT
                 ),
             )
         except openai_responses_error_cls as exc:
             parser.exit(
                 status=1,
-                message=f"AI content/layout refinement failed for 'sie-render': {exc}\n",
+                message=(
+                    f"AI content/layout refinement failed for 'sie-render': {exc}\n"
+                    + _AI_CONFIG_HINT
+                ),
             )
 
         deck_spec_path = Path(args.deck_spec_output) if args.deck_spec_output else template_output_dir / f"{output_stem}.deck_spec.ai.json"

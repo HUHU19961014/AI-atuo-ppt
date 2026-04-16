@@ -53,7 +53,7 @@ def infer_llm_api_style(base_url: str, configured_style: str | None = None) -> s
 DEFAULT_AI_API_STYLE = infer_llm_api_style(DEFAULT_AI_BASE_URL)
 DEFAULT_PATTERN_LOW_CONFIDENCE_SCORE = int(os.environ.get("SIE_AUTOPPT_PATTERN_LOW_CONFIDENCE_SCORE", "4"))
 DEFAULT_PATTERN_MARGIN_THRESHOLD = int(os.environ.get("SIE_AUTOPPT_PATTERN_MARGIN_THRESHOLD", "1"))
-ENABLE_AI_PATTERN_ASSIST = os.environ.get("SIE_AUTOPPT_ENABLE_AI_PATTERN_ASSIST", "").strip().lower() in {"1", "true", "yes"}
+ENABLE_AI_PATTERN_ASSIST = os.environ.get("SIE_AUTOPPT_ENABLE_AI_PATTERN_ASSIST", "").strip().lower() not in {"0", "false", "no"}
 DEFAULT_PATTERN_ASSIST_MODEL = os.environ.get("SIE_AUTOPPT_PATTERN_ASSIST_MODEL", DEFAULT_AI_MODEL)
 
 # Theme

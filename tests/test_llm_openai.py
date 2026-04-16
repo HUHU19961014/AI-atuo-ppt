@@ -137,7 +137,8 @@ class OpenAIResponsesTests(unittest.TestCase):
         self.assertEqual(config.api_style, "auto")
         self.assertEqual(config.api_key, "")
 
-    def test_load_openai_responses_config_allows_empty_key_for_remote_by_default(self):
+    def test_load_openai_responses_config_rejects_empty_key_for_remote_by_default(self):
+        """Remote endpoints now require an API key by default (policy change)."""
         with patch.dict(
             "os.environ",
             {
@@ -146,23 +147,42 @@ class OpenAIResponsesTests(unittest.TestCase):
             },
             clear=False,
         ):
-            config = load_openai_responses_config(model="gpt-4o-mini")
-
-        self.assertEqual(config.api_key, "")
-        self.assertEqual(config.base_url, "https://api.openai.com/v1")
-
-    def test_load_openai_responses_config_can_require_key_with_strict_flag(self):
-        with patch.dict(
-            "os.environ",
-            {
-                "OPENAI_API_KEY": "",
-                "OPENAI_BASE_URL": "https://api.openai.com/v1",
-                "SIE_AUTOPPT_REQUIRE_API_KEY": "1",
-            },
-            clear=False,
-        ):
-            with self.assertRaises(OpenAIConfigurationError):
+            with self.assertRaises(OpenAIConfigurationError) as ctx:
                 load_openai_responses_config(model="gpt-4o-mini")
+
+            self.assertIn("OPENAI_API_KEY is required", str(ctx.exception))
+
+    def test_load_openai_responses_config_flag_does_not_override_remote_key_requirement(self):
+        """SIE_AUTOPPT_ALLOW_EMPTY_KEY is no longer supported — AI is mandatory."""
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENAI_API_KEY": "",
+                "OPENAI_BASE_URL": "https://api.openai.com/v1",
+                "SIE_AUTOPPT_ALLOW_EMPTY_KEY": "1",
+            },
+            clear=False,
+        ):
+            with self.assertRaises(OpenAIConfigurationError) as ctx:
+                load_openai_responses_config(model="gpt-4o-mini")
+
+            self.assertIn("OPENAI_API_KEY is required", str(ctx.exception))
+
+    def test_load_openai_responses_config_cli_overrides_via_env(self):
+        """Verify CLI --api-key / --base-url are applied by patching env vars."""
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENAI_API_KEY": "sk-from-cli",
+                "OPENAI_BASE_URL": "https://custom-endpoint.example.com/v1",
+            },
+            clear=False,
+        ):
+            config = load_openai_responses_config(model="custom-model")
+
+        self.assertEqual(config.api_key, "sk-from-cli")
+        self.assertEqual(config.base_url, "https://custom-endpoint.example.com/v1")
+        self.assertEqual(config.model, "custom-model")
 
     def test_auto_mode_falls_back_to_chat_completions_when_responses_endpoint_is_unsupported(self):
         client = OpenAIResponsesClient(
