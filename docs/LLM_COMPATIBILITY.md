@@ -252,7 +252,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_real_ai_smoke.ps1 -Generati
 运行测试：
 ```bash
 python -m pytest tests/test_v2_services.py -v
-python -m pytest tests/test_llm_openai.py -v
+python -m pytest tests/test_v2_quality_checks.py -v
 ```
 
 ## 更新日志

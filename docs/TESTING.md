@@ -28,10 +28,10 @@ Current gate order:
 python -m pytest tests -q
 ```
 
-### Internal batch subset
+### Core CI subset
 
 ```powershell
-python -m pytest tests/test_batch_contracts.py tests/test_batch_input_guard.py tests/test_batch_bridge.py tests/test_batch_preprocess.py tests/test_batch_orchestrator.py tests/test_batch_tuning.py tests/test_batch_metrics.py tests/test_batch_rollout.py tests/test_doc_drift.py -q
+python -m pytest tests/test_cli.py tests/test_clarifier.py tests/test_clarify_web.py tests/test_content_density_split.py tests/test_language_policy.py tests/test_plugins.py tests/test_sie_palette_enforcement.py tests/test_svg_primary_pipeline.py tests/test_v2_quality_checks.py tests/test_v2_services.py tests/test_v2_visual_review.py -q
 ```
 
 ### A08 baseline metrics replay report
@@ -58,7 +58,7 @@ python -m tools.sie_autoppt.quality.ruff_incremental `
 ### V2 compatibility subset
 
 ```powershell
-python -m pytest tests/test_v2_services.py tests/test_v2_cli.py tests/test_quality_gate.py -q
+python -m pytest tests/test_v2_services.py tests/test_v2_quality_checks.py tests/test_v2_visual_review.py -q
 ```
 
 ## 3. Internal Batch Real Bridge Smoke (Optional)
