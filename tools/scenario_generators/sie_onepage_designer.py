@@ -391,10 +391,7 @@ def resolve_onepage_strategy(
         )
 
     if require_ai:
-        try:
-            selection = select_onepage_strategy_with_ai(brief, model=model)
-        except (OpenAIConfigurationError, OpenAIResponsesError, ValueError):
-            selection = select_onepage_strategy_heuristically(brief)
+        selection = select_onepage_strategy_with_ai(brief, model=model)
         return replace(brief, variant=selection.layout_variant), selection
 
     try:

@@ -10,6 +10,7 @@ from .clarifier_models import (
     MAX_BODY_CHAPTERS,
     ClarifierRequirements,
     ClarifierResult,
+    ClarifierQuestion,
     ClarifierSession,
     _normalize_dimension_names,
     _normalize_template_name,

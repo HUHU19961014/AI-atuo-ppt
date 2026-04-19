@@ -8,10 +8,12 @@
 ## Main-Flow Rules
 
 - CLI startup must not eagerly import legacy renderer implementations.
+- `batch-make` must not import or route through `generator.py`, `body_renderers.py`, or `planning/legacy_html_planner.py`.
 - Main generation path must not depend on:
   - `legacy.body_renderers`
   - legacy text-normalization helpers
 - `sie-render` remains available only for backward compatibility scenarios.
+- Legacy modules remain compatibility-only and are not part of the internal batch control plane.
 
 ## Compatibility Facades
 

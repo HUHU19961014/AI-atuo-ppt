@@ -91,9 +91,8 @@ flowchart TB
 - Content rewrite pass for fixable title, density, repetition, and structure issues.
 - Visual review loop with a 9-dimension scorecard and provider injection point.
 - OpenAI-compatible LLM access, including local gateway setups through `OPENAI_BASE_URL`.
-- Visual review provider switch: `--vision-provider auto|openai|claude`.
 - Built-in fixed consulting theme `sie_consulting_fixed` aligned with SIE red/blue-gray palette and Microsoft YaHei typography.
-- Optional `svg-export` bridge command to run `ppt-master` SVG-to-PPTX conversion from this repo CLI.
+- Internal batch pipeline with run-scoped artifacts, `pptmaster` bridge integration, and deterministic post-export tuning.
 - Docker fallback for visual preview export when host `soffice`/COM is unavailable.
 - LLM usage accounting with token/cost budgets, request cache, and usage JSONL logging.
 - Real-model golden dataset test entry for repeatable end-to-end baseline checks.
@@ -156,6 +155,20 @@ Useful optional variables:
 - `SIE_AUTOPPT_LLM_TIMEOUT_SEC`: request timeout.
 - `SIE_AUTOPPT_LLM_REASONING_EFFORT`: reasoning effort hint for compatible providers.
 - `SIE_AUTOPPT_LLM_VERBOSITY`: text verbosity hint for compatible providers.
+- `SIE_AUTOPPT_AI_FIVE_STAGE_ENABLED`: enable batch five-stage path (`0/1`, default `0`).
+- `SIE_AUTOPPT_AI_FIVE_STAGE_ROLLOUT_PERCENT`: canary percentage (`0-100`) for batch five-stage rollout.
+- `SIE_AUTOPPT_AI_FIVE_STAGE_AUTO_ROLLBACK`: auto-fallback to legacy batch path on five-stage failure (`1` by default).
+
+### LLM Execution Modes
+
+Agent-First vs Runtime-API:
+
+- Default mode is gent_first.
+- Use `--llm-mode agent_first` to skip local API-key precheck and let upstream auth decide success/failure.
+- Use `--llm-mode runtime_api` for strict endpoint/API-key validation before dispatch.
+- The CLI writes the selected mode to `SIE_AUTOPPT_LLM_MODE` for all downstream AI calls.
+- `batch-make --content-bundle-json` remains an AI-preprocess bypass path and can run without API preprocessing calls.
+- `batch-make --with-ai-review` enables post-export review patch artifacts under `qa/review_patch/`.
 
 ### Quick Start
 
@@ -197,19 +210,17 @@ enterprise-ai-ppt iterate `
   --max-rounds 2
 ```
 
-Export an existing SVG project through `ppt-master` converter:
+Run the internal batch pipeline with isolated run artifacts:
 
 ```powershell
-enterprise-ai-ppt svg-export `
-  --svg-project-path .\projects\ppt-master\examples\demo_project_intro_ppt169_20251211 `
-  --svg-stage final
-```
-
-Run strict post-processing pipeline (split notes -> finalize SVG -> export PPTX):
-
-```powershell
-enterprise-ai-ppt svg-pipeline `
-  --svg-project-path .\projects\ppt-master\examples\demo_project_intro_ppt169_20251211
+enterprise-ai-ppt batch-make `
+  --topic "Enterprise AI adoption roadmap" `
+  --brief "Audience: executive team. Focus on current pain points, target architecture, phased rollout, and expected value." `
+  --generation-mode deep `
+  --with-ai-review `
+  --pptmaster-root "D:\path\to\ppt-master" `
+  --run-id run-001 `
+  --output-dir .\output
 ```
 
 ### Recommended Workflows
@@ -284,8 +295,8 @@ enterprise-ai-ppt v2-iterate `
 | `onepage` | Generate one SIE-style business slide | Optional | one-page `.pptx` |
 | `clarify` | Clarify vague requirements | Optional | clarifier session JSON |
 | `clarify-web` | Browser UI for clarification | Optional | local web app |
-| `v2-outline` | Generate outline only | Yes | outline JSON |
-| `v2-plan` | Generate outline, semantic deck, compiled deck | Yes | JSON artifacts |
+| `v2-outline` | Generate outline only | Yes | outline JSON (`pages` + `story_rationale` + `outline_strategy`) |
+| `v2-plan` | Generate outline, semantic candidates, selected compiled deck | Yes | JSON artifacts |
 | `v2-compile` | Compile semantic deck to renderable deck | No | compiled deck JSON |
 | `v2-render` | Render from semantic or compiled deck JSON | No | `.pptx` |
 | `v2-make` | Explicit one-shot generation (`AI -> SVG -> PPTX`) | Yes | JSON artifacts and `.pptx` |
@@ -308,7 +319,7 @@ flowchart LR
     G --> H[patch JSON]
 ```
 
-- `outline.json`: high-level story structure.
+- `outline.json`: high-level story structure with `story_rationale` and `outline_strategy` metadata.
 - `semantic_deck.json`: AI-facing semantic content contract.
 - `compiled deck.json`: renderer-facing layout contract.
 - `.pptx`: editable PowerPoint output.
@@ -532,13 +543,6 @@ enterprise-ai-ppt iterate `
   --max-rounds 2
 ```
 
-执行 SVG 严格导出流水线：
-
-```powershell
-enterprise-ai-ppt svg-pipeline `
-  --svg-project-path .\projects\ppt-master\examples\demo_project_intro_ppt169_20251211
-```
-
 ### 主命令矩阵
 
 | 命令 | 用途 | 需要 AI | 主要输出 |
@@ -548,8 +552,8 @@ enterprise-ai-ppt svg-pipeline `
 | `iterate` | 多轮复核与修复（`v2-iterate` 别名） | 否 | final review、patched deck、pptx |
 | `visual-draft` | 生成 VisualSpec + HTML 预览 + 截图 + 评分 | 可选 | visual artifacts |
 | `onepage` | 生成单页业务 PPT | 可选 | onepage pptx |
-| `v2-outline` | 仅生成大纲 | 是 | outline JSON |
-| `v2-plan` | 生成大纲 + 语义 + 编译 deck | 是 | JSON artifacts |
+| `v2-outline` | 仅生成大纲 | 是 | outline JSON（`pages` + `story_rationale` + `outline_strategy`） |
+| `v2-plan` | 生成大纲 + 语义候选 + 选优编译 deck | 是 | JSON artifacts |
 | `v2-compile` | 语义 deck 转编译 deck | 否 | compiled deck JSON |
 | `v2-render` | 从语义或编译 deck 渲染 PPTX | 否 | pptx |
 | `v2-make` | 显式一键生成 | 是 | JSON artifacts + pptx |
@@ -557,7 +561,7 @@ enterprise-ai-ppt svg-pipeline `
 
 ### 中间产物
 
-- `outline.json`：叙事结构。
+- `outline.json`：叙事结构（含 `story_rationale` 与 `outline_strategy`）。
 - `semantic_deck.json`：AI 语义契约。
 - `compiled_deck.json`：渲染契约。
 - `.pptx`：可编辑交付件。
@@ -627,3 +631,4 @@ enterprise-ai-ppt ai-check `
 - `onepage` 用于单页快交付，不作为完整 deck 主路径替代。
 - legacy HTML/template 仅保留兼容层角色，不作为对外主推荐。
 - AI 输出语义内容，不直接产出底层几何坐标。
+

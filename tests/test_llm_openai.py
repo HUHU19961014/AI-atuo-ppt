@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from io import BytesIO
 import threading
 from unittest.mock import AsyncMock, patch
@@ -228,31 +228,44 @@ class OpenAIResponsesTests(unittest.TestCase):
         self.assertEqual(config.api_style, "auto")
         self.assertEqual(config.api_key, "")
 
-    def test_load_openai_responses_config_rejects_empty_key_for_remote_by_default(self):
-        """Remote endpoints now require an API key by default (policy change)."""
+    def test_load_openai_responses_config_defaults_to_agent_first_mode(self):
         with patch.dict(
             "os.environ",
             {
                 "OPENAI_API_KEY": "",
                 "OPENAI_BASE_URL": "https://api.openai.com/v1",
             },
-            clear=False,
+            clear=True,
         ):
-            with self.assertRaises(OpenAIConfigurationError) as ctx:
-                load_openai_responses_config(model="gpt-4o-mini")
+            config = load_openai_responses_config(model="gpt-4o-mini")
 
-            self.assertIn("OPENAI_API_KEY is required", str(ctx.exception))
+        self.assertEqual(config.api_key, "")
+        self.assertEqual(config.base_url, "https://api.openai.com/v1")
 
-    def test_load_openai_responses_config_flag_does_not_override_remote_key_requirement(self):
-        """SIE_AUTOPPT_ALLOW_EMPTY_KEY is no longer supported — AI is mandatory."""
+    def test_load_openai_responses_config_allows_empty_key_for_remote_in_agent_first_mode(self):
         with patch.dict(
             "os.environ",
             {
                 "OPENAI_API_KEY": "",
                 "OPENAI_BASE_URL": "https://api.openai.com/v1",
-                "SIE_AUTOPPT_ALLOW_EMPTY_KEY": "1",
+                "SIE_AUTOPPT_LLM_MODE": "agent_first",
             },
-            clear=False,
+            clear=True,
+        ):
+            config = load_openai_responses_config(model="gpt-4o-mini")
+
+        self.assertEqual(config.api_key, "")
+        self.assertEqual(config.base_url, "https://api.openai.com/v1")
+
+    def test_load_openai_responses_config_rejects_empty_key_for_remote_in_runtime_api_mode(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENAI_API_KEY": "",
+                "OPENAI_BASE_URL": "https://api.openai.com/v1",
+                "SIE_AUTOPPT_LLM_MODE": "runtime_api",
+            },
+            clear=True,
         ):
             with self.assertRaises(OpenAIConfigurationError) as ctx:
                 load_openai_responses_config(model="gpt-4o-mini")
@@ -497,3 +510,4 @@ class OpenAIResponsesAsyncTests(unittest.IsolatedAsyncioTestCase):
         client.acreate_structured_json_with_user_items = AsyncMock(side_effect=[{"id": 1}, {"id": 2}])  # type: ignore[method-assign]
         result = await client.acreate_structured_json_batch(requests, concurrency=2)
         self.assertEqual(result, [{"id": 1}, {"id": 2}])
+

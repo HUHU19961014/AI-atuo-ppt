@@ -2,13 +2,12 @@
 
 import asyncio
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from .exceptions import AiHealthcheckBlockedError, AiHealthcheckFailedError
-from .v2.services import DeckGenerationRequest, OutlineGenerationRequest
+from .v2.services import DeckGenerationRequest, OutlineGenerationRequest, select_best_semantic_candidate
 
 
 @dataclass(frozen=True)
@@ -108,7 +107,9 @@ def handle_v2_and_health_command(
             ),
             model=args.llm_model or None,
         )
-        outline_output = Path(args.outline_output) if args.outline_output else default_outline_output_path(v2_output_dir)
+        outline_output = (
+            Path(args.outline_output) if args.outline_output else default_outline_output_path(v2_output_dir)
+        )
         write_outline_document(outline, outline_output)
         print(str(outline_output))
         return True
@@ -151,7 +152,9 @@ def handle_v2_and_health_command(
                 ),
                 model=args.llm_model or None,
             )
-            plan_outline_output = Path(args.outline_output) if args.outline_output else default_outline_output_path(v2_output_dir)
+            plan_outline_output = (
+                Path(args.outline_output) if args.outline_output else default_outline_output_path(v2_output_dir)
+            )
             write_outline_document(outline, plan_outline_output)
         deck_request = DeckGenerationRequest(
             topic=resolved_topic or "AI Auto PPT",
@@ -167,7 +170,7 @@ def handle_v2_and_health_command(
         )
         semantic_candidates: list[dict[str, Any]] = []
         requested_batch_size = max(1, int(getattr(args, "batch_size", 1)))
-        if requested_batch_size > 1 and generate_semantic_decks_with_ai_batch is not None:
+        if generate_semantic_decks_with_ai_batch is not None:
             emit_progress(
                 args.progress,
                 "v2-plan",
@@ -181,14 +184,18 @@ def handle_v2_and_health_command(
                 )
             )
         if not semantic_candidates:
-            emit_progress(args.progress, "v2-plan", "calling AI semantic deck planner")
+            emit_progress(args.progress, "v2-plan", "calling AI semantic deck planner (fallback loop)")
             semantic_candidates = [
                 generate_semantic_deck_with_ai(
                     deck_request,
                     model=args.llm_model or None,
                 )
+                for _ in range(requested_batch_size)
             ]
-        semantic_payload = semantic_candidates[0]
+        semantic_payload, selected_candidate_index, _score_report = select_best_semantic_candidate(
+            semantic_candidates,
+            request=deck_request,
+        )
         emit_progress(args.progress, "v2-plan", "compiling semantic payload")
         validated_deck = compile_semantic_deck_payload(
             semantic_payload,
@@ -197,11 +204,20 @@ def handle_v2_and_health_command(
             default_language=args.language,
             default_author=args.author,
         )
-        semantic_output = Path(args.semantic_output) if args.semantic_output else default_semantic_output_path(v2_output_dir)
+        semantic_output = (
+            Path(args.semantic_output) if args.semantic_output else default_semantic_output_path(v2_output_dir)
+        )
         write_semantic_document(semantic_payload, semantic_output)
+        emit_progress(
+            args.progress,
+            "v2-plan",
+            f"selected semantic candidate #{selected_candidate_index}",
+        )
         if len(semantic_candidates) > 1:
             for index, candidate_payload in enumerate(semantic_candidates[1:], start=2):
-                candidate_path = semantic_output.with_name(f"{semantic_output.stem}.candidate_{index}{semantic_output.suffix}")
+                candidate_path = semantic_output.with_name(
+                    f"{semantic_output.stem}.candidate_{index}{semantic_output.suffix}"
+                )
                 write_semantic_document(candidate_payload, candidate_path)
         deck_output = Path(args.plan_output) if args.plan_output else default_deck_output_path(v2_output_dir)
         write_deck_document(validated_deck.deck, deck_output)
@@ -210,7 +226,9 @@ def handle_v2_and_health_command(
         print(str(semantic_output))
         if len(semantic_candidates) > 1:
             for index in range(2, len(semantic_candidates) + 1):
-                candidate_path = semantic_output.with_name(f"{semantic_output.stem}.candidate_{index}{semantic_output.suffix}")
+                candidate_path = semantic_output.with_name(
+                    f"{semantic_output.stem}.candidate_{index}{semantic_output.suffix}"
+                )
                 print(str(candidate_path))
         print(str(deck_output))
         return True
@@ -292,27 +310,27 @@ def handle_v2_and_health_command(
         if not resolved_topic and not args.outline_json:
             parser.error("--topic or --outline-json is required when command is 'v2-make'.")
         emit_progress(args.progress, "v2-make", "running full v2 generation pipeline")
-        outline_output = (
+        make_outline_output = (
             Path(args.outline_output)
             if args.outline_output
             else (default_outline_output_path(v2_output_dir) if args.full_pipeline else None)
         )
-        semantic_output = (
+        make_semantic_output = (
             Path(args.semantic_output)
             if args.semantic_output
             else (default_semantic_output_path(v2_output_dir) if args.full_pipeline else None)
         )
-        deck_output = (
+        make_deck_output = (
             Path(args.plan_output)
             if args.plan_output
             else (default_deck_output_path(v2_output_dir) if args.full_pipeline else None)
         )
-        log_output = (
+        make_log_output = (
             Path(args.log_output)
             if args.log_output
             else (default_log_output_path(v2_output_dir) if args.full_pipeline else None)
         )
-        ppt_output = (
+        make_ppt_output = (
             Path(args.ppt_output)
             if args.ppt_output
             else (default_ppt_output_path(v2_output_dir) if args.full_pipeline else None)
@@ -332,12 +350,13 @@ def handle_v2_and_health_command(
                 output_prefix=args.output_name,
                 model=args.llm_model or None,
                 generation_mode=args.generation_mode,
-                outline_output=outline_output,
-                semantic_output=semantic_output,
-                deck_output=deck_output,
-                log_output=log_output,
-                ppt_output=ppt_output,
+                outline_output=make_outline_output,
+                semantic_output=make_semantic_output,
+                deck_output=make_deck_output,
+                log_output=make_log_output,
+                ppt_output=make_ppt_output,
                 outline_path=Path(args.outline_json) if args.outline_json else None,
+                pptmaster_root=(Path(args.pptmaster_root) if str(args.pptmaster_root or "").strip() else None),
             )
         except TimeoutError:
             parser.exit(
@@ -376,7 +395,9 @@ def handle_v2_and_health_command(
     if effective_command == "v2-iterate":
         if not args.deck_json:
             parser.error("--deck-json is required when command is 'v2-iterate'.")
-        review_output_dir = Path(args.review_output_dir) if args.review_output_dir else v2_output_dir / "visual_review_loop"
+        review_output_dir = (
+            Path(args.review_output_dir) if args.review_output_dir else v2_output_dir / "visual_review_loop"
+        )
         result = iterate_visual_review(
             deck_path=Path(args.deck_json),
             output_dir=review_output_dir,

@@ -11,7 +11,8 @@ LOGGER = logging.getLogger(__name__)
 _AI_CONFIG_HINT = (
     "\n\n"
     "To fix this, configure a reachable AI endpoint via:\n"
-    "  - CLI:  --api-key sk-xxx --base-url https://dashscope.aliyuncs.com/compatible-mode/v1 --api-style chat_completions\n"
+    "  - CLI:  --api-key sk-xxx --base-url "
+    "https://dashscope.aliyuncs.com/compatible-mode/v1 --api-style chat_completions\n"
     "  - Env:  set OPENAI_API_KEY=sk-xxx\n"
     "         set OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1\n"
     "         set SIE_AUTOPPT_LLM_API_STYLE=chat_completions\n"
@@ -20,22 +21,23 @@ _AI_CONFIG_HINT = (
 )
 
 
+def _matches_exc(exc: Exception, expected_type: type[Exception], expected_name: str) -> bool:
+    return isinstance(exc, expected_type) or exc.__class__.__name__ == expected_name
+
+
 def handle_pre_v2_command(
     *,
     effective_command: str,
     args: Any,
     parser: Any,
     output_dir: Path,
-    v2_output_dir: Path,
     brief_text: str,
     load_clarifier_session: Callable[[str], Any],
     clarify_user_input: Callable[..., Any],
     serve_clarifier_web: Callable[..., Any],
     build_template_output_stem: Callable[[str], str],
     emit_progress: Callable[[bool, str, str], None],
-    generate_structure_with_ai: Callable[..., Any],
     structure_spec_cls: Any,
-    structure_generation_request_cls: Any,
     openai_configuration_error_cls: type[Exception],
     openai_responses_error_cls: type[Exception],
     build_onepage_brief_from_structure: Callable[..., Any],
@@ -71,60 +73,36 @@ def handle_pre_v2_command(
 
     if effective_command == "onepage":
         structure_json = args.structure_json.strip()
-        if not structure_json and not args.topic.strip():
-            parser.error("--topic or --structure-json is required when command is 'onepage'.")
+        if not structure_json:
+            parser.error("--structure-json is required for command 'onepage' in agent-driven mode.")
+        strategy = args.onepage_strategy.strip().lower() or "auto"
+        if strategy != "auto":
+            parser.error(
+                "--onepage-strategy must stay 'auto' for command 'onepage' "
+                "to enforce AI-driven strategy selection."
+            )
 
         output_stem = build_template_output_stem(args.output_name)
         template_output_dir = output_dir
-        if structure_json:
-            emit_progress(args.progress, "onepage", "loading structure json")
-            structure_path = Path(structure_json)
-            payload = json.loads(structure_path.read_text(encoding="utf-8-sig"))
-            structure = structure_spec_cls.from_dict(payload)
-        else:
-            emit_progress(args.progress, "onepage", "calling AI structure planner")
-            try:
-                structure_result = generate_structure_with_ai(
-                    structure_generation_request_cls(
-                        topic=args.topic.strip(),
-                        brief=brief_text,
-                        audience=args.audience,
-                        language=args.language,
-                        sections=args.chapters or 3,
-                        min_sections=args.min_slides,
-                        max_sections=args.max_slides,
-                    ),
-                    model=args.llm_model or None,
-                )
-                structure = structure_result.structure
-            except openai_configuration_error_cls as exc:
-                parser.exit(
-                    status=1,
-                    message=(
-                        f"AI is required for 'onepage' structure planning. "
-                        f"Configuration error: {exc}\n"
-                        + _AI_CONFIG_HINT
-                    ),
-                )
-            except openai_responses_error_cls as exc:
-                parser.exit(
-                    status=1,
-                    message=(
-                        f"AI structure planning failed for 'onepage': {exc}\n"
-                        + _AI_CONFIG_HINT
-                    ),
-                )
+        emit_progress(args.progress, "onepage", "loading structure json")
+        structure_path = Path(structure_json)
+        payload = json.loads(structure_path.read_text(encoding="utf-8-sig"))
+        structure = structure_spec_cls.from_dict(payload)
 
         onepage_brief = build_onepage_brief_from_structure(
             structure,
             topic=args.topic.strip() or structure.core_message,
             footer=f"STRICTLY CONFIDENTIAL | 2026 SIE {output_stem}",
             page_no="01",
-            layout_strategy=args.onepage_strategy.strip() or "auto",
+            layout_strategy="auto",
         )
         brief_output_path = template_output_dir / f"{output_stem}.onepage_brief.json"
         write_json_artifact(brief_output_path, asdict(onepage_brief))
-        onepage_output_path = Path(args.ppt_output) if args.ppt_output else template_output_dir / f"{output_stem}.onepage.pptx"
+        onepage_output_path = (
+            Path(args.ppt_output)
+            if args.ppt_output
+            else template_output_dir / f"{output_stem}.onepage.pptx"
+        )
         try:
             emit_progress(args.progress, "onepage", "rendering onepage PPT")
             built_path, review_path, score_path, _ = build_onepage_slide(
@@ -134,20 +112,22 @@ def handle_pre_v2_command(
                 model=args.llm_model or None,
                 require_ai_strategy=True,
             )
-        except openai_configuration_error_cls as exc:
-            parser.exit(
-                status=1,
-                message=(
-                    "AI is mandatory for 'onepage' content/layout planning. "
-                    f"Configure a reachable AI endpoint first. Details: {exc}\n"
-                    + _AI_CONFIG_HINT
-                ),
-            )
-        except openai_responses_error_cls as exc:
-            parser.exit(
-                status=1,
-                message=f"AI strategy selection failed for 'onepage': {exc}\n" + _AI_CONFIG_HINT,
-            )
+        except Exception as exc:
+            if _matches_exc(exc, openai_configuration_error_cls, "OpenAIConfigurationError"):
+                parser.exit(
+                    status=1,
+                    message=(
+                        "AI is mandatory for 'onepage' content/layout planning. "
+                        f"Configure a reachable AI endpoint first. Details: {exc}\n"
+                        + _AI_CONFIG_HINT
+                    ),
+                )
+            if _matches_exc(exc, openai_responses_error_cls, "OpenAIResponsesError"):
+                parser.exit(
+                    status=1,
+                    message=f"AI strategy selection failed for 'onepage': {exc}\n" + _AI_CONFIG_HINT,
+                )
+            raise
         print(str(brief_output_path))
         print(str(review_path))
         print(str(score_path))

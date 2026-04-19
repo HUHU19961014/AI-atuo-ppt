@@ -1,0 +1,162 @@
+{
+  "generated_at": "2026-04-19T03:16:27.844894+00:00",
+  "paths": [
+    "tools/sie_autoppt/v2"
+  ],
+  "summary": {
+    "issue_count": 74,
+    "entry_count": 29,
+    "by_code": {
+      "E402": 3,
+      "E501": 54,
+      "I001": 17
+    }
+  },
+  "entries": [
+    {
+      "path": "tools/sie_autoppt/v2/content_rewriter.py",
+      "code": "E501",
+      "count": 5
+    },
+    {
+      "path": "tools/sie_autoppt/v2/content_rewriter.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/deck_director.py",
+      "code": "E402",
+      "count": 3
+    },
+    {
+      "path": "tools/sie_autoppt/v2/io.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/layout_router.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/ppt_engine.py",
+      "code": "E501",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/quality_checks.py",
+      "code": "E501",
+      "count": 10
+    },
+    {
+      "path": "tools/sie_autoppt/v2/quality_checks.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/renderers/cards_grid.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/renderers/common.py",
+      "code": "E501",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/renderers/common.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/renderers/stats_dashboard.py",
+      "code": "E501",
+      "count": 3
+    },
+    {
+      "path": "tools/sie_autoppt/v2/renderers/stats_dashboard.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/renderers/timeline.py",
+      "code": "E501",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/renderers/timeline.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/renderers/title_content.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/renderers/title_image.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/rule_config.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/schema.py",
+      "code": "E501",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/semantic_compiler.py",
+      "code": "E501",
+      "count": 7
+    },
+    {
+      "path": "tools/sie_autoppt/v2/semantic_compiler.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/semantic_router.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/semantic_schema_builder.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/services.py",
+      "code": "E501",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/template_engine/__init__.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/template_engine/template_index.py",
+      "code": "E501",
+      "count": 2
+    },
+    {
+      "path": "tools/sie_autoppt/v2/theme_loader.py",
+      "code": "I001",
+      "count": 1
+    },
+    {
+      "path": "tools/sie_autoppt/v2/visual_review.py",
+      "code": "E501",
+      "count": 22
+    },
+    {
+      "path": "tools/sie_autoppt/v2/visual_review.py",
+      "code": "I001",
+      "count": 1
+    }
+  ]
+}

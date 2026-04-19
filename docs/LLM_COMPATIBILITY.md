@@ -45,7 +45,7 @@ export SIE_AUTOPPT_LLM_MODEL="gpt-4o-mini"
 说明：
 - 默认不强制本地 `OPENAI_API_KEY`（便于 Codex/Claude Code/网关注入鉴权场景）。
 - 若你的上游端点要求显式 key，请自行设置 `OPENAI_API_KEY`。
-- 若你要恢复“必须有 key”策略，可设置 `SIE_AUTOPPT_REQUIRE_API_KEY=1`。
+- 若你需要强制本地预校验，可用 `--llm-mode runtime_api`（或设置 `SIE_AUTOPPT_LLM_MODE=runtime_api`）。
 
 **特点：**
 - 支持 JSON Schema strict mode
@@ -192,8 +192,8 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_real_ai_smoke.ps1 -Generati
 ### 常见错误诊断
 
 **错误：`OPENAI_API_KEY is required`**
-- 仅在你显式启用 `SIE_AUTOPPT_REQUIRE_API_KEY=1` 时会出现。
-- 处理方式：设置 `OPENAI_API_KEY`，或关闭 `SIE_AUTOPPT_REQUIRE_API_KEY`，或改用 localhost 网关。
+- 常见于 `runtime_api` 模式连接远端 endpoint 且本地未配置 key 时。
+- 处理方式：设置 `OPENAI_API_KEY`，或改回 `agent_first` 模式，或改用 localhost 网关。
 
 **错误：`401 Unauthorized` / `invalid_api_key`**
 - 这通常表示上游服务需要鉴权，但当前请求没有有效凭据。

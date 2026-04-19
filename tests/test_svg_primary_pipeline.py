@@ -59,7 +59,11 @@ class SvgPrimaryPipelineTests(unittest.TestCase):
 
             expected_project = output_dir / "svg_projects" / "Enterprise-AI-PPT-V2_ppt169"
             write_svg_project.assert_called_once()
-            run_svg_pipeline.assert_called_once_with(project_path=expected_project, final_ppt_output=ppt_path)
+            run_svg_pipeline.assert_called_once_with(
+                project_path=expected_project,
+                final_ppt_output=ppt_path,
+                pptmaster_root=None,
+            )
             self.assertEqual(artifacts.svg_project_path, expected_project)
             self.assertEqual(artifacts.svg_final_dir, expected_project / "svg_final")
             self.assertIn("svg_stage=final", artifacts.log_path.read_text(encoding="utf-8"))

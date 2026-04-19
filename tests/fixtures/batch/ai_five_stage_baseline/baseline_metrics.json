@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-04-19T00:00:00Z",
+  "runs_root": "output/runs",
+  "summary": {
+    "total_runs": 10,
+    "success_runs": 9,
+    "success_rate": 0.9,
+    "avg_retry_attempts": 1.5,
+    "avg_total_tokens": 1400.0,
+    "avg_total_latency_ms": 2100.0,
+    "degraded_ratio": 0.15,
+    "ai_five_stage_mode_counts": {
+      "ai_five_stage": 10
+    }
+  },
+  "run_count": 10,
+  "baseline_fixture_count": 10
+}

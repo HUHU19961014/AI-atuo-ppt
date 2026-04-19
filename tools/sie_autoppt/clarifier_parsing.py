@@ -213,7 +213,7 @@ def _build_options_for_dimension(dimension: str, requirements: ClarifierRequirem
     values = DIMENSION_OPTIONS.get(dimension, ())
     descriptions = DIMENSION_OPTION_DESCRIPTIONS.get(dimension, {})
     recommended_value = _recommended_option_for_dimension(dimension, requirements)
-    options = tuple(
+    resolved_options = tuple(
         ClarifierOption(
             key=_choice_key(index),
             value=value,
@@ -222,8 +222,8 @@ def _build_options_for_dimension(dimension: str, requirements: ClarifierRequirem
         )
         for index, value in enumerate(values)
     )
-    if options and not any(option.recommended for option in options):
-        first = options[0]
+    if resolved_options and not any(option.recommended for option in resolved_options):
+        first = resolved_options[0]
         return (
             ClarifierOption(
                 key=first.key,
@@ -231,9 +231,9 @@ def _build_options_for_dimension(dimension: str, requirements: ClarifierRequirem
                 description=first.description,
                 recommended=True,
             ),
-            *options[1:],
+            *resolved_options[1:],
         )
-    return options
+    return resolved_options
 
 
 def _build_pending_questions(

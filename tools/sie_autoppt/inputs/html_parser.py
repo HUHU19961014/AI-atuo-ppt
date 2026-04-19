@@ -13,11 +13,23 @@ def _class_tokens(class_pattern: str) -> list[str]:
     return [token.strip() for token in class_pattern.split() if token.strip()]
 
 
+def _class_set(value: object) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        return {token for token in value.split() if token}
+    if isinstance(value, list):
+        return {str(token).strip() for token in value if str(token).strip()}
+    return set()
+
+
 def _find_first_by_classes(root: Tag | BeautifulSoup, class_pattern: str) -> Tag | None:
     tokens = _class_tokens(class_pattern)
     if not tokens:
         return None
-    return root.find(lambda tag: isinstance(tag, Tag) and all(token in set(tag.get("class", [])) for token in tokens))
+    return root.find(
+        lambda tag: isinstance(tag, Tag) and all(token in _class_set(tag.get("class")) for token in tokens)
+    )
 
 
 def _find_all_by_class(root: Tag | BeautifulSoup, class_name: str) -> list[Tag]:
@@ -59,7 +71,7 @@ def extract_tag_with_class(html: str, tag: str, class_name: str) -> str:
     soup = _soup(html)
     return _tag_text(
         soup.find(
-            lambda node: isinstance(node, Tag) and node.name == tag and class_name in set(node.get("class", []))
+            lambda node: isinstance(node, Tag) and node.name == tag and class_name in _class_set(node.get("class"))
         )
     )
 
@@ -117,7 +129,7 @@ def _extract_slide_bullets(slide_node: Tag) -> list[str]:
     for node in slide_node.find_all(["p", "div"]):
         if node.find_parent(["ul", "ol"]) is not None:
             continue
-        if "subtitle" in set(node.get("class", [])):
+        if "subtitle" in _class_set(node.get("class")):
             continue
         text = _tag_text(node)
         if text:
@@ -130,7 +142,7 @@ def extract_slides(html: str) -> list[HtmlSlide]:
     for index, slide_node in enumerate(_soup(html).find_all("slide"), start=1):
         title_node = slide_node.find(["h1", "h2", "h3"])
         subtitle_node = slide_node.find(
-            lambda node: isinstance(node, Tag) and "subtitle" in set(node.get("class", []))
+            lambda node: isinstance(node, Tag) and "subtitle" in _class_set(node.get("class"))
         )
         title = clean_heading_text(_tag_text(title_node))
         subtitle = _tag_text(subtitle_node)
@@ -182,10 +194,12 @@ def validate_payload(payload: InputPayload):
     )
     if not has_meaningful_content:
         raise ValueError(
-            "Input HTML is empty. Please provide at least one of: title, subtitle, footer, phase-*, scenario, note, or <slide>."
+            "Input HTML is empty. Please provide at least one of: title, subtitle, footer, "
+            "phase-*, scenario, note, or <slide>."
         )
 
     if not payload.slides and not payload.phases and not payload.scenarios and not payload.notes:
         raise ValueError(
-            "Input HTML has no body content. Please provide <slide> tags or at least one phase-*, scenario, or note block."
+            "Input HTML has no body content. Please provide <slide> tags or at least one phase-*, "
+            "scenario, or note block."
         )

@@ -1,0 +1,360 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enterprise-AI-PPT 五阶段AI改造路线（V2）</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --ink: #1f2937;
+      --muted: #4b5563;
+      --line: #d1d5db;
+      --accent: #0f766e;
+      --accent-soft: #ccfbf1;
+      --warn: #b45309;
+      --ok: #166534;
+      --danger: #9f1239;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      color: var(--ink);
+      background: radial-gradient(circle at 0 0, #e0f2fe 0, #f4f6f8 45%), var(--bg);
+      line-height: 1.6;
+    }
+    .wrap {
+      max-width: 1180px;
+      margin: 24px auto;
+      padding: 0 16px 40px;
+    }
+    .hero {
+      background: linear-gradient(135deg, #0f172a, #134e4a);
+      color: #f8fafc;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.28);
+    }
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      line-height: 1.25;
+    }
+    .hero p { margin: 0; color: #cbd5e1; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .chip {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 14px;
+    }
+    .section {
+      margin-top: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 8px 18px rgba(17, 24, 39, 0.06);
+    }
+    .section h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      color: #0b3a36;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background: #fff;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #ecfeff;
+      color: #0f172a;
+      font-weight: 700;
+    }
+    .task {
+      margin-top: 12px;
+      border: 1px solid #c7d2fe;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .task-head {
+      background: #eef2ff;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+    .task-head b { font-size: 16px; }
+    .task-body { padding: 12px; font-size: 14px; }
+    .label {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid transparent;
+    }
+    .p0 { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+    .p1 { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+    .p2 { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+    .ok { color: var(--ok); font-weight: 600; }
+    .warn { color: var(--warn); font-weight: 600; }
+    .danger { color: var(--danger); font-weight: 600; }
+    ul { margin: 8px 0 0 18px; }
+    li { margin-bottom: 4px; }
+    .foot {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--muted);
+      border-top: 1px dashed var(--line);
+      padding-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <h1>Enterprise-AI-PPT 五阶段 AI 改造路线（V2）</h1>
+      <p>文档日期：2026-04-18 ｜ 目标：把“需求澄清/大纲/语义Deck/质量重写/ReviewPatch”统一成 pptmaster 风格的 AI 主导流水线。</p>
+      <div class="grid">
+        <div class="chip"><b>核心结论</b><br>旧任务清单需要重写，且要按阶段重排优先级。</div>
+        <div class="chip"><b>方法</b><br>AI 负责生成与评审，工程负责契约、验证、回滚。</div>
+        <div class="chip"><b>运行模式</b><br>默认 Agent-First（免 key），Runtime-API 仅作兼容模式。</div>
+      </div>
+    </header>
+
+    <section class="section">
+      <h2>为什么要改写旧清单</h2>
+      <ul>
+        <li>旧清单工程债务占比过高（mypy/ruff 等），与“五阶段 AI 对齐”目标不匹配。</li>
+        <li>`v2-*` 与 `batch-make` 的阶段语义不一致，继续按旧清单推进会重复建设。</li>
+        <li>用户当前关心点是“什么时候走 Agent、什么时候才需要 API key、怎么稳定产出”，需要任务直接回答这些问题。</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>旧任务调整映射</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>旧任务</th>
+            <th>调整后</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>TASK-01 `v2-render` 契约统一</td>
+            <td><span class="ok">保留并升级为 A07</span></td>
+            <td>扩展为全命令 Agent/API 执行模式契约</td>
+          </tr>
+          <tr>
+            <td>TASK-02 CLI Contract Registry</td>
+            <td><span class="ok">保留并并入 A01/A07</span></td>
+            <td>契约登记必须覆盖五阶段而非单点</td>
+          </tr>
+          <tr>
+            <td>TASK-03 输出隔离默认化</td>
+            <td><span class="warn">保留但后移</span></td>
+            <td>重要但不是五阶段对齐的第一阻塞项</td>
+          </tr>
+          <tr>
+            <td>TASK-04 Bridge 单一职责</td>
+            <td><span class="ok">保留并并入 A06</span></td>
+            <td>与 ReviewPatch 公共化一起做收益更高</td>
+          </tr>
+          <tr>
+            <td>TASK-05 Post-export QA 强化</td>
+            <td><span class="ok">保留并并入 A05/A06</span></td>
+            <td>改成前后两段 QA 更符合新流水线</td>
+          </tr>
+          <tr>
+            <td>TASK-07/TASK-08 静态检查债务</td>
+            <td><span class="warn">后置到 A10</span></td>
+            <td>先保业务链路，再做存量治理</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>时间规划（绝对日期）</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Wave</th>
+            <th>日期</th>
+            <th>目标</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Wave 1</td>
+            <td>2026-04-19 ~ 2026-04-21</td>
+            <td>五阶段契约与命令行为矩阵</td>
+          </tr>
+          <tr>
+            <td>Wave 2</td>
+            <td>2026-04-22 ~ 2026-04-27</td>
+            <td>Clarify / Outline / Semantic Deck 对齐</td>
+          </tr>
+          <tr>
+            <td>Wave 3</td>
+            <td>2026-04-28 ~ 2026-05-02</td>
+            <td>Quality Rewrite / ReviewPatch 对齐</td>
+          </tr>
+          <tr>
+            <td>Wave 4</td>
+            <td>2026-05-03 ~ 2026-05-08</td>
+            <td>回归基线 + 灰度上线 + runbook</td>
+          </tr>
+          <tr>
+            <td>Wave 5</td>
+            <td>2026-05-09 ~ 2026-05-12</td>
+            <td>mypy/ruff 存量债务收口</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>任务清单（V2）</h2>
+
+      <article class="task">
+        <div class="task-head"><b>Task A01：五阶段统一契约与工件模型</b><span class="label p0">P0</span></div>
+        <div class="task-body">
+          <p><b>目标：</b>统一 `v2-*` 和 `batch-make` 阶段定义、输入输出 schema、工件命名。</p>
+          <p><b>Why：</b>不统一契约，AI 越多，漂移越快。</p>
+          <p><b>How：</b>盘点命令 -> 建立标准阶段表 -> 更新 `docs/CLI_CONTRACTS.json` -> 加入 drift 测试。</p>
+          <p><b>When：</b>2026-04-19</p>
+          <p><b>注意事项：</b>Review 与 Rewrite 禁止混名；所有别名必须统一映射。</p>
+        </div>
+      </article>
+
+      <article class="task">
+        <div class="task-head"><b>Task A02：需求澄清阶段 AI 化对齐</b><span class="label p0">P0</span></div>
+        <div class="task-body">
+          <p><b>目标：</b>从“topic 直入 outline”升级为“Clarify -> Outline”。</p>
+          <p><b>Why：</b>先定策略再开画布，才是 pptmaster 风格。</p>
+          <p><b>How：</b>抽公共 Clarify 服务 -> `batch/preprocess.py` 接入 -> 输出 `clarify_result.json`。</p>
+          <p><b>When：</b>2026-04-20 ~ 2026-04-21</p>
+          <p><b>注意事项：</b>限制自由文本输出；缺字段可降级，不能整链路崩。</p>
+        </div>
+      </article>
+
+      <article class="task">
+        <div class="task-head"><b>Task A03：大纲阶段策略化</b><span class="label p0">P0</span></div>
+        <div class="task-body">
+          <p><b>目标：</b>增强 Outline 的叙事节奏、页数边界、结构检查。</p>
+          <p><b>Why：</b>结构错，后面全部返工。</p>
+          <p><b>How：</b>扩 schema + prompt -> 增加大纲质量检查 -> validation feedback 重试。</p>
+          <p><b>When：</b>2026-04-22</p>
+          <p><b>注意事项：</b>标题可读性必须规则化校验；不要越界做视觉细节。</p>
+        </div>
+      </article>
+
+      <article class="task">
+        <div class="task-head"><b>Task A04：语义 Deck 候选化 + 可追溯化</b><span class="label p0">P0</span></div>
+        <div class="task-body">
+          <p><b>目标：</b>默认多候选生成并自动选优，提升稳定性。</p>
+          <p><b>Why：</b>AI 单次输出波动大，多候选更稳。</p>
+          <p><b>How：</b>接入 batch candidate 评分 -> 扩展块级 `source_refs` -> 增加回归样例。</p>
+          <p><b>When：</b>2026-04-23 ~ 2026-04-24</p>
+          <p><b>注意事项：</b>先 2-3 候选控制成本；评分不能只看格式，要看证据覆盖。</p>
+        </div>
+      </article>
+
+      <article class="task">
+        <div class="task-head"><b>Task A05：质量重写阶段分层化</b><span class="label p0">P0</span></div>
+        <div class="task-body">
+          <p><b>目标：</b>从单次 rewrite 变为有限回路（规则判定 + 重写 + 分流）。</p>
+          <p><b>Why：</b>很多问题可修，不该一次失败直接中断。</p>
+          <p><b>How：</b>拆 pre-export QA 与 rewrite executor -> 增加轮次上限 -> 标准化 qa 报告。</p>
+          <p><b>When：</b>2026-04-25 ~ 2026-04-27</p>
+          <p><b>注意事项：</b>每轮必须回归，防止“修A坏B”。</p>
+        </div>
+      </article>
+
+      <article class="task">
+        <div class="task-head"><b>Task A06：ReviewPatch 阶段统一化</b><span class="label p0">P0</span></div>
+        <div class="task-body">
+          <p><b>目标：</b>把 `v2-render` review patch 下沉为公共阶段，`v2` + `batch` 共用。</p>
+          <p><b>Why：</b>不同链路质量标准必须一致。</p>
+          <p><b>How：</b>抽 `visual_review` 公共 API -> batch 导出后接入 -> patch 冲突保护。</p>
+          <p><b>When：</b>2026-04-28 ~ 2026-04-30</p>
+          <p><b>注意事项：</b>patch 必须严格字段校验；只自动修 blocker。</p>
+        </div>
+      </article>
+
+      <article class="task">
+        <div class="task-head"><b>Task A07：Agent 模式与 API 模式契约化</b><span class="label p0">P0</span></div>
+        <div class="task-body">
+          <p><b>目标：</b>明确默认 Agent-First 免 key，Runtime-API 才要求 key。</p>
+          <p><b>Why：</b>“用了 agent 还被要求 key”是当前最大认知冲突。</p>
+          <p><b>How：</b>更新 `CLI_CONTRACTS`（`ai_execution_mode`/`requires_api_key`）+ CLI 模式开关 + 文档与契约测试。</p>
+          <p><b>When：</b>2026-05-01</p>
+          <p><b>注意事项：</b>Agent 模式与 Runtime-API 模式必须可区分、可观测、可回归。</p>
+        </div>
+      </article>
+
+      <article class="task">
+        <div class="task-head"><b>Task A08：回归基线与指标</b><span class="label p1">P1</span></div>
+        <div class="task-body">
+          <p><b>目标：</b>固定样本回放 + 成本/质量/时延指标。</p>
+          <p><b>Why：</b>没有基线就无法判断改造是否成功。</p>
+          <p><b>How：</b>建立 baseline fixtures -> 批量回放脚本 -> 门禁阈值。</p>
+          <p><b>When：</b>2026-05-02 ~ 2026-05-05</p>
+          <p><b>注意事项：</b>模型版本必须入库，否则数据不可比。</p>
+        </div>
+      </article>
+
+      <article class="task">
+        <div class="task-head"><b>Task A09：灰度上线与回滚手册</b><span class="label p1">P1</span></div>
+        <div class="task-body">
+          <p><b>目标：</b>新五阶段逐步切流量，确保可回退。</p>
+          <p><b>Why：</b>生产链路不可一次性全量切换。</p>
+          <p><b>How：</b>feature flag -> 10% 灰度 -> 50% 灰度 -> 全量。</p>
+          <p><b>When：</b>2026-05-06 ~ 2026-05-08</p>
+          <p><b>注意事项：</b>回退必须配置化，不允许人工热修顶替。</p>
+        </div>
+      </article>
+
+      <article class="task">
+        <div class="task-head"><b>Task A10：存量工程债务收口</b><span class="label p2">P2</span></div>
+        <div class="task-body">
+          <p><b>目标：</b>五阶段稳定后再做 mypy/ruff 收口。</p>
+          <p><b>Why：</b>先业务链路、后工程洁癖，符合当前收益。</p>
+          <p><b>How：</b>核心路径先清理 -> 增量门禁 -> 分批回归。</p>
+          <p><b>When：</b>2026-05-09 ~ 2026-05-12</p>
+          <p><b>注意事项：</b>禁止用 `Any` 粗暴消错；风格修复不改语义。</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="section">
+      <h2>结论</h2>
+      <p><span class="ok">是的，必须重写并调整任务。</span> 新版不是推翻旧计划，而是把旧计划中高价值项吸收到“五阶段 AI 对齐”的主线里，并默认采用 `pptmaster` 风格的 Agent-First（免 key）方式。</p>
+      <p class="foot">对应 Markdown 原文：`docs/superpowers/plans/2026-04-18-vibecoding-pptmaster-ai-five-stage-plan-v2.md`</p>
+    </section>
+  </div>
+</body>
+</html>

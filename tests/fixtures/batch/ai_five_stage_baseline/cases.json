@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "description": "A08 baseline replay set for AI five-stage regression and rollout metrics.",
+  "cases": [
+    {
+      "id": "text-strategy-roadmap",
+      "topic": "企业 AI 五阶段转型路线图",
+      "brief": "面向管理层，强调阶段目标、里程碑、风险与收益。",
+      "audience": "Executive team",
+      "language": "zh-CN",
+      "theme": "sie_consulting_fixed"
+    },
+    {
+      "id": "text-mbr-kpi",
+      "topic": "月度经营复盘：AI 项目进展与 KPI",
+      "brief": "需要经营判断、偏差原因、下月动作。",
+      "audience": "Management review",
+      "language": "zh-CN",
+      "theme": "sie_consulting_fixed"
+    },
+    {
+      "id": "link-industry-benchmark",
+      "topic": "行业对标：制造业 AI 运营效率提升",
+      "brief": "整合公开链接并输出关键结论。",
+      "audience": "Strategy office",
+      "language": "zh-CN",
+      "theme": "sie_consulting_fixed",
+      "links": [
+        "https://example.com/benchmark-manufacturing-ai"
+      ]
+    },
+    {
+      "id": "link-risk-compliance",
+      "topic": "AI 合规与数据治理执行方案",
+      "brief": "给出控制点、风险分级、治理动作。",
+      "audience": "Risk committee",
+      "language": "zh-CN",
+      "theme": "sie_consulting_fixed",
+      "links": [
+        "https://example.com/ai-compliance-guide",
+        "https://example.com/data-governance-controls"
+      ]
+    },
+    {
+      "id": "image-site-observation",
+      "topic": "现场巡检：AI 质检场景问题归因",
+      "brief": "结合图片线索与文本证据，输出改进建议。",
+      "audience": "Operations team",
+      "language": "zh-CN",
+      "theme": "sie_consulting_fixed",
+      "image_files": [
+        "tests/fixtures/batch/ai_five_stage_baseline/assets/sample_image.png"
+      ]
+    },
+    {
+      "id": "image-brand-audit",
+      "topic": "品牌视觉一致性审查",
+      "brief": "关注模板一致性、版式稳定性、可交付风险。",
+      "audience": "Design lead",
+      "language": "zh-CN",
+      "theme": "sie_consulting_fixed",
+      "image_files": [
+        "tests/fixtures/batch/ai_five_stage_baseline/assets/sample_image.png"
+      ]
+    },
+    {
+      "id": "attachment-policy-brief",
+      "topic": "政策解读与企业行动建议",
+      "brief": "结合附件摘要形成执行计划。",
+      "audience": "Policy team",
+      "language": "zh-CN",
+      "theme": "sie_consulting_fixed",
+      "attachment_files": [
+        "tests/fixtures/batch/ai_five_stage_baseline/assets/sample_attachment.txt"
+      ]
+    },
+    {
+      "id": "attachment-customer-voice",
+      "topic": "客户反馈闭环与产品优先级",
+      "brief": "从附件提炼痛点并给出优先级排序。",
+      "audience": "Product team",
+      "language": "zh-CN",
+      "theme": "sie_consulting_fixed",
+      "attachment_files": [
+        "tests/fixtures/batch/ai_five_stage_baseline/assets/sample_attachment.txt"
+      ]
+    },
+    {
+      "id": "structured-cost-breakdown",
+      "topic": "AI 项目成本结构与降本计划",
+      "brief": "基于结构化数据生成成本看板。",
+      "audience": "Finance team",
+      "language": "zh-CN",
+      "theme": "sie_consulting_fixed",
+      "structured_data_json": "tests/fixtures/batch/ai_five_stage_baseline/assets/sample_structured_data.json"
+    },
+    {
+      "id": "multimodal-go-live",
+      "topic": "AI 平台上线灰度与回退方案",
+      "brief": "综合文本、链接、图片、附件和结构化数据。",
+      "audience": "Release board",
+      "language": "zh-CN",
+      "theme": "sie_consulting_fixed",
+      "links": [
+        "https://example.com/release-gate"
+      ],
+      "image_files": [
+        "tests/fixtures/batch/ai_five_stage_baseline/assets/sample_image.png"
+      ],
+      "attachment_files": [
+        "tests/fixtures/batch/ai_five_stage_baseline/assets/sample_attachment.txt"
+      ],
+      "structured_data_json": "tests/fixtures/batch/ai_five_stage_baseline/assets/sample_structured_data.json"
+    }
+  ]
+}

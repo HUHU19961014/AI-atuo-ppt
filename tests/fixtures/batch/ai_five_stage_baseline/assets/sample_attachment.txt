@@ -1,0 +1,5 @@
+Sample attachment content for baseline replay.
+Key points:
+1. Capture baseline KPI before rollout.
+2. Track degraded ratio and rollback count.
+3. Keep emergency fallback path documented.

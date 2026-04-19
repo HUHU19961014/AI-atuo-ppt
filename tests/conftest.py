@@ -10,7 +10,6 @@ from uuid import uuid4
 
 import pytest
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 project_root_str = str(PROJECT_ROOT)
 if project_root_str not in sys.path:
@@ -30,9 +29,26 @@ _ISOLATED_ENV_VARS = (
     "SIE_AUTOPPT_REAL_AI_WITH_RENDER",
 )
 
-_TEMP_ROOT = PROJECT_ROOT / ".tmp_test_runtime"
+# Use a per-process writable subtree to avoid inheriting stale ACL/permission
+# state from historical `pytest-of-<user>` directories.
+_TEMP_ROOT = PROJECT_ROOT / ".tmp_test_runtime" / f"workspace_temp_{os.getpid()}"
 _TEMP_ROOT.mkdir(parents=True, exist_ok=True)
 _TEMP_ROOT_STR = str(_TEMP_ROOT)
+
+# On this Windows environment, creating directories with mode 0o700 can produce
+# folders that become inaccessible to subsequent reads. Pytest tmpdir internals
+# use mode=0o700, so normalize that mode to 0o777 for test-only execution.
+_ORIGINAL_OS_MKDIR = os.mkdir
+
+
+def _safe_os_mkdir(path: str | bytes, mode: int = 0o777, *, dir_fd: int | None = None):
+    effective_mode = 0o777 if os.name == "nt" and mode == 0o700 else mode
+    if dir_fd is None:
+        return _ORIGINAL_OS_MKDIR(path, effective_mode)
+    return _ORIGINAL_OS_MKDIR(path, effective_mode, dir_fd=dir_fd)
+
+
+os.mkdir = _safe_os_mkdir
 
 # Ensure process-level temp env always points to writable workspace path.
 tempfile.tempdir = _TEMP_ROOT_STR

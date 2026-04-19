@@ -1,12 +1,12 @@
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
 from .config import DEFAULT_TEMPLATE, DEFAULT_TEMPLATE_MANIFEST
 from .style_guide import deep_merge_dict, parse_style_guide_markdown
-
 
 EMU_PER_CM = 360000
 _GEOMETRY_KEY_MARKERS = ("left", "top", "width", "height", "gap", "padding", "offset", "origin", "start")
@@ -21,7 +21,7 @@ class ShapeBounds:
     max_width: int | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "ShapeBounds":
+    def from_dict(cls, data: Mapping[str, object]) -> "ShapeBounds":
         return cls(
             min_top=_coerce_optional_emu(data.get("min_top")),
             max_top=_coerce_optional_emu(data.get("max_top")),
@@ -53,7 +53,7 @@ class TextBoxGeometry:
     height: int
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "TextBoxGeometry":
+    def from_dict(cls, data: Mapping[str, object]) -> "TextBoxGeometry":
         return cls(
             left=_coerce_emu(data["left"]),
             top=_coerce_emu(data["top"]),
@@ -70,12 +70,12 @@ class SlideRoles:
     body_template: int
 
     @classmethod
-    def from_dict(cls, data: dict[str, int]) -> "SlideRoles":
+    def from_dict(cls, data: Mapping[str, object]) -> "SlideRoles":
         return cls(
-            welcome=int(data["welcome"]),
-            theme=int(data["theme"]),
-            directory=int(data["directory"]),
-            body_template=int(data["body_template"]),
+            welcome=_coerce_int(data["welcome"], field_name="slide_roles.welcome"),
+            theme=_coerce_int(data["theme"], field_name="slide_roles.theme"),
+            directory=_coerce_int(data["directory"], field_name="slide_roles.directory"),
+            body_template=_coerce_int(data["body_template"], field_name="slide_roles.body_template"),
         )
 
 
@@ -86,11 +86,21 @@ class SlidePools:
     ending: int | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "SlidePools":
+    def from_dict(cls, data: Mapping[str, object]) -> "SlidePools":
         return cls(
-            directory=tuple(int(item) for item in data.get("directory", [])),
-            body=tuple(int(item) for item in data.get("body", [])),
-            ending=int(data["ending"]) if data.get("ending") is not None else None,
+            directory=tuple(
+                _coerce_int(item, field_name="slide_pools.directory[]")
+                for item in _as_sequence(data.get("directory"), field_name="slide_pools.directory")
+            ),
+            body=tuple(
+                _coerce_int(item, field_name="slide_pools.body[]")
+                for item in _as_sequence(data.get("body"), field_name="slide_pools.body")
+            ),
+            ending=(
+                _coerce_int(data["ending"], field_name="slide_pools.ending")
+                if data.get("ending") is not None
+                else None
+            ),
         )
 
     def supports(self, body_page_count: int, slide_count: int) -> bool:
@@ -111,13 +121,19 @@ class TemplateSelectors:
     body_render_area: ShapeBounds
 
     @classmethod
-    def from_dict(cls, data: dict[str, dict[str, int]]) -> "TemplateSelectors":
+    def from_dict(cls, data: Mapping[str, object]) -> "TemplateSelectors":
         return cls(
-            theme_title=ShapeBounds.from_dict(data["theme_title"]),
-            directory_title=ShapeBounds.from_dict(data["directory_title"]),
-            body_title=ShapeBounds.from_dict(data["body_title"]),
-            body_subtitle=ShapeBounds.from_dict(data["body_subtitle"]),
-            body_render_area=ShapeBounds.from_dict(data["body_render_area"]),
+            theme_title=ShapeBounds.from_dict(_as_mapping(data["theme_title"], field_name="selectors.theme_title")),
+            directory_title=ShapeBounds.from_dict(
+                _as_mapping(data["directory_title"], field_name="selectors.directory_title")
+            ),
+            body_title=ShapeBounds.from_dict(_as_mapping(data["body_title"], field_name="selectors.body_title")),
+            body_subtitle=ShapeBounds.from_dict(
+                _as_mapping(data["body_subtitle"], field_name="selectors.body_subtitle")
+            ),
+            body_render_area=ShapeBounds.from_dict(
+                _as_mapping(data["body_render_area"], field_name="selectors.body_render_area")
+            ),
         )
 
 
@@ -126,9 +142,11 @@ class TemplateFallbackBoxes:
     body_title: TextBoxGeometry
 
     @classmethod
-    def from_dict(cls, data: dict[str, dict[str, int]]) -> "TemplateFallbackBoxes":
+    def from_dict(cls, data: Mapping[str, object]) -> "TemplateFallbackBoxes":
         return cls(
-            body_title=TextBoxGeometry.from_dict(data["body_title"]),
+            body_title=TextBoxGeometry.from_dict(
+                _as_mapping(data["body_title"], field_name="fallback_boxes.body_title")
+            ),
         )
 
 
@@ -138,10 +156,10 @@ class TemplateFonts:
     directory_title_pt: float
 
     @classmethod
-    def from_dict(cls, data: dict[str, int | float]) -> "TemplateFonts":
+    def from_dict(cls, data: Mapping[str, object]) -> "TemplateFonts":
         return cls(
-            theme_title_pt=float(data["theme_title_pt"]),
-            directory_title_pt=float(data["directory_title_pt"]),
+            theme_title_pt=_coerce_float(data["theme_title_pt"], field_name="fonts.theme_title_pt"),
+            directory_title_pt=_coerce_float(data["directory_title_pt"], field_name="fonts.directory_title_pt"),
         )
 
 
@@ -164,28 +182,47 @@ class TemplateStyleGuide:
     source_path: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "TemplateStyleGuide":
-        accent_rgb = data.get("accent_rgb")
-        inactive_rgb = data.get("inactive_rgb")
+    def from_dict(cls, data: Mapping[str, object]) -> "TemplateStyleGuide":
+        density_thresholds = _as_mapping(data.get("density_thresholds"), field_name="style_guide.density_thresholds")
+        renderer_hints = _as_mapping(data.get("renderer_hints"), field_name="style_guide.renderer_hints")
         return cls(
             theme_name=str(data.get("theme_name", "")).strip(),
-            title_max_chars=int(data.get("title_max_chars", 32)),
-            subtitle_max_chars=int(data.get("subtitle_max_chars", 72)),
-            body_max_chars=int(data.get("body_max_chars", 120)),
-            preferred_item_counts=tuple(int(item) for item in data.get("preferred_item_counts", [])),
+            title_max_chars=_coerce_int(data.get("title_max_chars", 32), field_name="style_guide.title_max_chars"),
+            subtitle_max_chars=_coerce_int(
+                data.get("subtitle_max_chars", 72), field_name="style_guide.subtitle_max_chars"
+            ),
+            body_max_chars=_coerce_int(data.get("body_max_chars", 120), field_name="style_guide.body_max_chars"),
+            preferred_item_counts=tuple(
+                _coerce_int(item, field_name="style_guide.preferred_item_counts[]")
+                for item in _as_sequence(
+                    data.get("preferred_item_counts"), field_name="style_guide.preferred_item_counts"
+                )
+            ),
             overflow_policy=str(data.get("overflow_policy", "paginate")),
             density_thresholds={
-                str(key): int(value)
-                for key, value in dict(data.get("density_thresholds", {})).items()
+                str(key): _coerce_int(value, field_name=f"style_guide.density_thresholds.{key}")
+                for key, value in density_thresholds.items()
             },
-            accent_rgb=tuple(int(item) for item in accent_rgb) if isinstance(accent_rgb, (list, tuple)) and len(accent_rgb) == 3 else None,
-            inactive_rgb=tuple(int(item) for item in inactive_rgb) if isinstance(inactive_rgb, (list, tuple)) and len(inactive_rgb) == 3 else None,
-            tone_keywords=tuple(str(item).strip() for item in data.get("tone_keywords", []) if str(item).strip()),
-            narrative_preferences=tuple(
-                str(item).strip() for item in data.get("narrative_preferences", []) if str(item).strip()
+            accent_rgb=_as_rgb_triplet(data.get("accent_rgb"), field_name="style_guide.accent_rgb"),
+            inactive_rgb=_as_rgb_triplet(data.get("inactive_rgb"), field_name="style_guide.inactive_rgb"),
+            tone_keywords=tuple(
+                token
+                for item in _as_sequence(data.get("tone_keywords"), field_name="style_guide.tone_keywords")
+                if (token := str(item).strip())
             ),
-            prompt_notes=tuple(str(item).strip() for item in data.get("prompt_notes", []) if str(item).strip()),
-            renderer_hints=dict(data.get("renderer_hints", {})),
+            narrative_preferences=tuple(
+                token
+                for item in _as_sequence(
+                    data.get("narrative_preferences"), field_name="style_guide.narrative_preferences"
+                )
+                if (token := str(item).strip())
+            ),
+            prompt_notes=tuple(
+                token
+                for item in _as_sequence(data.get("prompt_notes"), field_name="style_guide.prompt_notes")
+                if (token := str(item).strip())
+            ),
+            renderer_hints=renderer_hints,
             raw_text=str(data.get("raw_text", "")).strip(),
             source_path=str(data.get("source_path", "")).strip(),
         )
@@ -224,6 +261,64 @@ def resolve_template_manifest_path(template_path: Path | None = None) -> Path:
     if folder_manifest.exists():
         return folder_manifest
     return DEFAULT_TEMPLATE_MANIFEST
+
+
+def _as_mapping(value: object, *, field_name: str) -> dict[str, object]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError(f"Expected '{field_name}' to be an object in template manifest.")
+    return {str(key): item for key, item in value.items()}
+
+
+def _as_sequence(value: object, *, field_name: str) -> tuple[object, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(value)
+    raise ValueError(f"Expected '{field_name}' to be an array in template manifest.")
+
+
+def _coerce_int(value: object, *, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"Expected '{field_name}' to be an integer, got boolean.")
+    if not isinstance(value, (int, float, str)):
+        raise ValueError(f"Expected '{field_name}' to be an integer.")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Expected '{field_name}' to be an integer.") from exc
+
+
+def _coerce_float(value: object, *, field_name: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"Expected '{field_name}' to be a number, got boolean.")
+    if not isinstance(value, (int, float, str)):
+        raise ValueError(f"Expected '{field_name}' to be a number.")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Expected '{field_name}' to be a number.") from exc
+
+
+def _as_rgb_triplet(value: object, *, field_name: str) -> tuple[int, int, int] | None:
+    if value is None:
+        return None
+    items = _as_sequence(value, field_name=field_name)
+    if len(items) != 3:
+        raise ValueError(f"Expected '{field_name}' to contain exactly 3 values.")
+    return (
+        _coerce_int(items[0], field_name=f"{field_name}[0]"),
+        _coerce_int(items[1], field_name=f"{field_name}[1]"),
+        _coerce_int(items[2], field_name=f"{field_name}[2]"),
+    )
+
+
+def _as_render_layouts(value: object) -> dict[str, dict[str, object]]:
+    render_layouts: dict[str, dict[str, object]] = {}
+    for layout_id, layout_value in _as_mapping(value, field_name="render_layouts").items():
+        render_layouts[str(layout_id)] = _as_mapping(layout_value, field_name=f"render_layouts.{layout_id}")
+    return render_layouts
 
 
 def _coerce_optional_emu(value: object) -> int | None:
@@ -307,7 +402,8 @@ def _validate_pattern_variants(
             variant_id = str(variant["id"])
             if variant_id not in render_layouts:
                 raise ValueError(
-                    f"Pattern variant '{variant_id}' for pattern '{pattern_id}' is declared but render_layouts.{variant_id} is missing."
+                    f"Pattern variant '{variant_id}' for pattern '{pattern_id}' is declared "
+                    f"but render_layouts.{variant_id} is missing."
                 )
 
 
@@ -315,23 +411,30 @@ def _validate_pattern_variants(
 def _load_template_manifest_cached(manifest_path_str: str) -> TemplateManifest:
     manifest_path = Path(manifest_path_str)
     data = _load_manifest_data(manifest_path)
-    style_guide_data = dict(data.get("style_guide", {}))
+    style_guide_data = _as_mapping(data.get("style_guide"), field_name="style_guide")
     style_guide_path = _resolve_style_guide_path(manifest_path, data)
     if style_guide_path is not None and style_guide_path.exists():
-        style_guide_data = deep_merge_dict(style_guide_data, parse_style_guide_markdown(style_guide_path))
-    render_layouts = _normalize_render_layouts(data.get("render_layouts", {}))
+        style_guide_data = _as_mapping(
+            deep_merge_dict(style_guide_data, parse_style_guide_markdown(style_guide_path)),
+            field_name="style_guide",
+        )
+    render_layouts = _as_render_layouts(_normalize_render_layouts(data.get("render_layouts", {})))
     pattern_variants = _normalize_pattern_variants(data.get("pattern_variants", {}))
     _validate_pattern_variants(pattern_variants, render_layouts)
     return TemplateManifest(
         manifest_path=str(manifest_path),
         version=str(data["version"]),
         template_name=str(data["template_name"]),
-        slide_roles=SlideRoles.from_dict(data["slide_roles"]),
-        selectors=TemplateSelectors.from_dict(data["selectors"]),
-        fallback_boxes=TemplateFallbackBoxes.from_dict(data["fallback_boxes"]),
-        fonts=TemplateFonts.from_dict(data["fonts"]),
+        slide_roles=SlideRoles.from_dict(_as_mapping(data["slide_roles"], field_name="slide_roles")),
+        selectors=TemplateSelectors.from_dict(_as_mapping(data["selectors"], field_name="selectors")),
+        fallback_boxes=TemplateFallbackBoxes.from_dict(
+            _as_mapping(data["fallback_boxes"], field_name="fallback_boxes")
+        ),
+        fonts=TemplateFonts.from_dict(_as_mapping(data["fonts"], field_name="fonts")),
         style_guide=TemplateStyleGuide.from_dict(style_guide_data),
-        slide_pools=SlidePools.from_dict(data["slide_pools"]) if data.get("slide_pools") else None,
+        slide_pools=SlidePools.from_dict(_as_mapping(data["slide_pools"], field_name="slide_pools"))
+        if data.get("slide_pools")
+        else None,
         pattern_variants=pattern_variants,
         render_layouts=render_layouts,
     )
@@ -351,7 +454,10 @@ def _load_manifest_data(manifest_path: Path, visited: tuple[Path, ...] = ()) -> 
     resolved_manifest_path = manifest_path.resolve()
     if resolved_manifest_path in visited:
         raise ValueError(f"Cyclic template manifest inheritance detected: {resolved_manifest_path}")
-    data = json.loads(resolved_manifest_path.read_text(encoding="utf-8"))
+    raw_data = json.loads(resolved_manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(raw_data, dict):
+        raise ValueError(f"Template manifest root must be a JSON object: {resolved_manifest_path}")
+    data = {str(key): value for key, value in raw_data.items()}
     parent_ref = str(data.get("extends", "")).strip()
     if not parent_ref:
         return data

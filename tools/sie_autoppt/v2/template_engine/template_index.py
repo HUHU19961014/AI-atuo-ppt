@@ -152,17 +152,17 @@ def build_default_template_index() -> TemplateIndex:
                 layout_id = str(key).strip()
                 summary = str(item.get("summary", "")).strip()
                 keywords_raw = item.get("keywords", [])
-                keywords: list[str] = []
+                layout_keywords: list[str] = []
                 if isinstance(keywords_raw, list):
-                    keywords = [str(word).strip().lower() for word in keywords_raw if str(word).strip()]
-                content_type = _infer_layout_content_type(layout_id, summary, tuple(keywords))
+                    layout_keywords = [str(word).strip().lower() for word in keywords_raw if str(word).strip()]
+                content_type = _infer_layout_content_type(layout_id, summary, tuple(layout_keywords))
                 templates.append(
                     TemplateDescriptor(
                         template_id=f"layout::{layout_id}",
                         content_type=content_type,
                         template_path=f"projects/ppt-master/skills/ppt-master/templates/layouts/{layout_id}",
                         styles=_infer_styles(content_type),
-                        keywords=tuple(keywords),
+                        keywords=tuple(layout_keywords),
                     )
                 )
 

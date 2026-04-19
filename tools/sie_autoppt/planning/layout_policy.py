@@ -16,7 +16,10 @@ class LayoutDecision:
 DEFAULT_ITEM_COUNTS = (3, 5, 9)
 
 
-def choose_capacity(content_profile: ContentProfile, preferred_item_counts: tuple[int, ...] = DEFAULT_ITEM_COUNTS) -> int:
+def choose_capacity(
+    content_profile: ContentProfile,
+    preferred_item_counts: tuple[int, ...] = DEFAULT_ITEM_COUNTS,
+) -> int:
     counts = tuple(sorted(preferred_item_counts or DEFAULT_ITEM_COUNTS))
     if content_profile.item_count <= counts[0]:
         capacity = counts[0]
@@ -41,9 +44,20 @@ def decide_layout_variant(
     if not pattern_variants:
         return None
     for variant in pattern_variants.get(pattern_id, ()):
-        if int(variant.get("capacity", 0)) == int(capacity):
+        if _coerce_variant_capacity(variant.get("capacity")) == int(capacity):
             return str(variant["id"])
     return None
+
+
+def _coerce_variant_capacity(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if not isinstance(value, (int, float, str)):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def resolve_layout_decision(
@@ -59,7 +73,11 @@ def resolve_layout_decision(
     capacity = choose_capacity(content_profile, preferred_item_counts=preferred_item_counts)
     desired_layout_variant = decide_layout_variant(pattern_id, capacity, pattern_variants=pattern_variants)
     resolved_layout_variant = desired_layout_variant
-    if desired_layout_variant and available_layout_variants is not None and desired_layout_variant not in available_layout_variants:
+    if (
+        desired_layout_variant
+        and available_layout_variants is not None
+        and desired_layout_variant not in available_layout_variants
+    ):
         resolved_layout_variant = None
     return LayoutDecision(
         pattern_id=pattern_id,

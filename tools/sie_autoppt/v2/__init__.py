@@ -18,8 +18,6 @@ from .io import (
     write_outline_document,
     write_semantic_document,
 )
-from .semantic_compiler import compile_semantic_deck_payload
-from .semantic_schema_builder import build_semantic_deck_schema
 from .ppt_engine import RenderArtifacts, generate_ppt
 from .quality_checks import (
     AutoScoreResult,
@@ -31,6 +29,7 @@ from .quality_checks import (
     quality_gate,
     write_quality_gate_result,
 )
+from .review_patch import apply_patch, generate_patch, review_once
 from .schema import (
     SUPPORTED_LAYOUTS,
     SUPPORTED_THEMES,
@@ -43,15 +42,23 @@ from .schema import (
     normalize_deck_payload,
     validate_deck_payload,
 )
+from .semantic_compiler import compile_semantic_deck_payload
+from .semantic_schema_builder import build_semantic_deck_schema
 from .services import (
     DeckGenerationRequest,
     OutlineGenerationRequest,
+    V2CompiledDeckArtifacts,
     V2MakeArtifacts,
+    build_svg_project_from_deck,
+    generate_compiled_v2_deck,
     generate_deck_with_ai,
     generate_outline_with_ai,
     generate_semantic_deck_with_ai,
     generate_semantic_decks_with_ai_batch,
     make_v2_ppt,
+    run_pre_render_quality_gate,
+    select_best_semantic_candidate,
+    write_v2_make_log,
 )
 from .style_variants import SUPPORTED_STYLE_VARIANTS, resolve_style_variant, select_style_variant
 from .template_engine import TemplateMatcher, build_default_template_index
@@ -74,9 +81,11 @@ __all__ = [
     "QualityGateResult",
     "ThemeMeta",
     "ThemeSpec",
+    "V2CompiledDeckArtifacts",
     "V2MakeArtifacts",
     "ValidatedDeck",
     "available_theme_names",
+    "build_svg_project_from_deck",
     "build_deck_output_path",
     "build_log_output_path",
     "build_outline_output_path",
@@ -93,10 +102,12 @@ __all__ = [
     "default_ppt_output_path",
     "default_semantic_output_path",
     "compile_semantic_deck_payload",
+    "generate_compiled_v2_deck",
     "generate_deck_with_ai",
     "generate_outline_with_ai",
     "generate_semantic_decks_with_ai_batch",
     "generate_semantic_deck_with_ai",
+    "select_best_semantic_candidate",
     "generate_ppt",
     "is_semantic_deck_document",
     "load_deck_document",
@@ -104,8 +115,12 @@ __all__ = [
     "load_semantic_document",
     "load_theme",
     "make_v2_ppt",
+    "run_pre_render_quality_gate",
     "normalize_deck_payload",
     "quality_gate",
+    "review_once",
+    "generate_patch",
+    "apply_patch",
     "rewrite_deck",
     "rewrite_slide",
     "resolve_style_variant",
@@ -118,4 +133,5 @@ __all__ = [
     "write_outline_document",
     "write_quality_gate_result",
     "write_rewrite_log",
+    "write_v2_make_log",
 ]

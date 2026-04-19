@@ -84,7 +84,7 @@ def default_log_output_path(output_dir: Path | None = None) -> Path:
 def write_outline_document(outline: OutlineDocument, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        json.dumps(outline.to_list(), ensure_ascii=False, indent=2),
+        json.dumps(outline.to_payload(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     return output_path
@@ -140,6 +140,8 @@ def is_semantic_deck_document(deck_path: Path) -> bool:
 
 def load_deck_document(deck_path: Path) -> DeckDocument:
     data = _read_json_file(deck_path)
+    if not isinstance(data, dict):
+        raise ValueError("deck JSON must be an object.")
     if _is_semantic_deck_payload(data):
         from .deck_director import compile_semantic_deck_payload
 

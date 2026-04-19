@@ -75,6 +75,10 @@ class V2CliTests(unittest.TestCase):
                 patch("tools.sie_autoppt.cli.ensure_generation_context", return_value=({}, None)),
                 patch("tools.sie_autoppt.cli.generate_outline_with_ai", return_value=outline),
                 patch("tools.sie_autoppt.cli.generate_semantic_deck_with_ai", return_value=semantic_payload),
+                patch(
+                    "tools.sie_autoppt.cli.generate_semantic_decks_with_ai_batch",
+                    new=AsyncMock(return_value=[semantic_payload]),
+                ),
                 patch("tools.sie_autoppt.cli.compile_semantic_deck_payload", return_value=validated),
                 redirect_stdout(stdout),
             ):
@@ -384,6 +388,10 @@ class V2CliTests(unittest.TestCase):
                 patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
                 patch("tools.sie_autoppt.cli.ensure_generation_context") as context_mock,
                 patch("tools.sie_autoppt.cli.generate_semantic_deck_with_ai", return_value=semantic_payload),
+                patch(
+                    "tools.sie_autoppt.cli.generate_semantic_decks_with_ai_batch",
+                    new=AsyncMock(return_value=[semantic_payload]),
+                ),
                 patch("tools.sie_autoppt.cli.compile_semantic_deck_payload", return_value=validated),
                 redirect_stdout(stdout),
             ):
@@ -407,17 +415,31 @@ class V2CliTests(unittest.TestCase):
         semantic_payloads = [
             {
                 "meta": {"title": "Deck A", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
-                "slides": [{"slide_id": "s1", "title": "Conclusion A", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "A"}]}],
+                "slides": [{"slide_id": "s1", "title": "Conclusion A", "intent": "conclusion", "blocks": []}],
             },
             {
                 "meta": {"title": "Deck B", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
-                "slides": [{"slide_id": "s1", "title": "Conclusion B", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "B"}]}],
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "title": "Conclusion B",
+                        "intent": "conclusion",
+                        "data_sources": [{"claim": "ROI up", "source": "src-topic", "confidence": "medium"}],
+                        "blocks": [{"kind": "statement", "text": "Decision approved"}],
+                    },
+                    {
+                        "slide_id": "s2",
+                        "title": "Execution B",
+                        "intent": "narrative",
+                        "blocks": [{"kind": "bullets", "items": ["path", "owner"]}],
+                    },
+                ],
             },
         ]
         validated = validate_deck_payload(
             {
-                "meta": {"title": "Deck A", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
-                "slides": [{"slide_id": "s1", "layout": "title_only", "title": "Conclusion A"}],
+                "meta": {"title": "Deck B", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [{"slide_id": "s1", "layout": "title_only", "title": "Conclusion B"}],
             }
         )
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -446,6 +468,68 @@ class V2CliTests(unittest.TestCase):
             self.assertIn("generated_semantic_deck.json", out_lines[1])
             self.assertIn("generated_semantic_deck.candidate_2.json", out_lines[2])
             self.assertIn("generated_deck.json", out_lines[3])
+            selected_payload = json.loads((Path(temp_dir) / "generated_semantic_deck.json").read_text(encoding="utf-8"))
+            self.assertEqual(selected_payload["meta"]["title"], "Deck B")
+
+    def test_v2_plan_batch_size_one_uses_batch_candidate_api(self):
+        stdout = io.StringIO()
+        outline = OutlineDocument.model_validate(
+            {
+                "pages": [
+                    {"page_no": 1, "title": "Context", "goal": "Set context."},
+                    {"page_no": 2, "title": "Plan", "goal": "Propose options."},
+                ]
+            }
+        )
+        semantic_payload = {
+            "meta": {"title": "Deck One", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "slides": [
+                {
+                    "slide_id": "s1",
+                    "title": "Conclusion",
+                    "intent": "conclusion",
+                    "data_sources": [{"claim": "ROI up", "source": "src-topic", "confidence": "medium"}],
+                    "blocks": [{"kind": "statement", "text": "Proceed now."}],
+                },
+                {
+                    "slide_id": "s2",
+                    "title": "Execution",
+                    "intent": "narrative",
+                    "blocks": [{"kind": "bullets", "items": ["owner", "milestone"]}],
+                },
+            ],
+        }
+        validated = validate_deck_payload(
+            {
+                "meta": {"title": "Deck One", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [{"slide_id": "s1", "layout": "title_only", "title": "Conclusion"}],
+            }
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch(
+                    "sys.argv",
+                    ["sie-autoppt", "v2-plan", "--topic", "AI plan", "--output-dir", temp_dir, "--batch-size", "1"],
+                ),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
+                patch("tools.sie_autoppt.cli.ensure_generation_context", return_value=({}, None)),
+                patch("tools.sie_autoppt.cli.generate_outline_with_ai", return_value=outline),
+                patch("tools.sie_autoppt.cli.generate_semantic_deck_with_ai") as single_generate_mock,
+                patch(
+                    "tools.sie_autoppt.cli.generate_semantic_decks_with_ai_batch",
+                    new=AsyncMock(return_value=[semantic_payload]),
+                ) as batch_generate_mock,
+                patch("tools.sie_autoppt.cli.compile_semantic_deck_payload", return_value=validated),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+            batch_generate_mock.assert_called_once()
+            single_generate_mock.assert_not_called()
+            out_lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+            self.assertEqual(len(out_lines), 3)
+            self.assertIn("generated_outline.json", out_lines[0])
+            self.assertIn("generated_semantic_deck.json", out_lines[1])
+            self.assertIn("generated_deck.json", out_lines[2])
 
     def test_v2_review_prints_five_artifact_paths(self):
         stdout = io.StringIO()

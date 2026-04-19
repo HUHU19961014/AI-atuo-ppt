@@ -1,0 +1,313 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Enterprise-AI-PPT 全仓代码评审与技术路线报告（2026-04-18）</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --sub: #4b5563;
+      --line: #dbe2ea;
+      --p0: #b91c1c;
+      --p1: #b45309;
+      --p2: #1d4ed8;
+      --ok: #047857;
+      --code: #0f172a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.55;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 28px auto 56px;
+      padding: 0 16px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px 18px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+    }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    h2 { margin: 0 0 10px; font-size: 22px; }
+    h3 { margin: 14px 0 6px; font-size: 18px; }
+    .meta { color: var(--sub); font-size: 14px; }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .kpi {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfcfe;
+    }
+    .kpi b { display: block; font-size: 20px; margin-bottom: 2px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 8px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #f8fafc; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: 12px;
+      color: #fff;
+      font-weight: 600;
+    }
+    .p0 { background: var(--p0); }
+    .p1 { background: var(--p1); }
+    .p2 { background: var(--p2); }
+    .ok { background: var(--ok); }
+    code {
+      background: #0b1220;
+      color: #e5e7eb;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-family: Consolas, Menlo, monospace;
+      font-size: 12px;
+    }
+    ul { margin: 8px 0 0 20px; }
+    .foot { color: var(--sub); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h1>Enterprise-AI-PPT 全仓代码评审与技术路线报告</h1>
+      <div class="meta">版本：v1.0 | 评审日期：2026-04-18 | 评审范围：当前仓库全量代码结构 + 核心链路 + 关键测试与静态检查</div>
+      <div class="kpis">
+        <div class="kpi"><b>144</b>Python 文件</div>
+        <div class="kpi"><b>26,481</b>Python 代码行</div>
+        <div class="kpi"><b>83</b>测试文件</div>
+        <div class="kpi"><b>93/93</b>核心回归通过</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>一页结论（给管理层）</h2>
+      <ul>
+        <li>项目已具备“可交付”的主链路：<code>AI 语义生成 → 编译 → SVG/PPTX 导出 → QA</code>，且内部批处理路径已有状态机和工件契约。</li>
+        <li>当前最优先问题不是“功能缺失”，而是“工程一致性”：命令语义与文档存在冲突，静态质量债较多，部分模块职责仍有重复。</li>
+        <li>建议先做 2-4 周工程收敛，再做 4-8 周架构解耦与质量深化。这样投入产出比最高。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>评审方法与证据</h2>
+      <h3>执行过的验证</h3>
+      <ul>
+        <li>核心测试集：<code>python -m pytest tests/test_batch_contracts.py ... tests/test_doc_drift.py -q</code>，结果 <b>93 passed</b>。</li>
+        <li>静态风格检查：<code>python -m ruff check tools tests</code>，结果 <b>613</b> 条告警/错误（含 Import/行宽/未使用导入等）。</li>
+        <li>类型检查：<code>python -m mypy ...</code>，结果 <b>37</b> 条错误，集中在 <code>template_manifest.py</code>、<code>html_parser.py</code>、<code>layout_policy.py</code>。</li>
+      </ul>
+      <h3>重点审阅模块</h3>
+      <ul>
+        <li><code>tools/sie_autoppt/cli.py</code>、<code>cli_v2_commands.py</code>（命令入口与路由）</li>
+        <li><code>tools/sie_autoppt/v2/services.py</code>、<code>v2/ppt_engine.py</code>、<code>v2/semantic_compiler.py</code></li>
+        <li><code>tools/sie_autoppt/batch/*</code>（状态机、契约、bridge、tuning、QA）</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>当前技术路线现状（通俗版）</h2>
+      <table>
+        <thead>
+          <tr><th>层</th><th>现在在做什么</th><th>成熟度</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>命令与入口层</td>
+            <td>统一由 <code>cli.py</code> 路由，主命令覆盖 <code>make</code> / <code>batch-make</code> / <code>v2-*</code>。</td>
+            <td><span class="tag ok">较成熟</span></td>
+          </tr>
+          <tr>
+            <td>V2 语义生成层</td>
+            <td>AI 负责大纲和语义，编译器落到可渲染 schema，并有 rewrite + quality gate。</td>
+            <td><span class="tag ok">较成熟</span></td>
+          </tr>
+          <tr>
+            <td>批处理控制层</td>
+            <td>已有状态机、重试策略、run 级工件目录、失败死信和摘要。</td>
+            <td><span class="tag ok">成熟</span></td>
+          </tr>
+          <tr>
+            <td>导出与后处理层</td>
+            <td>支持 pptmaster bridge、hash 校验、deterministic tuning、基础 QA 路由。</td>
+            <td><span class="tag p1">中等</span></td>
+          </tr>
+          <tr>
+            <td>工程质量层</td>
+            <td>测试覆盖好，但静态规范/类型规范尚未“拉齐到门禁”。</td>
+            <td><span class="tag p1">待提升</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>代码评审发现（按优先级）</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>优先级</th>
+            <th>问题</th>
+            <th>影响</th>
+            <th>证据（文件:行）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag p0">P0</span></td>
+            <td><b>命令契约不一致：<code>v2-render</code>代码要求 AI，但文档写“无需 AI”</b></td>
+            <td>运维和使用方会按文档执行离线渲染，实际在无 AI 环境下直接失败，属于高优先级体验/流程故障。</td>
+            <td>
+              <code>tools/sie_autoppt/cli_v2_commands.py:253</code>、<code>tools/sie_autoppt/cli_v2_commands.py:274</code><br/>
+              <code>README.md:286</code>、<code>README.md:543</code>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="tag p1">P1</span></td>
+            <td><b>静态质量债较大（风格与类型）</b></td>
+            <td>短期不一定导致故障，但会提升后续改动风险和评审成本，降低演进速度。</td>
+            <td>
+              <code>ruff check</code> 结果：613 条；<br/>
+              <code>mypy</code> 结果：37 条（集中在 <code>template_manifest.py</code>、<code>html_parser.py</code>、<code>layout_policy.py</code>）
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="tag p1">P1</span></td>
+            <td><b>SVG bridge 逻辑在两个层级重复，职责边界仍有耦合</b></td>
+            <td>后续改 pptmaster 适配时，容易出现“改一处漏一处”的行为分叉。</td>
+            <td>
+              <code>tools/sie_autoppt/v2/services.py:257</code>、<code>tools/sie_autoppt/v2/services.py:311</code><br/>
+              <code>tools/sie_autoppt/batch/pptmaster_bridge.py:44</code>、<code>tools/sie_autoppt/batch/pptmaster_bridge.py:103</code>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="tag p1">P1</span></td>
+            <td><b>V2 默认输出仍是共享文件名，存在并发覆盖风险</b></td>
+            <td>多次执行或多人共享目录时，历史产物易被覆盖，回溯困难。</td>
+            <td>
+              <code>tools/sie_autoppt/v2/io.py:54</code>、<code>...:60</code>、<code>...:66</code>、<code>...:72</code><br/>
+              <code>tools/sie_autoppt/cli_routing.py:104</code>（仅在 <code>--isolate-output</code> 时隔离）
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="tag p2">P2</span></td>
+            <td><b>内容追溯粒度偏粗：story_plan 对各页使用同一组 source_refs</b></td>
+            <td>不影响生成，但会削弱“某页结论来自哪段源材料”的可解释性。</td>
+            <td>
+              <code>tools/sie_autoppt/batch/preprocess.py:78</code>、<code>...:87-94</code>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="tag p2">P2</span></td>
+            <td><b>导出后 QA 目前偏轻量（重点在字体/shape_map）</b></td>
+            <td>对深层视觉风险（布局异常、图文冲突）主要依赖上游和可选视觉复核。</td>
+            <td>
+              <code>tools/sie_autoppt/batch/qa_router.py:50</code>、<code>...:101</code>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>已经做得好的地方（建议保留）</h2>
+      <ul>
+        <li>批处理状态机清晰，失败可追踪：<code>tools/sie_autoppt/batch/state.py</code>、<code>orchestrator.py</code>。</li>
+        <li>工件契约 + hash 机制完整：<code>contracts.py</code>、<code>export.py:18</code>、<code>tuning.py:18</code>。</li>
+        <li>run 级目录隔离机制成熟：<code>workspace.py</code> 与 <code>docs/ARCHITECTURE.md</code> 一致。</li>
+        <li>测试覆盖面广，核心回归执行速度快（本次关键集 6.78s）。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>技术路线建议（30/60/90天）</h2>
+
+      <h3>阶段A（第1-2周）：先做“对齐”，不做大改</h3>
+      <ul>
+        <li>统一 <code>v2-render</code> 的产品定义：
+          方案1：保留 AI 强依赖，同时改 README/CLI 文档；
+          方案2：提供 <code>--skip-ai-review</code>，恢复离线渲染能力。</li>
+        <li>把这条契约加进 <code>test_doc_drift.py</code>，防止再次漂移。</li>
+      </ul>
+
+      <h3>阶段B（第3-6周）：工程质量收敛</h3>
+      <ul>
+        <li>先清理 <code>mypy</code> 的 37 条类型错误（优先 <code>template_manifest.py</code> / <code>html_parser.py</code>）。</li>
+        <li>把 <code>ruff</code> 从“全量修”拆成“增量门禁”：新改动必须过，历史问题分批清。</li>
+        <li>对 <code>v2/io.py</code> 默认输出策略加 run-id 或时间戳，避免覆盖。</li>
+      </ul>
+
+      <h3>阶段C（第7-10周）：职责解耦与能力增强</h3>
+      <ul>
+        <li>收敛 bridge 入口，把 <code>_write_svg_project</code> 与导出调用统一到 <code>batch/pptmaster_bridge.py</code>（V2 调用桥接层，不再直接持有外部脚本细节）。</li>
+        <li>补强 post-export QA：增加版式稳定性、关键文本溢出等规则检查。</li>
+        <li>把 <code>source_refs</code> 从“整页共享”升级到“块级/要点级”。</li>
+      </ul>
+
+      <h3>阶段D（第11-13周）：产品化稳定阶段</h3>
+      <ul>
+        <li>形成“命令契约清单 + 回归清单 + 发布清单”三件套，接入 release gate。</li>
+        <li>沉淀可观测指标：失败率、重试次数、平均生成时长、degraded 占比。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>建议的阶段验收指标</h2>
+      <table>
+        <thead>
+          <tr><th>指标</th><th>当前</th><th>阶段目标</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>关键测试通过率</td><td>93/93</td><td>持续 100%</td></tr>
+          <tr><td>Mypy 错误数</td><td>37</td><td><= 5（阶段C结束）</td></tr>
+          <tr><td>Ruff 全量问题数</td><td>613</td><td>持续下降（每迭代 >= 15%）</td></tr>
+          <tr><td>命令契约漂移</td><td>存在</td><td>0（通过 doc drift + CLI 契约测试）</td></tr>
+          <tr><td>可追溯粒度</td><td>页级偏粗</td><td>块级 source_ref</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>附：关键证据索引</h2>
+      <ul>
+        <li>主入口与命令路由：<code>tools/sie_autoppt/cli.py</code>、<code>cli_v2_commands.py</code></li>
+        <li>批处理状态机：<code>tools/sie_autoppt/batch/orchestrator.py</code></li>
+        <li>契约定义：<code>tools/sie_autoppt/batch/contracts.py</code></li>
+        <li>导出与 hash 校验：<code>tools/sie_autoppt/batch/export.py</code>、<code>tuning.py</code></li>
+        <li>V2 语义服务：<code>tools/sie_autoppt/v2/services.py</code></li>
+        <li>文档对照：<code>README.md</code>、<code>docs/CLI_REFERENCE.md</code>、<code>docs/ARCHITECTURE.md</code></li>
+      </ul>
+      <p class="foot">说明：本报告是基于当前仓库代码与命令验证结果生成，结论用于指导下一阶段技术治理与迭代节奏。</p>
+    </section>
+  </div>
+</body>
+</html>

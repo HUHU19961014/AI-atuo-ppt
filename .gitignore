@@ -4,6 +4,13 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+.tmp_ppt_master_research/
+.tmp_pytest_cache/
+.tmp_test_runtime/
+.tmp_test_workspace/
+.mypy_cache/
+.ruff_cache/
+output/runs/
 projects/generated/
 projects/visual_review/
 projects/*_preview/

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 from .design_engine.layout_strategy import decide_layout_strategy
 from .design_engine.visual_balance import ContentBlock
@@ -9,6 +9,9 @@ from .llm_layout_planner import decide_layout_with_llm_or_none
 from .style_variants import resolve_style_variant
 from .template_engine.template_matcher import TemplateMatcher
 from .utils import strip_text
+
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -38,7 +41,7 @@ class SemanticLayoutPlan:
     reason: str
 
 
-def split_evenly(items: list[str]) -> tuple[list[str], list[str]]:
+def split_evenly(items: list[T]) -> tuple[list[T], list[T]]:
     midpoint = (len(items) + 1) // 2
     return items[:midpoint], items[midpoint:]
 

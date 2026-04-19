@@ -12,14 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from ..clarifier import DEFAULT_AUDIENCE_HINT
-from ..config import DEFAULT_OUTPUT_DIR, PROJECT_ROOT
+from ..config import DEFAULT_OUTPUT_DIR
 from ..language_policy import format_language_constraints, get_language_policy, normalize_language_code
 from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
 from ..plugins import resolve_model_adapter
 from ..prompting import render_prompt_template
 from .content_rewriter import rewrite_deck, write_rewrite_log
-from .semantic_compiler import compile_semantic_deck_payload
-from .semantic_schema_builder import build_semantic_deck_schema
 from .io import (
     default_deck_output_path,
     default_log_output_path,
@@ -40,21 +38,82 @@ from .schema import (
     ValidatedDeck,
     collect_deck_warnings,
 )
+from .semantic_compiler import compile_semantic_deck_payload
+from .semantic_schema_builder import build_semantic_deck_schema
 from .theme_loader import load_theme
 
 SUPPORTED_GENERATION_MODES = ("quick", "deep")
-DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES = (
-    PROJECT_ROOT / "projects" / "ppt-master" / "skills" / "ppt-master" / "scripts" / "svg_to_pptx.py",
-    PROJECT_ROOT / "skills" / "ppt-master" / "scripts" / "svg_to_pptx.py",
+OUTLINE_AUDIENCE_TIERS = ("executive", "management", "practitioner", "mixed", "general")
+OUTLINE_NARRATIVE_PACING = ("fast", "balanced", "deep")
+OUTLINE_NARRATIVE_PACING_ALIASES = {
+    "accelerated": "fast",
+    "rapid": "fast",
+    "balanced": "balanced",
+    "steady": "balanced",
+    "deep": "deep",
+    "deliberate": "deep",
+}
+GENERIC_OUTLINE_TITLES = {
+    "background",
+    "analysis",
+    "future outlook",
+    "conclusion",
+    "summary",
+    "overview",
+    "introduction",
+    "背景",
+    "分析",
+    "总结",
+    "概述",
+    "展望",
+}
+OPENING_SECTION_CUES = (
+    "decision",
+    "context",
+    "judgement",
+    "judgment",
+    "constraint",
+    "现状",
+    "判断",
+    "决策",
+    "问题",
+    "机会",
+    "结论",
 )
-DEFAULT_TOTAL_MD_SPLIT_SCRIPT_CANDIDATES = (
-    PROJECT_ROOT / "projects" / "ppt-master" / "skills" / "ppt-master" / "scripts" / "total_md_split.py",
-    PROJECT_ROOT / "skills" / "ppt-master" / "scripts" / "total_md_split.py",
+CLOSING_SECTION_CUES = (
+    "recommend",
+    "roadmap",
+    "next step",
+    "owner",
+    "milestone",
+    "建议",
+    "路线图",
+    "行动",
+    "落地",
+    "结论",
+    "决策",
 )
-DEFAULT_FINALIZE_SVG_SCRIPT_CANDIDATES = (
-    PROJECT_ROOT / "projects" / "ppt-master" / "skills" / "ppt-master" / "scripts" / "finalize_svg.py",
-    PROJECT_ROOT / "skills" / "ppt-master" / "scripts" / "finalize_svg.py",
+MIDDLE_SECTION_CUES = (
+    "tradeoff",
+    "option",
+    "plan",
+    "path",
+    "execution",
+    "risk",
+    "resource",
+    "方案",
+    "路径",
+    "执行",
+    "举措",
+    "风险",
+    "成本",
 )
+PPTMASTER_ROOT_ENV = "SIE_PPTMASTER_ROOT"
+PPTMASTER_SCRIPT_PATHS: dict[str, Path] = {
+    "total_md_split.py": Path("skills") / "ppt-master" / "scripts" / "total_md_split.py",
+    "finalize_svg.py": Path("skills") / "ppt-master" / "scripts" / "finalize_svg.py",
+    "svg_to_pptx.py": Path("skills") / "ppt-master" / "scripts" / "svg_to_pptx.py",
+}
 DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC = 120
 
 
@@ -63,6 +122,9 @@ class OutlineGenerationRequest:
     topic: str
     brief: str = ""
     audience: str = DEFAULT_AUDIENCE_HINT
+    chapter_count: int | None = None
+    audience_tier: str | None = None
+    narrative_pacing: str = "balanced"
     language: str = "zh-CN"
     theme: str = "sie_consulting_fixed"
     exact_slides: int | None = None
@@ -102,6 +164,13 @@ class V2MakeArtifacts:
     svg_final_dir: Path | None = None
 
 
+@dataclass(frozen=True)
+class V2CompiledDeckArtifacts:
+    outline: OutlineDocument
+    semantic_payload: dict[str, Any]
+    validated_deck: ValidatedDeck
+
+
 def _clamp_slide_count(value: int) -> int:
     return max(3, min(int(value), 20))
 
@@ -122,6 +191,55 @@ def resolve_slide_bounds(request: OutlineGenerationRequest) -> tuple[int, int]:
     if minimum > maximum:
         raise ValueError("min_slides cannot be greater than max_slides.")
     return minimum, maximum
+
+
+def _normalize_outline_narrative_pacing(value: str | None) -> str:
+    raw = str(value or "balanced").strip().lower()
+    normalized = OUTLINE_NARRATIVE_PACING_ALIASES.get(raw, raw)
+    if normalized not in OUTLINE_NARRATIVE_PACING:
+        allowed = ", ".join(OUTLINE_NARRATIVE_PACING)
+        raise ValueError(f"narrative_pacing must be one of {allowed}")
+    return normalized
+
+
+def _infer_audience_tier(audience: str) -> str:
+    lowered = str(audience or "").strip().lower()
+    if any(token in lowered for token in ("ceo", "cfo", "board", "vp", "executive", "董事", "高管", "决策层")):
+        return "executive"
+    if any(token in lowered for token in ("manager", "director", "lead", "management", "负责人", "总监", "管理层")):
+        return "management"
+    if any(token in lowered for token in ("engineer", "operation", "sales", "product", "执行", "运营", "研发", "产品", "销售")):
+        return "practitioner"
+    if any(token in lowered for token in ("all", "cross-functional", "cross functional", "全员", "跨部门")):
+        return "mixed"
+    return "general"
+
+
+def _normalize_outline_audience_tier(value: str | None, audience_hint: str) -> str:
+    if value is None or not str(value).strip():
+        return _infer_audience_tier(audience_hint)
+    normalized = str(value).strip().lower()
+    if normalized not in OUTLINE_AUDIENCE_TIERS:
+        allowed = ", ".join(OUTLINE_AUDIENCE_TIERS)
+        raise ValueError(f"audience_tier must be one of {allowed}")
+    return normalized
+
+
+def _resolve_outline_strategy(request: OutlineGenerationRequest) -> dict[str, Any]:
+    min_slides, max_slides = resolve_slide_bounds(request)
+    if request.chapter_count is not None:
+        chapter_count = _clamp_slide_count(request.chapter_count)
+    elif request.exact_slides is not None:
+        chapter_count = _clamp_slide_count(request.exact_slides)
+    else:
+        chapter_count = max(min_slides, min(max_slides, round((min_slides + max_slides) / 2)))
+    audience_tier = _normalize_outline_audience_tier(request.audience_tier, request.audience)
+    narrative_pacing = _normalize_outline_narrative_pacing(request.narrative_pacing)
+    return {
+        "chapter_count": chapter_count,
+        "audience_tier": audience_tier,
+        "narrative_pacing": narrative_pacing,
+    }
 
 
 def _json_block(payload: dict[str, Any] | None, fallback: str = "none") -> str:
@@ -149,12 +267,24 @@ def _escape_svg_text(value: str) -> str:
     return escape(str(value), quote=True)
 
 
-def _resolve_script_path(candidate_paths: tuple[Path, ...], script_name: str) -> Path:
-    for candidate in candidate_paths:
-        if candidate.exists():
-            return candidate
-    checked = "\n".join(f"- {item}" for item in candidate_paths)
-    raise FileNotFoundError(f"Unable to locate {script_name}. Checked:\n{checked}")
+def _resolve_pptmaster_root(*, pptmaster_root: Path | str | None = None) -> Path:
+    raw_root = str(pptmaster_root or "").strip() or str(os.environ.get(PPTMASTER_ROOT_ENV, "") or "").strip()
+    if not raw_root:
+        raise FileNotFoundError(f"{PPTMASTER_ROOT_ENV} is not configured.")
+    root = Path(raw_root).expanduser().resolve()
+    if not root.exists():
+        raise FileNotFoundError(f"{PPTMASTER_ROOT_ENV} does not exist: {root}")
+    return root
+
+
+def _resolve_script_path(*, pptmaster_root: Path, script_name: str) -> Path:
+    relative_path = PPTMASTER_SCRIPT_PATHS.get(script_name)
+    if relative_path is None:
+        raise ValueError(f"Unsupported script lookup: {script_name}")
+    candidate = (pptmaster_root / relative_path).resolve()
+    if candidate.exists():
+        return candidate
+    raise FileNotFoundError(f"Missing required pptmaster script: {candidate}")
 
 
 def _run_command(command: list[str], *, step_name: str) -> None:
@@ -261,22 +391,28 @@ def _write_svg_project(deck: DeckDocument, *, project_path: Path) -> Path:
         lines = _collect_slide_text_lines(slide)
         title = _escape_svg_text(getattr(slide, "title", f"Slide {index}"))
 
-        text_elements = [
-            f'<text x="84" y="96" fill="{theme.colors.primary}" font-family="{_escape_svg_text(title_font)}" font-size="42" font-weight="700">{title}</text>'
-        ]
+        title_text_element = (
+            f'<text x="84" y="96" fill="{theme.colors.primary}" '
+            f'font-family="{_escape_svg_text(title_font)}" font-size="42" '
+            f'font-weight="700">{title}</text>'
+        )
+        text_elements = [title_text_element]
         y = 160
         for item in lines[:10]:
             safe_item = _escape_svg_text(item)
             text_elements.append(
-                f'<text x="116" y="{y}" fill="{theme.colors.text_main}" font-family="{_escape_svg_text(body_font)}" font-size="26">{safe_item}</text>'
+                f'<text x="116" y="{y}" fill="{theme.colors.text_main}" '
+                f'font-family="{_escape_svg_text(body_font)}" font-size="26">{safe_item}</text>'
             )
             y += 58
 
         svg_payload = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">\n'
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
+            f'height="{height}" viewBox="0 0 {width} {height}">\n'
             f'  <rect width="{width}" height="{height}" fill="{theme.colors.bg}"/>\n'
-            f'  <rect x="72" y="56" width="{width - 144}" height="{height - 112}" rx="18" fill="{theme.colors.card_bg}" stroke="{theme.colors.line}" stroke-width="2"/>\n'
+            f'  <rect x="72" y="56" width="{width - 144}" height="{height - 112}" '
+            f'rx="18" fill="{theme.colors.card_bg}" stroke="{theme.colors.line}" stroke-width="2"/>\n'
             f"  {' '.join(text_elements)}\n"
             "</svg>\n"
         )
@@ -289,10 +425,16 @@ def _write_svg_project(deck: DeckDocument, *, project_path: Path) -> Path:
     return project_path
 
 
-def _run_svg_pipeline(*, project_path: Path, final_ppt_output: Path) -> None:
-    split_script = _resolve_script_path(DEFAULT_TOTAL_MD_SPLIT_SCRIPT_CANDIDATES, "total_md_split.py")
-    finalize_script = _resolve_script_path(DEFAULT_FINALIZE_SVG_SCRIPT_CANDIDATES, "finalize_svg.py")
-    export_script = _resolve_script_path(DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES, "svg_to_pptx.py")
+def _run_svg_pipeline(
+    *,
+    project_path: Path,
+    final_ppt_output: Path,
+    pptmaster_root: Path | str | None = None,
+) -> None:
+    resolved_root = _resolve_pptmaster_root(pptmaster_root=pptmaster_root)
+    split_script = _resolve_script_path(pptmaster_root=resolved_root, script_name="total_md_split.py")
+    finalize_script = _resolve_script_path(pptmaster_root=resolved_root, script_name="finalize_svg.py")
+    export_script = _resolve_script_path(pptmaster_root=resolved_root, script_name="svg_to_pptx.py")
     final_ppt_output.parent.mkdir(parents=True, exist_ok=True)
 
     _run_command([sys.executable, str(split_script), str(project_path)], step_name="svg split notes")
@@ -303,8 +445,9 @@ def _run_svg_pipeline(*, project_path: Path, final_ppt_output: Path) -> None:
     )
 
 
-def _ensure_svg_export_dependency() -> None:
-    _resolve_script_path(DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES, "svg_to_pptx.py")
+def _ensure_svg_export_dependency(*, pptmaster_root: Path | str | None = None) -> None:
+    resolved_root = _resolve_pptmaster_root(pptmaster_root=pptmaster_root)
+    _resolve_script_path(pptmaster_root=resolved_root, script_name="svg_to_pptx.py")
 
 
 def build_context_schema() -> dict[str, Any]:
@@ -440,7 +583,9 @@ def build_strategy_prompts(
     policy = get_language_policy(language)
     feedback_block = ""
     if validation_feedback:
-        feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(f"- {item}" for item in validation_feedback)
+        feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(
+            f"- {item}" for item in validation_feedback
+        )
     developer_prompt = render_prompt_template(
         "prompts/system/v2_strategy.md",
         language=policy.code,
@@ -569,9 +714,30 @@ def build_outline_schema(request: OutlineGenerationRequest) -> dict[str, Any]:
                     "required": ["page_no", "title", "goal"],
                     "additionalProperties": False,
                 },
-            }
+            },
+            "story_rationale": {"type": "string", "minLength": 12, "maxLength": 280},
+            "outline_strategy": {
+                "type": "object",
+                "properties": {
+                    "chapter_count": {
+                        "type": "integer",
+                        "minimum": min_slides,
+                        "maximum": max_slides,
+                    },
+                    "audience_tier": {
+                        "type": "string",
+                        "enum": list(OUTLINE_AUDIENCE_TIERS),
+                    },
+                    "narrative_pacing": {
+                        "type": "string",
+                        "enum": list(OUTLINE_NARRATIVE_PACING),
+                    },
+                },
+                "required": ["chapter_count", "audience_tier", "narrative_pacing"],
+                "additionalProperties": False,
+            },
         },
-        "required": ["pages"],
+        "required": ["pages", "story_rationale", "outline_strategy"],
         "additionalProperties": False,
     }
 
@@ -582,13 +748,30 @@ def build_outline_prompts(
 ) -> tuple[str, str]:
     policy = get_language_policy(request.language)
     min_slides, max_slides = resolve_slide_bounds(request)
-    slide_rule = f"Return exactly {min_slides} pages." if min_slides == max_slides else f"Return {min_slides}-{max_slides} pages."
+    strategy = _resolve_outline_strategy(request)
+    slide_rule = (
+        f"Return exactly {min_slides} pages."
+        if min_slides == max_slides
+        else f"Return {min_slides}-{max_slides} pages."
+    )
+    chapter_rule = f"Target chapter_count={strategy['chapter_count']} and keep it consistent with page count."
+    strategy_line = (
+        f"chapter_count={strategy['chapter_count']}; "
+        f"audience_tier={strategy['audience_tier']}; "
+        f"narrative_pacing={strategy['narrative_pacing']}"
+    )
     feedback_block = ""
     if validation_feedback:
-        feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(f"- {item}" for item in validation_feedback)
+        feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(
+            f"- {item}" for item in validation_feedback
+        )
     developer_prompt = render_prompt_template(
         "prompts/system/v2_outline.md",
         slide_rule=slide_rule,
+        chapter_rule=chapter_rule,
+        audience_tier=strategy["audience_tier"],
+        narrative_pacing=strategy["narrative_pacing"],
+        outline_strategy_line=strategy_line,
         language=policy.code,
         language_constraints=format_language_constraints(policy),
         feedback_block=feedback_block,
@@ -601,6 +784,8 @@ def build_outline_prompts(
         f"{_json_block(request.structured_context)}\n\n"
         "Strategic Analysis JSON:\n"
         f"{_json_block(request.strategic_analysis)}\n\n"
+        "Outline Strategy JSON:\n"
+        f"{json.dumps(strategy, ensure_ascii=False, indent=2)}\n\n"
         "Return only JSON."
     )
     return developer_prompt, user_prompt
@@ -617,7 +802,9 @@ def build_deck_prompts(
     policy = get_language_policy(request.language)
     feedback_block = ""
     if validation_feedback:
-        feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(f"- {item}" for item in validation_feedback)
+        feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(
+            f"- {item}" for item in validation_feedback
+        )
     developer_prompt = render_prompt_template(
         "prompts/system/v2_slides.md",
         language=policy.code,
@@ -641,11 +828,107 @@ def build_deck_prompts(
     return developer_prompt, user_prompt
 
 
+def _normalized_text(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip()).lower()
+
+
+def _contains_any_keyword(text: str, keywords: tuple[str, ...]) -> bool:
+    normalized = _normalized_text(text)
+    return any(keyword in normalized for keyword in keywords)
+
+
+def _is_generic_title(title: str) -> bool:
+    normalized = _normalized_text(title)
+    return normalized in GENERIC_OUTLINE_TITLES
+
+
+def _has_minimum_title_readability(title: str) -> bool:
+    text = str(title or "").strip()
+    if not text:
+        return False
+    if len(text) > 32:
+        return False
+    alnum_or_cjk_chars = re.findall(r"[A-Za-z0-9\u4e00-\u9fff]", text)
+    if not alnum_or_cjk_chars:
+        return False
+    if len(alnum_or_cjk_chars) < 2:
+        return False
+    punctuation_count = len([ch for ch in text if ch in "._-/:;,|()[]{}"])
+    return punctuation_count <= max(4, len(text) // 2)
+
+
+def _collect_outline_quality_errors(outline: OutlineDocument, request: OutlineGenerationRequest) -> list[str]:
+    errors: list[str] = []
+    titles: list[str] = []
+
+    if not outline.story_rationale or len(outline.story_rationale.strip()) < 12:
+        errors.append("story_rationale is required and must be at least 12 characters.")
+
+    if outline.outline_strategy is None:
+        errors.append("outline_strategy is required and must include chapter_count/audience_tier/narrative_pacing.")
+    else:
+        min_slides, max_slides = resolve_slide_bounds(request)
+        chapter_count = int(outline.outline_strategy.chapter_count)
+        if not (min_slides <= chapter_count <= max_slides):
+            errors.append(f"outline_strategy.chapter_count must be between {min_slides} and {max_slides}.")
+        if request.audience_tier and str(request.audience_tier).strip():
+            expected_audience_tier = _normalize_outline_audience_tier(request.audience_tier, request.audience)
+            if outline.outline_strategy.audience_tier != expected_audience_tier:
+                errors.append(
+                    "outline_strategy.audience_tier must align with requested audience tier "
+                    f"'{expected_audience_tier}'."
+                )
+        expected_pacing = _normalize_outline_narrative_pacing(request.narrative_pacing)
+        if outline.outline_strategy.narrative_pacing != expected_pacing:
+            errors.append(
+                "outline_strategy.narrative_pacing must align with requested pacing "
+                f"'{expected_pacing}'."
+            )
+
+    for page in outline.pages:
+        title = page.title.strip()
+        titles.append(title)
+        if _is_generic_title(title):
+            errors.append(
+                f"page {page.page_no} title '{title}' is too generic; use a conclusion-led business title."
+            )
+        if not _has_minimum_title_readability(title):
+            errors.append(f"page {page.page_no} title '{title}' is not readable enough.")
+
+    normalized_titles = [_normalized_text(item) for item in titles]
+    if len(normalized_titles) != len(set(normalized_titles)):
+        errors.append("outline titles must be unique.")
+
+    if outline.pages:
+        opening_text = f"{outline.pages[0].title} {outline.pages[0].goal}"
+        if not _contains_any_keyword(opening_text, OPENING_SECTION_CUES):
+            errors.append("first page must establish context and decision lens, not generic framing.")
+
+    if len(outline.pages) >= 2:
+        closing_text = f"{outline.pages[-1].title} {outline.pages[-1].goal}"
+        if not _contains_any_keyword(closing_text, CLOSING_SECTION_CUES):
+            errors.append("last page must close with recommendation, roadmap, or decision ask.")
+
+    if len(outline.pages) >= 4:
+        middle_pages = outline.pages[1:-1]
+        if middle_pages:
+            has_argument_progress = any(
+                _contains_any_keyword(f"{page.title} {page.goal}", MIDDLE_SECTION_CUES) for page in middle_pages
+            )
+            if not has_argument_progress:
+                errors.append("middle pages must advance execution argument with options/tradeoffs/path.")
+
+    return errors
+
+
 def _validate_outline_response(payload: dict[str, Any], request: OutlineGenerationRequest) -> OutlineDocument:
     outline = OutlineDocument.model_validate(payload)
     min_slides, max_slides = resolve_slide_bounds(request)
     if not (min_slides <= len(outline.pages) <= max_slides):
         raise ValueError(f"outline page count must be between {min_slides} and {max_slides}.")
+    quality_errors = _collect_outline_quality_errors(outline, request)
+    if quality_errors:
+        raise ValueError("; ".join(quality_errors))
     return outline
 
 
@@ -658,6 +941,9 @@ def generate_outline_with_ai(
         raise ValueError(f"theme must be one of {', '.join(SUPPORTED_THEMES)}")
     normalized_language = normalize_language_code(request.language)
     generation_mode = normalize_generation_mode(request.generation_mode)
+    if request.audience_tier and str(request.audience_tier).strip():
+        _normalize_outline_audience_tier(request.audience_tier, request.audience)
+    resolved_narrative_pacing = _normalize_outline_narrative_pacing(request.narrative_pacing)
     structured_context, strategic_analysis = ensure_generation_context(
         topic=request.topic,
         brief=request.brief,
@@ -673,6 +959,9 @@ def generate_outline_with_ai(
         topic=request.topic,
         brief=request.brief,
         audience=request.audience,
+        chapter_count=request.chapter_count,
+        audience_tier=request.audience_tier,
+        narrative_pacing=resolved_narrative_pacing,
         language=normalized_language,
         theme=request.theme,
         exact_slides=request.exact_slides,
@@ -696,7 +985,7 @@ def generate_outline_with_ai(
             return _validate_outline_response(payload, enriched_request)
         except ValueError as exc:
             feedback = (str(exc),)
-    raise ValueError("Outline generation failed validation after 3 attempts: " + "; ".join(feedback))
+    raise ValueError(f"Outline generation failed validation after {max_attempts} attempts: " + "; ".join(feedback))
 
 
 def generate_deck_with_ai(
@@ -773,6 +1062,190 @@ def generate_semantic_deck_with_ai(
         except ValueError as exc:
             feedback = (str(exc),)
     raise ValueError("Deck generation failed validation after 3 attempts: " + "; ".join(feedback))
+
+
+def _extract_semantic_slides(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    slides = payload.get("slides")
+    if not isinstance(slides, list):
+        return []
+    return [slide for slide in slides if isinstance(slide, dict)]
+
+
+def _semantic_candidate_score(
+    payload: dict[str, Any],
+    *,
+    request: DeckGenerationRequest,
+) -> tuple[float, dict[str, Any]]:
+    expected_pages = len(request.outline.pages)
+    slides = _extract_semantic_slides(payload)
+    slide_count = len(slides)
+
+    structure_gap = abs(slide_count - expected_pages)
+    structure_score = max(0.0, 45.0 - (structure_gap * 18.0))
+    if expected_pages > 0 and slide_count == expected_pages:
+        structure_score += 8.0
+
+    slides_with_blocks = 0
+    slides_with_sources = 0
+    block_count = 0
+    data_source_count = 0
+    intents: set[str] = set()
+    for slide in slides:
+        intent = str(slide.get("intent", "")).strip()
+        if intent:
+            intents.add(intent)
+        blocks = slide.get("blocks")
+        if isinstance(blocks, list):
+            valid_blocks = [block for block in blocks if isinstance(block, dict)]
+            if valid_blocks:
+                slides_with_blocks += 1
+                block_count += len(valid_blocks)
+        data_sources = slide.get("data_sources")
+        if isinstance(data_sources, list):
+            valid_sources = [source for source in data_sources if isinstance(source, dict)]
+            if valid_sources:
+                slides_with_sources += 1
+                data_source_count += len(valid_sources)
+
+    evidence_slides = max(slides_with_blocks, slides_with_sources)
+    evidence_coverage = evidence_slides / max(1, expected_pages)
+    evidence_score = min(24.0, evidence_coverage * 16.0) + min(10.0, float(data_source_count * 2))
+    renderability_bonus = 0.0
+    renderable = False
+    render_error = ""
+    try:
+        compile_semantic_deck_payload(
+            payload,
+            default_title=request.topic,
+            default_theme=request.theme,
+            default_language=request.language,
+            default_author=request.author,
+        )
+        renderable = True
+        renderability_bonus = 28.0
+    except ValueError as exc:
+        render_error = str(exc)
+        renderability_bonus = -160.0
+
+    diversity_score = min(8.0, float(len(intents) * 2))
+    density_score = min(8.0, float(block_count))
+    total_score = structure_score + evidence_score + diversity_score + density_score + renderability_bonus
+
+    return total_score, {
+        "slide_count": slide_count,
+        "expected_pages": expected_pages,
+        "structure_gap": structure_gap,
+        "evidence_coverage": round(evidence_coverage, 4),
+        "data_source_count": data_source_count,
+        "block_count": block_count,
+        "intent_count": len(intents),
+        "renderable": renderable,
+        "render_error": render_error,
+    }
+
+
+def select_best_semantic_candidate(
+    candidates: list[dict[str, Any]],
+    *,
+    request: DeckGenerationRequest,
+) -> tuple[dict[str, Any], int, list[dict[str, Any]]]:
+    if not candidates:
+        raise ValueError("semantic candidates cannot be empty")
+
+    scored: list[tuple[float, int, dict[str, Any], dict[str, Any]]] = []
+    score_report: list[dict[str, Any]] = []
+    for index, candidate in enumerate(candidates, start=1):
+        score, metrics = _semantic_candidate_score(candidate, request=request)
+        score_report.append(
+            {
+                "candidate_index": index,
+                "score": round(score, 4),
+                "metrics": metrics,
+            }
+        )
+        scored.append((score, -index, candidate, metrics))
+
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    selected_candidate = scored[0][2]
+    selected_index = -scored[0][1]
+    return selected_candidate, selected_index, score_report
+
+
+def generate_compiled_v2_deck(
+    *,
+    topic: str,
+    brief: str = "",
+    audience: str = DEFAULT_AUDIENCE_HINT,
+    language: str = "zh-CN",
+    theme: str = "sie_consulting_fixed",
+    author: str = "Enterprise AI PPT",
+    exact_slides: int | None = None,
+    min_slides: int = 6,
+    max_slides: int = 10,
+    model: str | None = None,
+    generation_mode: str = "deep",
+    outline: OutlineDocument | None = None,
+) -> V2CompiledDeckArtifacts:
+    normalized_language = normalize_language_code(language)
+    resolved_generation_mode = normalize_generation_mode(generation_mode)
+    structured_context, strategic_analysis = ensure_generation_context(
+        topic=topic,
+        brief=brief,
+        audience=audience,
+        language=normalized_language,
+        generation_mode=resolved_generation_mode,
+        structured_context=None,
+        strategic_analysis=None,
+        model=model,
+    )
+
+    resolved_outline = outline or generate_outline_with_ai(
+        OutlineGenerationRequest(
+            topic=topic,
+            brief=brief,
+            audience=audience,
+            chapter_count=exact_slides,
+            language=normalized_language,
+            theme=theme,
+            exact_slides=exact_slides,
+            min_slides=min_slides,
+            max_slides=max_slides,
+            generation_mode=resolved_generation_mode,
+            structured_context=structured_context,
+            strategic_analysis=strategic_analysis,
+        ),
+        model=model,
+    )
+
+    semantic_payload = generate_semantic_deck_with_ai(
+        DeckGenerationRequest(
+            topic=topic,
+            outline=resolved_outline,
+            brief=brief,
+            audience=audience,
+            language=normalized_language,
+            theme=theme,
+            author=author,
+            generation_mode=resolved_generation_mode,
+            structured_context=structured_context,
+            strategic_analysis=strategic_analysis,
+        ),
+        model=model,
+    )
+
+    validated_deck = compile_semantic_deck_payload(
+        semantic_payload,
+        default_title=topic,
+        default_theme=theme,
+        default_language=normalized_language,
+        default_author=author,
+    )
+
+    return V2CompiledDeckArtifacts(
+        outline=resolved_outline,
+        semantic_payload=semantic_payload,
+        validated_deck=validated_deck,
+    )
 
 
 async def generate_semantic_decks_with_ai_batch(
@@ -866,6 +1339,52 @@ async def generate_semantic_decks_with_ai_batch(
     return [item for item in results if item is not None]
 
 
+def run_pre_render_quality_gate(
+    *,
+    validated_deck: ValidatedDeck,
+    rewrite_log_path: Path,
+    warnings_path: Path,
+) -> ValidatedDeck:
+    initial_quality = quality_gate(validated_deck)
+    rewrite_result = rewrite_deck(validated_deck, initial_quality)
+    write_rewrite_log(rewrite_result, rewrite_log_path)
+    write_quality_gate_result(rewrite_result.final_quality_gate, warnings_path)
+
+    rewritten_validated = rewrite_result.validated_deck or validated_deck
+    if rewritten_validated is None:
+        raise ValueError("Schema validation failed; SVG pipeline was skipped.")
+    if not rewrite_result.final_quality_gate.passed:
+        raise ValueError(
+            "Quality gate failed: "
+            f"{rewrite_result.final_quality_gate.summary['error_count']} error(s) found. "
+            "SVG pipeline was skipped."
+        )
+    return rewritten_validated
+
+
+def build_svg_project_from_deck(*, deck: DeckDocument, output_dir: Path, output_prefix: str) -> Path:
+    safe_prefix = _safe_stem(output_prefix)
+    svg_project_path = output_dir / "svg_projects" / f"{safe_prefix}_ppt169"
+    _write_svg_project(deck, project_path=svg_project_path)
+    return svg_project_path
+
+
+def write_v2_make_log(*, log_path: Path, svg_project_path: Path, final_ppt_output: Path) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "\n".join(
+            (
+                "INFO: make_v2_ppt routes through SVG primary pipeline.",
+                f"INFO: svg_project={svg_project_path}",
+                "INFO: svg_stage=final",
+                f"INFO: output_pptx={final_ppt_output}",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def make_v2_ppt(
     *,
     topic: str,
@@ -887,106 +1406,65 @@ def make_v2_ppt(
     log_output: Path | None = None,
     ppt_output: Path | None = None,
     outline_path: Path | None = None,
+    pptmaster_root: Path | str | None = None,
 ) -> V2MakeArtifacts:
     final_output_dir = output_dir or DEFAULT_OUTPUT_DIR
-    normalized_language = normalize_language_code(language)
-    resolved_generation_mode = normalize_generation_mode(generation_mode)
-    structured_context, strategic_analysis = ensure_generation_context(
+    provided_outline = load_outline_document(outline_path) if outline_path is not None else None
+    if outline_path is not None:
+        final_outline_output = outline_path
+    else:
+        final_outline_output = outline_output or default_outline_output_path(final_output_dir)
+
+    compiled_artifacts = generate_compiled_v2_deck(
         topic=topic,
         brief=brief,
         audience=audience,
-        language=normalized_language,
-        generation_mode=resolved_generation_mode,
-        structured_context=None,
-        strategic_analysis=None,
+        language=language,
+        theme=theme,
+        author=author,
+        exact_slides=exact_slides,
+        min_slides=min_slides,
+        max_slides=max_slides,
         model=model,
+        generation_mode=generation_mode,
+        outline=provided_outline,
     )
-    if outline_path is not None:
-        outline = load_outline_document(outline_path)
-        final_outline_output = outline_path
-    else:
-        outline = generate_outline_with_ai(
-            OutlineGenerationRequest(
-                topic=topic,
-                brief=brief,
-                audience=audience,
-                language=normalized_language,
-                theme=theme,
-                exact_slides=exact_slides,
-                min_slides=min_slides,
-                max_slides=max_slides,
-                generation_mode=resolved_generation_mode,
-                structured_context=structured_context,
-                strategic_analysis=strategic_analysis,
-            ),
-            model=model,
-        )
-        final_outline_output = outline_output or default_outline_output_path(final_output_dir)
-        write_outline_document(outline, final_outline_output)
+    if provided_outline is None:
+        write_outline_document(compiled_artifacts.outline, final_outline_output)
 
-    semantic_payload = generate_semantic_deck_with_ai(
-        DeckGenerationRequest(
-            topic=topic,
-            outline=outline,
-            brief=brief,
-            audience=audience,
-            language=normalized_language,
-            theme=theme,
-            author=author,
-            generation_mode=resolved_generation_mode,
-            structured_context=structured_context,
-            strategic_analysis=strategic_analysis,
-        ),
-        model=model,
-    )
     final_semantic_output = semantic_output or default_semantic_output_path(final_output_dir)
-    write_semantic_document(semantic_payload, final_semantic_output)
-    validated_deck = compile_semantic_deck_payload(
-        semantic_payload,
-        default_title=topic,
-        default_theme=theme,
-        default_language=normalized_language,
-        default_author=author,
-    )
+    write_semantic_document(compiled_artifacts.semantic_payload, final_semantic_output)
+    validated_deck = compiled_artifacts.validated_deck
     final_deck_output = deck_output or default_deck_output_path(final_output_dir)
     final_log_output = log_output or default_log_output_path(final_output_dir)
     final_ppt_output = ppt_output or default_ppt_output_path(final_output_dir)
     rewrite_log_path = final_log_output.parent / "rewrite_log.json"
     warnings_path = final_log_output.parent / "warnings.json"
 
-    initial_quality = quality_gate(validated_deck)
-    rewrite_result = rewrite_deck(validated_deck, initial_quality)
-    write_rewrite_log(rewrite_result, rewrite_log_path)
-    write_quality_gate_result(rewrite_result.final_quality_gate, warnings_path)
-
-    rewritten_validated = rewrite_result.validated_deck or validated_deck
-    if rewritten_validated is None:
-        raise ValueError("Schema validation failed; SVG pipeline was skipped.")
-    if not rewrite_result.final_quality_gate.passed:
-        raise ValueError(
-            f"Quality gate failed: {rewrite_result.final_quality_gate.summary['error_count']} error(s) found. SVG pipeline was skipped."
-        )
+    rewritten_validated = run_pre_render_quality_gate(
+        validated_deck=validated_deck,
+        rewrite_log_path=rewrite_log_path,
+        warnings_path=warnings_path,
+    )
 
     final_deck = rewritten_validated.deck
     write_deck_document(final_deck, final_deck_output)
 
-    safe_prefix = _safe_stem(output_prefix)
-    svg_project_path = final_output_dir / "svg_projects" / f"{safe_prefix}_ppt169"
-    _write_svg_project(final_deck, project_path=svg_project_path)
-    _run_svg_pipeline(project_path=svg_project_path, final_ppt_output=final_ppt_output)
+    svg_project_path = build_svg_project_from_deck(
+        deck=final_deck,
+        output_dir=final_output_dir,
+        output_prefix=output_prefix,
+    )
+    _run_svg_pipeline(
+        project_path=svg_project_path,
+        final_ppt_output=final_ppt_output,
+        pptmaster_root=pptmaster_root,
+    )
 
-    final_log_output.parent.mkdir(parents=True, exist_ok=True)
-    final_log_output.write_text(
-        "\n".join(
-            (
-                "INFO: make_v2_ppt routes through SVG primary pipeline.",
-                f"INFO: svg_project={svg_project_path}",
-                "INFO: svg_stage=final",
-                f"INFO: output_pptx={final_ppt_output}",
-            )
-        )
-        + "\n",
-        encoding="utf-8",
+    write_v2_make_log(
+        log_path=final_log_output,
+        svg_project_path=svg_project_path,
+        final_ppt_output=final_ppt_output,
     )
     return V2MakeArtifacts(
         outline_path=final_outline_output,
@@ -1001,6 +1479,3 @@ def make_v2_ppt(
         svg_project_path=svg_project_path,
         svg_final_dir=svg_project_path / "svg_final",
     )
-
-
-

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable
-
-from pptx import Presentation
+from typing import Any, Callable, cast
 
 from ..plugins import plugin_layout_renderers
 from .layout_ids import SUPPORTED_LAYOUTS
@@ -23,15 +21,15 @@ from .theme_loader import ThemeSpec
 LayoutRenderer = Callable[[RenderContext, SlideModel], object]
 
 LAYOUT_RENDERERS: dict[str, LayoutRenderer] = {
-    "section_break": render_section_break,
-    "title_only": render_title_only,
-    "title_content": render_title_content,
-    "two_columns": render_two_columns,
-    "title_image": render_title_image,
-    "timeline": render_timeline,
-    "stats_dashboard": render_stats_dashboard,
-    "matrix_grid": render_matrix_grid,
-    "cards_grid": render_cards_grid,
+    "section_break": cast(LayoutRenderer, render_section_break),
+    "title_only": cast(LayoutRenderer, render_title_only),
+    "title_content": cast(LayoutRenderer, render_title_content),
+    "two_columns": cast(LayoutRenderer, render_two_columns),
+    "title_image": cast(LayoutRenderer, render_title_image),
+    "timeline": cast(LayoutRenderer, render_timeline),
+    "stats_dashboard": cast(LayoutRenderer, render_stats_dashboard),
+    "matrix_grid": cast(LayoutRenderer, render_matrix_grid),
+    "cards_grid": cast(LayoutRenderer, render_cards_grid),
 }
 
 
@@ -53,7 +51,7 @@ _validate_renderer_registry()
 
 
 def render_slide(
-    prs: Presentation,
+    prs: Any,
     slide_data: SlideModel,
     theme: ThemeSpec,
     log,

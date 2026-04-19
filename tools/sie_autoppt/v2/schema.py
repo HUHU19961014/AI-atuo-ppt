@@ -68,8 +68,16 @@ class OutlineItem(TextStripMixin):
     goal: str = Field(min_length=4, max_length=80)
 
 
+class OutlineStrategy(AutoPPTBase):
+    chapter_count: int = Field(ge=1, le=20)
+    audience_tier: Literal["executive", "management", "practitioner", "mixed", "general"] = "general"
+    narrative_pacing: Literal["fast", "balanced", "deep"] = "balanced"
+
+
 class OutlineDocument(AutoPPTBase):
     pages: list[OutlineItem] = Field(min_length=1, max_length=20)
+    story_rationale: str | None = Field(default=None, min_length=8, max_length=280)
+    outline_strategy: OutlineStrategy | None = None
 
     @model_validator(mode="after")
     def _validate_page_numbers(self) -> "OutlineDocument":
@@ -80,6 +88,14 @@ class OutlineDocument(AutoPPTBase):
 
     def to_list(self) -> list[dict[str, Any]]:
         return [item.model_dump(mode="json") for item in self.pages]
+
+    def to_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"pages": self.to_list()}
+        if self.story_rationale:
+            payload["story_rationale"] = self.story_rationale
+        if self.outline_strategy is not None:
+            payload["outline_strategy"] = self.outline_strategy.model_dump(mode="json")
+        return payload
 
 
 class ColumnBlock(TextStripMixin):
@@ -146,7 +162,7 @@ class DataSourceNote(TextStripMixin):
 
 
 class SlideAnnotations(TextStripMixin):
-    strip_optional_fields = ("anti_argument", "template_hint")
+    strip_optional_fields: ClassVar[tuple[str, ...]] = ("anti_argument", "template_hint")
     anti_argument: str | None = Field(default=None, max_length=120)
     style_variant: Literal["minimal", "standard", "decorative"] | None = Field(default=None)
     template_hint: str | None = Field(default=None, max_length=80)

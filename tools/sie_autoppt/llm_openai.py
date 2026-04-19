@@ -140,6 +140,17 @@ def _discover_local_base_url() -> str:
     return ""
 
 
+def _resolve_llm_mode() -> str:
+    raw_mode = os.environ.get("SIE_AUTOPPT_LLM_MODE", "").strip().lower()
+    if not raw_mode:
+        return "agent_first"
+    if raw_mode in {"agent_first", "runtime_api"}:
+        return raw_mode
+    raise OpenAIConfigurationError(
+        "Unsupported SIE_AUTOPPT_LLM_MODE. Expected one of: agent_first, runtime_api."
+    )
+
+
 def load_openai_responses_config(model: str | None = None) -> OpenAIResponsesConfig:
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     configured_base_url = os.environ.get("OPENAI_BASE_URL", "").strip().rstrip("/")
@@ -161,7 +172,9 @@ def load_openai_responses_config(model: str | None = None) -> OpenAIResponsesCon
                 base_url,
             )
 
-    if not api_key and not _allows_empty_api_key(base_url):
+    llm_mode = _resolve_llm_mode()
+
+    if llm_mode == "runtime_api" and not api_key and not _allows_empty_api_key(base_url):
         raise OpenAIConfigurationError(
             f"OPENAI_API_KEY is required when connecting to {base_url}. "
             "Configure via:\n"
@@ -175,10 +188,11 @@ def load_openai_responses_config(model: str | None = None) -> OpenAIResponsesCon
     api_style = infer_llm_api_style(base_url, configured_style=os.environ.get("SIE_AUTOPPT_LLM_API_STYLE"))
 
     LOGGER.info(
-        "LLM config: base_url=%s, model=%s, api_style=%s, api_key=%s",
+        "LLM config: base_url=%s, model=%s, api_style=%s, llm_mode=%s, api_key=%s",
         base_url,
         model or DEFAULT_AI_MODEL,
         api_style,
+        llm_mode,
         f"{api_key[:8]}..." if len(api_key) > 8 else ("(empty)" if not api_key else "(local)"),
     )
 

@@ -12,8 +12,10 @@ from tools.sie_autoppt.v2.services import (
     DeckGenerationRequest,
     OutlineGenerationRequest,
     build_deck_prompts,
+    build_outline_schema,
     build_outline_prompts,
     ensure_generation_context,
+    generate_outline_with_ai,
     generate_semantic_deck_with_ai,
     make_v2_ppt,
     resolve_slide_bounds,
@@ -31,8 +33,108 @@ def _workspace_tmpdir():
         shutil.rmtree(path, ignore_errors=True)
 
 class V2ServiceTests(unittest.TestCase):
-    def test_make_v2_ppt_fails_fast_when_svg_export_script_missing(self):
-        missing_script = Path(__file__).resolve().parents[1] / ".tmp_missing_svg_to_pptx.py"
+    def test_outline_schema_requires_story_rationale_and_strategy_controls(self):
+        schema = build_outline_schema(
+            OutlineGenerationRequest(
+                topic="AI strategy",
+                min_slides=3,
+                max_slides=3,
+                chapter_count=3,
+                audience_tier="executive",
+                narrative_pacing="balanced",
+            )
+        )
+
+        self.assertIn("story_rationale", schema["required"])
+        self.assertIn("story_rationale", schema["properties"])
+        self.assertIn("outline_strategy", schema["required"])
+        self.assertIn("outline_strategy", schema["properties"])
+
+    def test_generate_outline_with_ai_requires_story_rationale_field(self):
+        payload_without_rationale = {
+            "pages": [
+                {"page_no": 1, "title": "Decision Context", "goal": "State what decision is needed now."},
+                {"page_no": 2, "title": "Execution Path", "goal": "Describe the execution route and dependencies."},
+                {"page_no": 3, "title": "Recommendation", "goal": "Summarize recommendation and owner commitment."},
+            ],
+            "outline_strategy": {
+                "chapter_count": 3,
+                "audience_tier": "executive",
+                "narrative_pacing": "balanced",
+            },
+        }
+        fake_client = type(
+            "FakeClient",
+            (),
+            {"create_structured_json": lambda self, **_: payload_without_rationale},
+        )()
+
+        with patch("tools.sie_autoppt.v2.services.ensure_generation_context", return_value=({}, {})), patch(
+            "tools.sie_autoppt.v2.services._create_structured_client", return_value=fake_client
+        ):
+            with self.assertRaises(ValueError) as exc_info:
+                generate_outline_with_ai(
+                    OutlineGenerationRequest(topic="AI strategy", min_slides=3, max_slides=3),
+                    model="test-model",
+                    max_attempts=1,
+                )
+
+        self.assertIn("story_rationale", str(exc_info.exception))
+
+    def test_generate_outline_with_ai_retries_on_generic_title_quality_issue(self):
+        payloads = [
+            {
+                "pages": [
+                    {"page_no": 1, "title": "Background", "goal": "Provide generic background for everyone."},
+                    {"page_no": 2, "title": "Analysis", "goal": "Provide broad analysis without conclusion."},
+                    {"page_no": 3, "title": "Future Outlook", "goal": "Describe future outlook with no decision."},
+                ],
+                "story_rationale": "Attempted to build from context.",
+                "outline_strategy": {
+                    "chapter_count": 3,
+                    "audience_tier": "executive",
+                    "narrative_pacing": "balanced",
+                },
+            },
+            {
+                "pages": [
+                    {"page_no": 1, "title": "Decision Context", "goal": "Frame the decision and the current constraint."},
+                    {"page_no": 2, "title": "Execution Tradeoffs", "goal": "Compare options and resource implications."},
+                    {"page_no": 3, "title": "Recommended Path", "goal": "Close with recommendation, owner, and milestone."},
+                ],
+                "story_rationale": "Conclusion first, then tradeoffs, then owner-backed close.",
+                "outline_strategy": {
+                    "chapter_count": 3,
+                    "audience_tier": "executive",
+                    "narrative_pacing": "balanced",
+                },
+            },
+        ]
+
+        class SequenceClient:
+            def __init__(self, responses):
+                self.responses = list(responses)
+                self.calls = 0
+
+            def create_structured_json(self, **kwargs):
+                self.calls += 1
+                return self.responses[self.calls - 1]
+
+        client = SequenceClient(payloads)
+
+        with patch("tools.sie_autoppt.v2.services.ensure_generation_context", return_value=({}, {})), patch(
+            "tools.sie_autoppt.v2.services._create_structured_client", return_value=client
+        ):
+            outline = generate_outline_with_ai(
+                OutlineGenerationRequest(topic="AI strategy", min_slides=3, max_slides=3),
+                model="test-model",
+                max_attempts=2,
+            )
+
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(outline.pages[-1].title, "Recommended Path")
+
+    def test_make_v2_ppt_fails_fast_when_pptmaster_root_missing(self):
         outline = OutlineDocument.model_validate(
             {
                 "pages": [
@@ -45,21 +147,76 @@ class V2ServiceTests(unittest.TestCase):
             "meta": {"title": "AI strategy", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
             "slides": [{"slide_id": "s1", "title": "Conclusion", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "Focus on one chain first."}]}],
         }
-        with patch.object(services_module, "DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES", (missing_script,)), patch(
-            "tools.sie_autoppt.v2.services.ensure_generation_context",
-            return_value=({}, {}),
-        ) as ensure_context, patch(
-            "tools.sie_autoppt.v2.services.generate_outline_with_ai",
-            return_value=outline,
-        ), patch(
-            "tools.sie_autoppt.v2.services.generate_semantic_deck_with_ai",
-            return_value=semantic_payload,
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "tools.sie_autoppt.v2.services.ensure_generation_context", return_value=({}, {})
+        ) as ensure_context, patch("tools.sie_autoppt.v2.services.generate_outline_with_ai", return_value=outline), patch(
+            "tools.sie_autoppt.v2.services.generate_semantic_deck_with_ai", return_value=semantic_payload
         ):
             with _workspace_tmpdir() as temp_dir, self.assertRaises(FileNotFoundError) as exc_info:
                 make_v2_ppt(topic="AI strategy", output_dir=Path(temp_dir))
 
-        self.assertIn("Unable to locate", str(exc_info.exception))
+        self.assertIn("SIE_PPTMASTER_ROOT", str(exc_info.exception))
         ensure_context.assert_called_once()
+
+    def test_make_v2_ppt_uses_explicit_pptmaster_root(self):
+        outline = OutlineDocument.model_validate(
+            {
+                "pages": [
+                    {"page_no": 1, "title": "结论", "goal": "先给结论。"},
+                    {"page_no": 2, "title": "路径", "goal": "说明落地路径。"},
+                ]
+            }
+        )
+        semantic_payload = {
+            "meta": {
+                "title": "AI strategy",
+                "theme": "sie_consulting_fixed",
+                "language": "zh-CN",
+                "author": "AI",
+                "version": "2.0",
+            },
+            "slides": [
+                {
+                    "slide_id": "s1",
+                    "title": "先聚焦主链路",
+                    "intent": "conclusion",
+                    "blocks": [{"kind": "bullets", "items": ["先打通主链路"]}],
+                    "data_sources": [{"claim": "效率提升", "source": "内部试点", "confidence": "medium"}],
+                }
+            ],
+        }
+
+        with _workspace_tmpdir() as temp_dir:
+            temp_path = Path(temp_dir)
+            fake_root = temp_path / "pptmaster_root"
+            for relative in (
+                "skills/ppt-master/scripts/total_md_split.py",
+                "skills/ppt-master/scripts/finalize_svg.py",
+                "skills/ppt-master/scripts/svg_to_pptx.py",
+            ):
+                script_path = fake_root / relative
+                script_path.parent.mkdir(parents=True, exist_ok=True)
+                script_path.write_text("print('ok')\n", encoding="utf-8")
+
+            def _fake_run_command(command: list[str], *, step_name: str) -> None:
+                if step_name == "svg export":
+                    output_path = Path(command[command.index("-o") + 1])
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_path.write_bytes(b"pptx")
+
+            with patch(
+                "tools.sie_autoppt.v2.services.ensure_generation_context", return_value=({}, {})
+            ), patch(
+                "tools.sie_autoppt.v2.services.generate_outline_with_ai", return_value=outline
+            ), patch(
+                "tools.sie_autoppt.v2.services.generate_semantic_deck_with_ai", return_value=semantic_payload
+            ), patch("tools.sie_autoppt.v2.services._run_command", side_effect=_fake_run_command):
+                artifacts = make_v2_ppt(
+                    topic="AI strategy",
+                    output_dir=temp_path,
+                    pptmaster_root=fake_root,
+                )
+                self.assertTrue(artifacts.pptx_path.exists())
 
     def test_run_command_passes_timeout(self):
         completed = type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
@@ -281,10 +438,14 @@ class V2ServiceTests(unittest.TestCase):
 
         with _workspace_tmpdir() as temp_dir:
             temp_path = Path(temp_dir)
-            fake_split = temp_path / "total_md_split.py"
-            fake_finalize = temp_path / "finalize_svg.py"
-            fake_export = temp_path / "svg_to_pptx.py"
-            for script in (fake_split, fake_finalize, fake_export):
+            fake_root = temp_path / "pptmaster_root"
+            for relative in (
+                "skills/ppt-master/scripts/total_md_split.py",
+                "skills/ppt-master/scripts/finalize_svg.py",
+                "skills/ppt-master/scripts/svg_to_pptx.py",
+            ):
+                script = fake_root / relative
+                script.parent.mkdir(parents=True, exist_ok=True)
                 script.write_text("print('ok')\n", encoding="utf-8")
 
             def _fake_run_command(command: list[str], *, step_name: str) -> None:
@@ -293,20 +454,14 @@ class V2ServiceTests(unittest.TestCase):
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     output_path.write_bytes(b"pptx")
 
-            with patch.object(services_module, "DEFAULT_TOTAL_MD_SPLIT_SCRIPT_CANDIDATES", (fake_split,)), patch.object(
-                services_module, "DEFAULT_FINALIZE_SVG_SCRIPT_CANDIDATES", (fake_finalize,)
-            ), patch.object(
-                services_module, "DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES", (fake_export,)
-            ), patch(
-                "tools.sie_autoppt.v2.services.ensure_generation_context", return_value=({}, {})
-            ), patch(
+            with patch("tools.sie_autoppt.v2.services.ensure_generation_context", return_value=({}, {})), patch(
                 "tools.sie_autoppt.v2.services.generate_outline_with_ai", return_value=outline
             ), patch(
                 "tools.sie_autoppt.v2.services.generate_semantic_deck_with_ai", return_value=semantic_payload
             ), patch(
                 "tools.sie_autoppt.v2.services._run_command", side_effect=_fake_run_command
             ):
-                artifacts = make_v2_ppt(topic="AI strategy", output_dir=temp_path)
+                artifacts = make_v2_ppt(topic="AI strategy", output_dir=temp_path, pptmaster_root=fake_root)
 
             self.assertTrue(artifacts.outline_path.exists())
             self.assertTrue(artifacts.semantic_path.exists())

@@ -1,5 +1,6 @@
 import unittest
 import shutil
+import json
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -16,7 +17,12 @@ from tools.sie_autoppt.v2.schema import (
     collect_deck_warnings,
     validate_deck_payload,
 )
-from tools.sie_autoppt.v2.io import is_semantic_deck_document, load_deck_document, load_outline_document
+from tools.sie_autoppt.v2.io import (
+    is_semantic_deck_document,
+    load_deck_document,
+    load_outline_document,
+    write_outline_document,
+)
 
 try:
     from hypothesis import given, strategies as st
@@ -72,6 +78,35 @@ class V2SchemaTests(unittest.TestCase):
                     ]
                 }
             )
+
+    def test_write_outline_document_preserves_strategy_metadata(self):
+        outline = OutlineDocument.model_validate(
+            {
+                "pages": [
+                    {"page_no": 1, "title": "Decision Context", "goal": "Define the decision context and constraint."},
+                    {"page_no": 2, "title": "Execution Path", "goal": "Describe the execution route and ownership."},
+                    {"page_no": 3, "title": "Recommended Path", "goal": "Close with recommendation and milestone."},
+                ],
+                "story_rationale": "Lead with decision context, then execution tradeoffs, then owner-backed close.",
+                "outline_strategy": {
+                    "chapter_count": 3,
+                    "audience_tier": "executive",
+                    "narrative_pacing": "balanced",
+                },
+            }
+        )
+
+        with _workspace_tmpdir() as temp_dir:
+            output_path = Path(temp_dir) / "outline.json"
+            write_outline_document(outline, output_path)
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            loaded = load_outline_document(output_path)
+
+        self.assertIn("story_rationale", payload)
+        self.assertIn("outline_strategy", payload)
+        self.assertEqual(payload["outline_strategy"]["narrative_pacing"], "balanced")
+        self.assertEqual(loaded.story_rationale, outline.story_rationale)
+        self.assertEqual(loaded.outline_strategy.narrative_pacing, "balanced")
 
     def test_validate_deck_payload_normalizes_defaults_and_collects_warnings(self):
         validated = validate_deck_payload(

@@ -1,0 +1,10 @@
+{
+  "kpis": [
+    {"name": "success_rate", "value": 0.91, "unit": "ratio"},
+    {"name": "degraded_ratio", "value": 0.12, "unit": "ratio"},
+    {"name": "avg_retry_attempts", "value": 1.4, "unit": "count"},
+    {"name": "avg_total_latency_ms", "value": 1840, "unit": "ms"},
+    {"name": "avg_total_tokens", "value": 1320, "unit": "tokens"}
+  ],
+  "owner": "release-office"
+}
